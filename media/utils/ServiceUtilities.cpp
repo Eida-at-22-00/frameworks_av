@@ -203,17 +203,17 @@ static constexpr int DEVICE_ID_DEFAULT = 0;
 
 bool recordingAllowed(const AttributionSourceState &attributionSource, audio_source_t source) {
     return checkRecordingInternal(attributionSource, DEVICE_ID_DEFAULT, String16(), /*start*/ false,
-                                  source);
+                                  source) != PERMISSION_HARD_DENIED;
 }
 
 bool recordingAllowed(const AttributionSourceState &attributionSource,
                       const uint32_t virtualDeviceId,
                       audio_source_t source) {
     return checkRecordingInternal(attributionSource, virtualDeviceId,
-                                  String16(), /*start*/ false, source);
+                                  String16(), /*start*/ false, source) != PERMISSION_HARD_DENIED;
 }
 
-bool startRecording(const AttributionSourceState& attributionSource,
+int startRecording(const AttributionSourceState& attributionSource,
                     const uint32_t virtualDeviceId,
                     const String16& msg,
                     audio_source_t source) {

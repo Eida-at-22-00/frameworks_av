@@ -1007,13 +1007,17 @@ Status AudioPolicyService::startInput(int32_t portIdAidl)
         return binderStatusFromStatusT(INVALID_OPERATION);
     }
 
-    // Force the possibly silenced client to be unsilenced since we just called
-    // startRecording (i.e. we have assumed it is unsilenced).
-    // At this point in time, the client is inactive, so no calls to appops are sent in
-    // setAppState_l.
-    // This ensures existing clients have the same behavior as new clients (starting unsilenced).
+    // Force the possibly silenced client to match the state on the appops side
+    // following the call to startRecording (i.e. unsilenced iff call succeeded)
+    // At this point in time, the client is inactive, so no calls to appops are
+    // sent in setAppState_l. This ensures existing clients have the same
+    // behavior as new clients.
     // TODO(b/282076713)
-    setAppState_l(client, APP_STATE_TOP);
+    if (permitted == PERMISSION_GRANTED) {
+        setAppState_l(client, APP_STATE_TOP);
+    } else {
+        setAppState_l(client, APP_STATE_IDLE);
+    }
 
     client->active = true;
     client->startTimeNs = systemTime();
@@ -1103,8 +1107,10 @@ Status AudioPolicyService::startInput(int32_t portIdAidl)
         client->active = false;
         client->startTimeNs = 0;
         updateUidStates_l();
-        finishRecording(client->attributionSource, client->virtualDeviceId,
-                        client->attributes.source);
+        if (!client->silenced) {
+            finishRecording(client->attributionSource, client->virtualDeviceId,
+                    client->attributes.source);
+        }
     }
 
     return binderStatusFromStatusT(status);
@@ -1133,7 +1139,11 @@ Status AudioPolicyService::stopInput(int32_t portIdAidl)
     updateUidStates_l();
 
     // finish the recording app op
-    finishRecording(client->attributionSource, client->virtualDeviceId, client->attributes.source);
+    if (!client->silenced) {
+        finishRecording(client->attributionSource, client->virtualDeviceId,
+                client->attributes.source);
+    }
+
     AutoCallerClear acc;
     return binderStatusFromStatusT(mAudioPolicyManager->stopInput(portId));
 }
