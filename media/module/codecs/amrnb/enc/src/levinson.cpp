@@ -731,7 +731,7 @@ Word16 Levinson(
         t0 = t0 << 5;
 
         t1 = ((Word32) * (Rh + i) << 16) + ((Word32)(*(Rl + i)) << 1);
-        t0 += t1;
+        __builtin_add_overflow(t0, t1, &t0);
 
         /* K = -t0 / Alpha */
 

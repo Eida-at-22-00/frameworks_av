@@ -363,4 +363,16 @@ aaudio_policy_t AAudio_getAAudioPolicy(
         android::media::audio::common::AudioMMapPolicy defaultPolicy =
                 android::media::audio::common::AudioMMapPolicy::NEVER);
 
+/**
+ * Convert the aaudio device type to android device type. Returns AUDIO_DEVICE_NONE if
+ * the given device is not a valid one.
+ */
+audio_devices_t AAudioConvert_aaudioToAndroidDeviceType(
+        AAudio_DeviceType device, aaudio_direction_t direction);
+
+aaudio_policy_t AAudioConvert_androidToAAudioMMapPolicy(
+        android::media::audio::common::AudioMMapPolicy policy);
+
+bool AAudio_isCompressedFormat(audio_format_t format);
+
 #endif //UTILITY_AAUDIO_UTILITIES_H

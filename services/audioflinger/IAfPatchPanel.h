@@ -82,7 +82,7 @@ public:
             audio_config_base_t* mixerConfig,
             audio_devices_t deviceType,
             const String8& address,
-            audio_output_flags_t flags,
+            audio_output_flags_t* flags,
             audio_attributes_t attributes) REQUIRES(mutex()) = 0;
     virtual audio_utils::mutex& mutex() const
             RETURN_CAPABILITY(audio_utils::AudioFlinger_Mutex) = 0;

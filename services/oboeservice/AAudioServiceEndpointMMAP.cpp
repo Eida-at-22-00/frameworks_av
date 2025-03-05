@@ -105,7 +105,7 @@ aaudio_result_t AAudioServiceEndpointMMAP::open(const aaudio::AAudioStreamReques
     aaudio_result_t result = AAUDIO_OK;
     mAudioDataWrapper = std::make_unique<SharedMemoryWrapper>();
     copyFrom(request.getConstantConfiguration());
-    mRequestedDeviceId = getDeviceId();
+    mRequestedDeviceId = android::getFirstDeviceId(getDeviceIds());
 
     mMmapClient.attributionSource = request.getAttributionSource();
     // TODO b/182392769: use attribution source util
@@ -150,15 +150,9 @@ aaudio_result_t AAudioServiceEndpointMMAP::open(const aaudio::AAudioStreamReques
 
         // Try other formats if the config from APM is the same as our current config.
         // Some HALs may report its format support incorrectly.
-        if (previousConfig.format == config.format) {
-            if (previousConfig.sample_rate == config.sample_rate) {
-                config.format = getNextFormatToTry(config.format);
-            } else if (!com::android::media::aaudio::sample_rate_conversion()) {
-                ALOGI("%s() - AAudio SRC feature not enabled, different rates! %d != %d",
-                      __func__, previousConfig.sample_rate, config.sample_rate);
-                result = AAUDIO_ERROR_INVALID_RATE;
-                break;
-            }
+        if ((previousConfig.format == config.format) &&
+                (previousConfig.sample_rate == config.sample_rate)) {
+            config.format = getNextFormatToTry(config.format);
         }
 
         ALOGD("%s() %#x %d failed, perhaps due to format or sample rate. Try again with %#x %d",
@@ -173,11 +167,13 @@ aaudio_result_t AAudioServiceEndpointMMAP::openWithConfig(
         audio_config_base_t* config) {
     aaudio_result_t result = AAUDIO_OK;
     audio_config_base_t currentConfig = *config;
-    audio_port_handle_t deviceId;
+    android::DeviceIdVector deviceIds;
 
     const audio_attributes_t attributes = getAudioAttributesFrom(this);
 
-    deviceId = mRequestedDeviceId;
+    if (mRequestedDeviceId != AAUDIO_UNSPECIFIED) {
+        deviceIds.push_back(mRequestedDeviceId);
+    }
 
     const aaudio_direction_t direction = getDirection();
 
@@ -202,16 +198,16 @@ aaudio_result_t AAudioServiceEndpointMMAP::openWithConfig(
 
     // Open HAL stream. Set mMmapStream
     ALOGD("%s trying to open MMAP stream with format=%#x, "
-          "sample_rate=%u, channel_mask=%#x, device=%d",
+          "sample_rate=%u, channel_mask=%#x, device=%s",
           __func__, config->format, config->sample_rate,
-          config->channel_mask, deviceId);
+          config->channel_mask, android::toString(deviceIds).c_str());
 
     const std::lock_guard<std::mutex> lock(mMmapStreamLock);
     const status_t status = MmapStreamInterface::openMmapStream(streamDirection,
                                                                 &attributes,
                                                                 config,
                                                                 mMmapClient,
-                                                                &deviceId,
+                                                                &deviceIds,
                                                                 &sessionId,
                                                                 this, // callback
                                                                 mMmapStream,
@@ -229,10 +225,10 @@ aaudio_result_t AAudioServiceEndpointMMAP::openWithConfig(
         return AAUDIO_ERROR_UNAVAILABLE;
     }
 
-    if (deviceId == AAUDIO_UNSPECIFIED) {
-        ALOGW("%s() - openMmapStream() failed to set deviceId", __func__);
+    if (deviceIds.empty()) {
+        ALOGW("%s() - openMmapStream() failed to set deviceIds", __func__);
     }
-    setDeviceId(deviceId);
+    setDeviceIds(deviceIds);
 
     if (sessionId == AUDIO_SESSION_ALLOCATE) {
         ALOGW("%s() - openMmapStream() failed to set sessionId", __func__);
@@ -244,8 +240,8 @@ aaudio_result_t AAudioServiceEndpointMMAP::openWithConfig(
             : (aaudio_session_id_t) sessionId;
     setSessionId(actualSessionId);
 
-    ALOGD("%s(format = 0x%X) deviceId = %d, sessionId = %d",
-          __func__, config->format, getDeviceId(), getSessionId());
+    ALOGD("%s(format = 0x%X) deviceIds = %s, sessionId = %d",
+          __func__, config->format, toString(getDeviceIds()).c_str(), getSessionId());
 
     // Create MMAP/NOIRQ buffer.
     result = createMmapBuffer_l();
@@ -274,9 +270,9 @@ aaudio_result_t AAudioServiceEndpointMMAP::openWithConfig(
 
     mDataReportOffsetNanos = ((int64_t)mTimestampGracePeriodMs) * AAUDIO_NANOS_PER_MILLISECOND;
 
-    ALOGD("%s() got rate = %d, channels = %d channelMask = %#x, deviceId = %d, capacity = %d\n",
+    ALOGD("%s() got rate = %d, channels = %d channelMask = %#x, deviceIds = %s, capacity = %d\n",
           __func__, getSampleRate(), getSamplesPerFrame(), getChannelMask(),
-          deviceId, getBufferCapacity());
+          android::toString(deviceIds).c_str(), getBufferCapacity());
 
     ALOGD("%s() got format = 0x%X = %s, frame size = %d, burst size = %d",
           __func__, getFormat(), audio_format_to_string(getFormat()),
@@ -287,7 +283,11 @@ aaudio_result_t AAudioServiceEndpointMMAP::openWithConfig(
 error:
     close_l();
     // restore original requests
-    setDeviceId(mRequestedDeviceId);
+    android::DeviceIdVector requestedDeviceIds;
+    if (mRequestedDeviceId != AAUDIO_UNSPECIFIED) {
+        requestedDeviceIds.push_back(mRequestedDeviceId);
+    }
+    setDeviceIds(requestedDeviceIds);
     setSessionId(requestedSessionId);
     return result;
 }
@@ -422,9 +422,17 @@ aaudio_result_t AAudioServiceEndpointMMAP::getFreeRunningPosition(int64_t *posit
         return AAUDIO_ERROR_NULL;
     }
     struct audio_mmap_position position;
-    const status_t status = mMmapStream->getMmapPosition(&position);
+    status_t status = mMmapStream->getMmapPosition(&position);
     ALOGV("%s() status= %d, pos = %d, nanos = %lld\n",
           __func__, status, position.position_frames, (long long) position.time_nanoseconds);
+    if (status == INVALID_OPERATION) {
+        // The HAL can return INVALID_OPERATION when the position is UNKNOWN.
+        // That can cause SHARED MMAP to break. So coerce it to NOT_ENOUGH_DATA.
+        // That will get converted to AAUDIO_ERROR_UNAVAILABLE.
+        ALOGW("%s(): change INVALID_OPERATION to NOT_ENOUGH_DATA", __func__);
+        status = NOT_ENOUGH_DATA; // see b/376467258
+    }
+
     const aaudio_result_t result = AAudioConvert_androidToAAudioResult(status);
     if (result == AAUDIO_ERROR_UNAVAILABLE) {
         ALOGW("%s(): getMmapPosition() has no position data available", __func__);
@@ -476,27 +484,27 @@ void AAudioServiceEndpointMMAP::onVolumeChanged(float volume) {
     }
 };
 
-void AAudioServiceEndpointMMAP::onRoutingChanged(audio_port_handle_t portHandle) {
-    const auto deviceId = static_cast<int32_t>(portHandle);
-    ALOGD("%s() called with dev %d, old = %d", __func__, deviceId, getDeviceId());
-    if (getDeviceId() != deviceId) {
-        if (getDeviceId() != AUDIO_PORT_HANDLE_NONE) {
+void AAudioServiceEndpointMMAP::onRoutingChanged(const android::DeviceIdVector& deviceIds) {
+    ALOGD("%s() called with dev %s, old = %s", __func__, android::toString(deviceIds).c_str(),
+          android::toString(getDeviceIds()).c_str());
+    if (!android::areDeviceIdsEqual(getDeviceIds(), deviceIds)) {
+        if (!getDeviceIds().empty()) {
             // When there is a routing changed, mmap stream should be disconnected. Set `mConnected`
-            // as false here so that there won't be a new stream connect to this endpoint.
+            // as false here so that there won't be a new stream connected to this endpoint.
             mConnected.store(false);
             const android::sp<AAudioServiceEndpointMMAP> holdEndpoint(this);
-            std::thread asyncTask([holdEndpoint, deviceId]() {
+            std::thread asyncTask([holdEndpoint, deviceIds]() {
                 ALOGD("onRoutingChanged() asyncTask launched");
                 // When routing changed, the stream is disconnected and cannot be used except for
                 // closing. In that case, it should be safe to release all registered streams.
                 // This can help release service side resource in case the client doesn't close
                 // the stream after receiving disconnect event.
                 holdEndpoint->releaseRegisteredStreams();
-                holdEndpoint->setDeviceId(deviceId);
+                holdEndpoint->setDeviceIds(deviceIds);
             });
             asyncTask.detach();
         } else {
-            setDeviceId(deviceId);
+            setDeviceIds(deviceIds);
         }
     }
 };

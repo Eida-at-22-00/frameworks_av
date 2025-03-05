@@ -60,6 +60,9 @@ class AidlCameraService: public SBnCameraService {
     ndk::ScopedAStatus removeListener(
             const std::shared_ptr<SICameraServiceListener>& in_listener) override;
 
+    ndk::ScopedAStatus connectDeviceV2(const std::shared_ptr<SICameraDeviceCallback>& in_callback,
+                                     const std::string& in_cameraId, bool sharedMode,
+                                     std::shared_ptr<SICameraDeviceUser>* _aidl_return);
   private:
     void addToListenerCacheLocked(std::shared_ptr<SICameraServiceListener> stableCsListener,
                                   sp<hardware::ICameraServiceListener> csListener);
@@ -70,6 +73,9 @@ class AidlCameraService: public SBnCameraService {
     SStatus addListenerInternal(const std::shared_ptr<SICameraServiceListener>& listener,
                                 std::vector<hardware::CameraStatus>* cameraStatusAndIds);
 
+    ndk::ScopedAStatus connectDeviceImpl(const std::shared_ptr<SICameraDeviceCallback>& in_callback,
+            const std::string& in_cameraId, bool sharedMode,
+            std::shared_ptr<SICameraDeviceUser>* _aidl_return);
 
     ::android::CameraService* mCameraService;
 

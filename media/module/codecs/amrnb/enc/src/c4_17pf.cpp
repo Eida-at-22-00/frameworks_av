@@ -416,6 +416,7 @@ extern "C"
         Word16 *p_codvec = &codvec[0];
 
         Word32 s;
+        Word32 mul;
         Word32 alp0;
         Word32 alp1;
 
@@ -497,7 +498,8 @@ extern "C"
                             s = ((Word32) alp * sq1) << 1;
 
                             /* s = L_msu(s, sq, alp_16, pOverflow); */
-                            s -= (((Word32) sq * alp_16) << 1);
+                            __builtin_mul_overflow(sq, alp_16, &mul);
+                            __builtin_sub_overflow(s, (mul << 1), &s);
 
                             if (s > 0)
                             {
@@ -610,7 +612,8 @@ extern "C"
                             s = ((Word32) alp * sq1) << 1;
 
                             /* s = L_msu(s, sq, alp_16, pOverflow); */
-                            s -= (((Word32) sq * alp_16) << 1);
+                            __builtin_mul_overflow(sq, alp_16, &mul);
+                            __builtin_sub_overflow(s, (mul << 1), &s);
 
                             if (s > 0)
                             {
@@ -630,7 +633,8 @@ extern "C"
                         s = ((Word32) alpk * sq) << 1;
 
                         /* s = L_msu(s, psk, alp, pOverflow); */
-                        s -= (((Word32) psk * alp) << 1);
+                        __builtin_mul_overflow(psk, alp, &mul);
+                        __builtin_sub_overflow(s, (mul << 1), &s);
 
                         if (s > 0)
                         {

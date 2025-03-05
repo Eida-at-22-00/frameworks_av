@@ -163,4 +163,11 @@ interface ISpatializer {
      * Gets the io handle of the output stream the spatializer is connected to.
      */
      int getOutput();
+
+     /**
+      * Returns a list of channel masks that represent the widest channel masks the spatializer
+      * is capable of rendering with individual channel positions.
+      * Note that each channel mask is in the native format.
+      */
+      int[] getSpatializedChannelMasks();
 }

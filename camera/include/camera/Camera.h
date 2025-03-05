@@ -21,13 +21,18 @@
 
 #include <android/hardware/ICameraService.h>
 
-#include <gui/IGraphicBufferProducer.h>
-#include <system/camera.h>
+#include <camera/CameraBase.h>
+#include <camera/CameraUtils.h>
 #include <camera/ICameraRecordingProxy.h>
 #include <camera/android/hardware/ICamera.h>
 #include <camera/android/hardware/ICameraClient.h>
-#include <camera/CameraBase.h>
-#include <camera/CameraUtils.h>
+#include <gui/Flags.h>
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+#include <gui/Surface.h>
+#else
+#include <gui/IGraphicBufferProducer.h>
+#endif
+#include <system/camera.h>
 
 namespace android {
 
@@ -91,8 +96,8 @@ public:
             status_t    lock();
             status_t    unlock();
 
-            // pass the buffered IGraphicBufferProducer to the camera service
-            status_t    setPreviewTarget(const sp<IGraphicBufferProducer>& bufferProducer);
+            // pass the SurfaceType to the camera service
+            status_t    setPreviewTarget(const sp<SurfaceType>& target);
 
             // start preview mode, must call setPreviewTarget first
             status_t    startPreview();
@@ -148,7 +153,7 @@ public:
 
             // Set the video buffer producer for camera to use in VIDEO_BUFFER_MODE_BUFFER_QUEUE
             // mode.
-            status_t    setVideoTarget(const sp<IGraphicBufferProducer>& bufferProducer);
+            status_t    setVideoTarget(const sp<SurfaceType>& target);
 
             void        setListener(const sp<CameraListener>& listener);
 
@@ -158,8 +163,7 @@ public:
             // disabled by calling it with CAMERA_FRAME_CALLBACK_FLAG_NOOP, and
             // Target by calling it with a NULL interface.
             void        setPreviewCallbackFlags(int preview_callback_flag);
-            status_t    setPreviewCallbackTarget(
-                    const sp<IGraphicBufferProducer>& callbackProducer);
+            status_t    setPreviewCallbackTarget(const sp<SurfaceType>& target);
 
             sp<ICameraRecordingProxy> getRecordingProxy();
 

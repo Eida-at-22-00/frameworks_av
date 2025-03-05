@@ -23,6 +23,7 @@
 
 #include <fmq/AidlMessageQueue.h>
 #include <system/audio_aidl_utils.h>
+#include <system/audio_effects/aidl_effects_utils.h>
 #include <utils/Log.h>
 
 #include "EffectProxy.h"
@@ -41,7 +42,8 @@ namespace android::effect {
 
 EffectProxy::EffectProxy(const AudioUuid& uuid, const std::vector<Descriptor>& descriptors,
                          const std::shared_ptr<IFactory>& factory)
-    : mDescriptorCommon(buildDescriptorCommon(uuid, descriptors)),
+    : mSharedCapability(buildDescriptorCapability(descriptors)),
+      mDescriptorCommon(buildDescriptorCommon(uuid, descriptors)),
       mSubEffects(
               [](const std::vector<Descriptor>& descs, const std::shared_ptr<IFactory>& factory) {
                   std::vector<SubEffect> subEffects;
@@ -163,6 +165,7 @@ ndk::ScopedAStatus EffectProxy::close() {
 
 ndk::ScopedAStatus EffectProxy::getDescriptor(Descriptor* desc) {
     *desc = mSubEffects[mActiveSubIdx].descriptor;
+    desc->capability = mSharedCapability;
     desc->common = mDescriptorCommon;
     return ndk::ScopedAStatus::ok();
 }
@@ -182,6 +185,7 @@ ndk::ScopedAStatus EffectProxy::buildDescriptor(const AudioUuid& uuid,
     }
 
     desc->common = buildDescriptorCommon(uuid, subEffectDescs);
+    desc->capability = buildDescriptorCapability(subEffectDescs);
     return ndk::ScopedAStatus::ok();
 }
 
@@ -214,6 +218,20 @@ Descriptor::Common EffectProxy::buildDescriptorCommon(
     swCommon.id.uuid = uuid;
     swCommon.id.proxy = std::nullopt;
     return swCommon;
+}
+
+// Build a shared Descriptor capability with all sub-effects.
+Capability EffectProxy::buildDescriptorCapability(const std::vector<Descriptor>& subEffectDescs) {
+    std::optional<Capability> cap = subEffectDescs[0].capability;
+    for (size_t i = 1; i < subEffectDescs.size(); i++) {
+        cap = findSharedCapability(cap.value(), subEffectDescs[i].capability);
+        if (!cap) {
+            ALOGE("%s failed to find the shared capability at %zu", __func__, i);
+            return subEffectDescs[0].capability;
+        }
+    }
+
+    return cap.value();
 }
 
 // Handle with active sub-effect first, only send to other sub-effects when success
@@ -323,6 +341,8 @@ std::string EffectProxy::toString(size_t level) const {
     prefixSpace += " ";
     base::StringAppendF(&ss, "%sDescriptorCommon: %s\n", prefixSpace.c_str(),
                         mDescriptorCommon.toString().c_str());
+    base::StringAppendF(&ss, "%sDescriptorCapability: %s\n", prefixSpace.c_str(),
+                        mSharedCapability.toString().c_str());
     base::StringAppendF(&ss, "%sActiveSubIdx: %zu\n", prefixSpace.c_str(), mActiveSubIdx);
     base::StringAppendF(&ss, "%sAllSubEffects:\n", prefixSpace.c_str());
     for (size_t i = 0; i < mSubEffects.size(); i++) {

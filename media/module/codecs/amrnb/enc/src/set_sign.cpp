@@ -505,6 +505,7 @@ void set_sign12k2(
     Word16 en[L_CODE];                  /* correlation vector */
     Word32 s;
     Word32 t;
+    Word32 mul;
     Word32 L_temp;
     Word16 *p_cn;
     Word16 *p_dn;
@@ -525,7 +526,8 @@ void set_sign12k2(
         val = *(p_cn++);
         s = L_mac(s, val, val, pOverflow);
         val = *(p_dn++);
-        t += ((Word32) val * val) << 1;
+        __builtin_mul_overflow(val, val, &mul);
+        __builtin_add_overflow(t, mul << 1, &t);
     }
     s = Inv_sqrt(s, pOverflow);
     k_cn = (Word16)((L_shl(s, 5, pOverflow)) >> 16);

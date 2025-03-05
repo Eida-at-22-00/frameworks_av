@@ -179,6 +179,12 @@ public:
     }
     StreamTypeVector getStreamTypes() const override { return mStreams; }
 
+    void setIsMuted(bool isMuted)
+    {
+        mIsMuted = isMuted;
+    }
+    bool isMuted() const { return mIsMuted; }
+
     void dump(String8 *dst, int spaces = 0, bool curvePoints = false) const override;
 
 private:
@@ -187,6 +193,7 @@ private:
     int mIndexMin; /**< min volume index. */
     int mIndexMax; /**< max volume index. */
     const bool mCanBeMuted = true; /**< true is the stream can be muted. */
+    bool mIsMuted = false; /**< true if the stream is currently muted. */
 
     AttributesVector mAttributes;
     StreamTypeVector mStreams; /**< Keep it for legacy. */

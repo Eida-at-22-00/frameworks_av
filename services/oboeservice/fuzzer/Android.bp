@@ -44,6 +44,7 @@ cc_fuzz {
         "libaudioclient",
         "libaudioclient_aidl_conversion",
         "libaudioflinger",
+        "libaudiofoundation",
         "libaudioutils",
         "libbase",
         "libbinder",

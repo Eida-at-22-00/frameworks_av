@@ -1,4 +1,5 @@
 package {
+    default_team: "trendy_team_media_codec_framework",
     default_applicable_licenses: [
         "frameworks_av_media_codecs_amrnb_common_license",
     ],
@@ -42,8 +43,8 @@ cc_library {
         "src/gains_tbl.cpp",
         "src/gc_pred.cpp",
         "src/gmed_n.cpp",
-        "src/grid_tbl.cpp",
         "src/gray_tbl.cpp",
+        "src/grid_tbl.cpp",
         "src/int_lpc.cpp",
         "src/inv_sqrt.cpp",
         "src/inv_sqrt_tbl.cpp",
@@ -91,9 +92,9 @@ cc_library {
     export_include_dirs: ["include"],
 
     cflags: [
-        "-DOSCL_UNUSED_ARG(x)=(void)(x)",
-        "-DOSCL_IMPORT_REF=",
         "-DOSCL_EXPORT_REF=",
+        "-DOSCL_IMPORT_REF=",
+        "-DOSCL_UNUSED_ARG(x)=(void)(x)",
 
         "-Werror",
     ],

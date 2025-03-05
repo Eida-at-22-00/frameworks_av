@@ -26,6 +26,9 @@
 
 namespace android {
 
+// initialize max supported instances with default value.
+int32_t MediaCodecInfo::sMaxSupportedInstances = 0;
+
 /** This redundant redeclaration is needed for C++ pre 14 */
 constexpr char MediaCodecInfo::Capabilities::FEATURE_ADAPTIVE_PLAYBACK[];
 constexpr char MediaCodecInfo::Capabilities::FEATURE_DYNAMIC_TIMESTAMP[];
@@ -169,6 +172,15 @@ MediaCodecInfo::getCapabilitiesFor(const char *mediaType) const {
     return NULL;
 }
 
+const std::shared_ptr<CodecCapabilities> MediaCodecInfo::getCodecCapsFor(
+        const char *mediaType) const {
+    ssize_t ix = getCodecCapIndex(mediaType);
+    if (ix >= 0) {
+        return mCodecCaps.valueAt(ix);
+    }
+    return nullptr;
+}
+
 const char *MediaCodecInfo::getCodecName() const {
     return mName.c_str();
 }
@@ -179,6 +191,7 @@ const char *MediaCodecInfo::getOwnerName() const {
 
 // static
 sp<MediaCodecInfo> MediaCodecInfo::FromParcel(const Parcel &parcel) {
+    sMaxSupportedInstances = parcel.readInt32();
     AString name = AString::FromParcel(parcel);
     AString owner = AString::FromParcel(parcel);
     Attributes attributes = static_cast<Attributes>(parcel.readInt32());
@@ -201,12 +214,17 @@ sp<MediaCodecInfo> MediaCodecInfo::FromParcel(const Parcel &parcel) {
             return NULL;
         if (info != NULL) {
             info->mCaps.add(mediaType, caps);
+            std::shared_ptr<CodecCapabilities> codecCaps
+                    = MediaCodecInfoWriter::BuildCodecCapabilities(
+                            mediaType.c_str(), caps, info->isEncoder());
+            info->mCodecCaps.add(mediaType, codecCaps);
         }
     }
     return info;
 }
 
 status_t MediaCodecInfo::writeToParcel(Parcel *parcel) const {
+    parcel->writeInt32(sMaxSupportedInstances);
     mName.writeToParcel(parcel);
     mOwner.writeToParcel(parcel);
     parcel->writeInt32(mAttributes);
@@ -231,6 +249,25 @@ ssize_t MediaCodecInfo::getCapabilityIndex(const char *mediaType) const {
             }
         }
     }
+    return -1;
+}
+
+ssize_t MediaCodecInfo::getCodecCapIndex(const char *mediaType) const {
+    if (mediaType == nullptr) {
+        return -1;
+    }
+
+    if (mCodecCaps.size() != mCaps.size()) {
+        ALOGE("Size of mCodecCaps and mCaps do not match, which are %zu and %zu",
+                mCodecCaps.size(), mCaps.size());
+    }
+
+    for (size_t ix = 0; ix < mCodecCaps.size(); ix++) {
+        if (mCodecCaps.keyAt(ix).equalsIgnoreCase(mediaType)) {
+            return ix;
+        }
+    }
+
     return -1;
 }
 
@@ -281,6 +318,52 @@ bool MediaCodecInfoWriter::removeMediaType(const char *mediaType) {
         return true;
     }
     return false;
+}
+
+void MediaCodecInfoWriter::createCodecCaps() {
+    mInfo->mCodecCaps.clear();
+    for (size_t ix = 0; ix < mInfo->mCaps.size(); ix++) {
+        AString mediaType = mInfo->mCaps.keyAt(ix);
+        sp<MediaCodecInfo::Capabilities> caps = mInfo->mCaps.valueAt(ix);
+        mInfo->mCodecCaps.add(mediaType,
+                BuildCodecCapabilities(mediaType.c_str(), caps, mInfo->isEncoder(),
+                MediaCodecInfo::sMaxSupportedInstances));
+    }
+}
+
+// static
+std::shared_ptr<CodecCapabilities> MediaCodecInfoWriter::BuildCodecCapabilities(
+        const char *mediaType, sp<MediaCodecInfo::Capabilities> caps, bool isEncoder,
+        int32_t maxSupportedInstances) {
+    Vector<ProfileLevel> profileLevels_;
+    Vector<uint32_t> colorFormats_;
+    caps->getSupportedProfileLevels(&profileLevels_);
+    caps->getSupportedColorFormats(&colorFormats_);
+
+    std::vector<ProfileLevel> profileLevels;
+    std::vector<uint32_t> colorFormats;
+    for (ProfileLevel pl : profileLevels_) {
+        profileLevels.push_back(pl);
+    }
+    for (uint32_t cf : colorFormats_) {
+        colorFormats.push_back(cf);
+    }
+
+    sp<AMessage> defaultFormat = new AMessage();
+    defaultFormat->setString("mime", mediaType);
+
+    sp<AMessage> capabilitiesInfo = caps->getDetails();
+
+    std::shared_ptr<CodecCapabilities> codecCaps = std::make_shared<CodecCapabilities>();
+    codecCaps->init(profileLevels, colorFormats, isEncoder, defaultFormat,
+            capabilitiesInfo, maxSupportedInstances);
+
+    return codecCaps;
+}
+
+// static
+void MediaCodecInfoWriter::SetMaxSupportedInstances(int32_t maxSupportedInstances) {
+    MediaCodecInfo::sMaxSupportedInstances = maxSupportedInstances;
 }
 
 MediaCodecInfoWriter::MediaCodecInfoWriter(MediaCodecInfo* info) :

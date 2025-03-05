@@ -47,6 +47,7 @@ cc_defaults {
         "libcutils",
         "libutils",
         "server_configurable_flags",
+        "camera_platform_flags_c_lib",
     ],
 }
 

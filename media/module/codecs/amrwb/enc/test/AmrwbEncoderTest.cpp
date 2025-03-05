@@ -20,6 +20,7 @@
 #include <utils/Log.h>
 
 #include <stdio.h>
+#include <fstream>
 
 #include "cmnMemory.h"
 #include "voAMRWB.h"
@@ -34,13 +35,15 @@ constexpr int32_t kOutputBufferSize = 1024;
 
 static AmrwbEncTestEnvironment *gEnv = nullptr;
 
-class AmrwbEncoderTest : public ::testing::TestWithParam<tuple<string, int32_t, VOAMRWBFRAMETYPE>> {
+class AmrwbEncoderTest : public ::testing::TestWithParam<tuple<string, int32_t,
+                                                               VOAMRWBFRAMETYPE, string>> {
   public:
     AmrwbEncoderTest() : mEncoderHandle(nullptr) {
-        tuple<string, int32_t, VOAMRWBFRAMETYPE> params = GetParam();
+        tuple<string, int32_t, VOAMRWBFRAMETYPE, string> params = GetParam();
         mInputFile = gEnv->getRes() + get<0>(params);
         mMode = get<1>(params);
         mFrameType = get<2>(params);
+        refFilePath = gEnv->getRes() + get<3>(params);
         mMemOperator.Alloc = cmnMemAlloc;
         mMemOperator.Copy = cmnMemCopy;
         mMemOperator.Free = cmnMemFree;
@@ -66,7 +69,46 @@ class AmrwbEncoderTest : public ::testing::TestWithParam<tuple<string, int32_t, 
     VO_CODEC_INIT_USERDATA mUserData;
     VO_HANDLE mEncoderHandle;
     int32_t mMode;
+    string refFilePath;
+
+    bool compareBinaryFiles(const string& refFilePath, const string& outFilePath);
 };
+
+bool AmrwbEncoderTest::compareBinaryFiles(const std::string &refFilePath,
+                                          const std::string &outFilePath) {
+    std::ifstream refFile(refFilePath, std::ios::binary | std::ios::ate);
+    std::ifstream outFile(outFilePath, std::ios::binary | std::ios::ate);
+    assert(refFile.is_open() && "Error opening reference file " + refFilePath);
+    assert(outFile.is_open() && "Error opening output file " + outFilePath);
+
+    std::streamsize refFileSize = refFile.tellg();
+    std::streamsize outFileSize = outFile.tellg();
+    if (refFileSize != outFileSize) {
+        ALOGE("Error, File size mismatch: Reference file size = %td bytes,"
+               "but output file size = %td bytes", refFileSize, outFileSize);
+        return false;
+    }
+
+    refFile.seekg(0, std::ios::beg);
+    outFile.seekg(0, std::ios::beg);
+    constexpr std::streamsize kBufferSize = 16 * 1024;
+    char refBuffer[kBufferSize];
+    char outBuffer[kBufferSize];
+
+    while (refFile && outFile) {
+        refFile.read(refBuffer, kBufferSize);
+        outFile.read(outBuffer, kBufferSize);
+
+        std::streamsize refBytesRead = refFile.gcount();
+        std::streamsize outBytesRead = outFile.gcount();
+
+        if (refBytesRead != outBytesRead || memcmp(refBuffer, outBuffer, refBytesRead) != 0) {
+            ALOGE("Error, File content mismatch.");
+            return false;
+        }
+    }
+    return true;
+}
 
 TEST_P(AmrwbEncoderTest, CreateAmrwbEncoderTest) {
     int32_t status = voGetAMRWBEncAPI(&mApiHandle);
@@ -152,38 +194,69 @@ TEST_P(AmrwbEncoderTest, AmrwbEncodeTest) {
     if (fpOutput) {
         fclose(fpOutput);
     }
+
+    ASSERT_TRUE(compareBinaryFiles(refFilePath, OUTPUT_FILE))
+    << "Error, Binary file comparison failed: Output file "
+    << OUTPUT_FILE << " does not match the reference file " << refFilePath << ".";
 }
 
 INSTANTIATE_TEST_SUITE_P(
-        AmrwbEncoderTestAll, AmrwbEncoderTest,
-        ::testing::Values(
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD66, VOAMRWB_DEFAULT),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD885, VOAMRWB_DEFAULT),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1265, VOAMRWB_DEFAULT),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1425, VOAMRWB_DEFAULT),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1585, VOAMRWB_DEFAULT),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1825, VOAMRWB_DEFAULT),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1985, VOAMRWB_DEFAULT),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD2305, VOAMRWB_DEFAULT),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD2385, VOAMRWB_DEFAULT),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD66, VOAMRWB_ITU),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD885, VOAMRWB_ITU),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1265, VOAMRWB_ITU),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1425, VOAMRWB_ITU),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1585, VOAMRWB_ITU),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1825, VOAMRWB_ITU),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1985, VOAMRWB_ITU),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD2305, VOAMRWB_ITU),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD2385, VOAMRWB_ITU),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD66, VOAMRWB_RFC3267),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD885, VOAMRWB_RFC3267),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1265, VOAMRWB_RFC3267),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1425, VOAMRWB_RFC3267),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1585, VOAMRWB_RFC3267),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1825, VOAMRWB_RFC3267),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1985, VOAMRWB_RFC3267),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD2305, VOAMRWB_RFC3267),
-                make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD2385, VOAMRWB_RFC3267)));
+    AmrwbEncoderTestAll, AmrwbEncoderTest,
+    ::testing::Values(
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD66, VOAMRWB_DEFAULT,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD66_VOAMRWB_DEFAULT_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD885, VOAMRWB_DEFAULT,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD885_VOAMRWB_DEFAULT_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1265, VOAMRWB_DEFAULT,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1265_VOAMRWB_DEFAULT_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1425, VOAMRWB_DEFAULT,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1425_VOAMRWB_DEFAULT_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1585, VOAMRWB_DEFAULT,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1585_VOAMRWB_DEFAULT_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1825, VOAMRWB_DEFAULT,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1825_VOAMRWB_DEFAULT_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1985, VOAMRWB_DEFAULT,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1985_VOAMRWB_DEFAULT_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD2305, VOAMRWB_DEFAULT,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD2305_VOAMRWB_DEFAULT_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD2385, VOAMRWB_DEFAULT,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD2385_VOAMRWB_DEFAULT_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD66, VOAMRWB_ITU,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD66_VOAMRWB_ITU_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD885, VOAMRWB_ITU,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD885_VOAMRWB_ITU_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1265, VOAMRWB_ITU,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1265_VOAMRWB_ITU_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1425, VOAMRWB_ITU,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1425_VOAMRWB_ITU_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1585, VOAMRWB_ITU,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1585_VOAMRWB_ITU_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1825, VOAMRWB_ITU,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1825_VOAMRWB_ITU_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1985, VOAMRWB_ITU,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1985_VOAMRWB_ITU_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD2305, VOAMRWB_ITU,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD2305_VOAMRWB_ITU_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD2385, VOAMRWB_ITU,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD2385_VOAMRWB_ITU_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD66, VOAMRWB_RFC3267,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD66_VOAMRWB_RFC3267_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD885, VOAMRWB_RFC3267,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD885_VOAMRWB_RFC3267_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1265, VOAMRWB_RFC3267,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1265_VOAMRWB_RFC3267_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1425, VOAMRWB_RFC3267,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1425_VOAMRWB_RFC3267_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1585, VOAMRWB_RFC3267,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1585_VOAMRWB_RFC3267_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1825, VOAMRWB_RFC3267,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1825_VOAMRWB_RFC3267_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD1985, VOAMRWB_RFC3267,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD1985_VOAMRWB_RFC3267_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD2305, VOAMRWB_RFC3267,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD2305_VOAMRWB_RFC3267_ref.amrwb"),
+        make_tuple("bbb_raw_1ch_16khz_s16le.raw", VOAMRWB_MD2385, VOAMRWB_RFC3267,
+                    "bbb_raw_1ch_16khz_s16le_VOAMRWB_MD2385_VOAMRWB_RFC3267_ref.amrwb")));
 
 int main(int argc, char **argv) {
     gEnv = new AmrwbEncTestEnvironment();

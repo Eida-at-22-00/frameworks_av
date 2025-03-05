@@ -479,7 +479,7 @@ void MPEG2TSExtractor::init() {
 }
 
 status_t MPEG2TSExtractor::feedMore(bool isInit) {
-    Mutex::Autolock autoLock(mLock);
+    std::lock_guard<std::mutex> autoLock(mLock);
 
     uint8_t packet[kTSPacketSize];
     ssize_t n = mDataSource->readAt(mOffset + mHeaderSkip, packet, kTSPacketSize);

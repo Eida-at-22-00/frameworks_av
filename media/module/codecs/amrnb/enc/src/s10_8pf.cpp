@@ -746,11 +746,13 @@ void search_10and8i40(
 
             for (i5 = ipos[5]; i5 < L_CODE; i5 += step)
             {
-                ps2 = ps1 + *(p_temp1++);
+                __builtin_add_overflow(ps1, *(p_temp1++), &ps2);
 
-                alp2 = alp1 + ((Word32) * (p_temp2 + i5) << 12);
+                __builtin_add_overflow(alp1, *(p_temp2 + i5) << 12, &alp2);
 
-                alp_16 = (Word16)((alp2 + ((Word32) * (p_temp1++) << 14)) >> 16);
+                Word32 result;
+                __builtin_add_overflow(alp2, *(p_temp1++) << 14, &result);
+                alp_16 = (Word16)(result >> 16);
                 sq2 = (Word16)(((Word32) ps2 * ps2) >> 15);
 
                 if (((Word32) sq2 * alp) > ((Word32) sq * alp_16))

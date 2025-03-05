@@ -139,8 +139,8 @@ class C2SoftDav1dDec::IntfImpl : public SimpleInterface<void>::BaseParams {
         addParameter(DefineParam(mMaxSize, C2_PARAMKEY_MAX_PICTURE_SIZE)
                              .withDefault(new C2StreamMaxPictureSizeTuning::output(0u, 320, 240))
                              .withFields({
-                                     C2F(mSize, width).inRange(2, 2048, 2),
-                                     C2F(mSize, height).inRange(2, 2048, 2),
+                                     C2F(mSize, width).inRange(2, 4096, 2),
+                                     C2F(mSize, height).inRange(2, 4096, 2),
                              })
                              .withSetter(MaxPictureSizeSetter, mSize)
                              .build());

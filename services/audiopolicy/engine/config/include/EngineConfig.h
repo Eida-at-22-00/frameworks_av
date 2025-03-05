@@ -116,7 +116,7 @@ struct ParsingResult {
 /** Parses the provided audio policy usage configuration.
  * @return audio policy usage @see Config
  */
-ParsingResult parse(const char* path = DEFAULT_PATH);
+ParsingResult parse(const char* path = DEFAULT_PATH, bool isConfigurable = false);
 android::status_t parseLegacyVolumes(VolumeGroups &volumeGroups);
 ParsingResult convert(const ::android::media::audio::common::AudioHalEngineConfig& aidlConfig);
 // Exposed for testing.

@@ -33,6 +33,7 @@
 #include <stats_media_metrics.h>
 #include <stats_event.h>
 
+#include <audio_utils/StringUtils.h>
 #include <frameworks/proto_logging/stats/message/mediametrics_message.pb.h>
 #include <mediametricsservice/cleaner.h>
 #include <mediametricsservice/iface_statsd.h>
@@ -171,7 +172,7 @@ static int32_t getMetricsHdrFormatEnum(std::string &mime, std::string &component
 }
 
 static void parseVector(const std::string &str, std::vector<int32_t> *vector) {
-    if (!mediametrics::stringutils::parseVector(str, vector)) {
+    if (!audio_utils::stringutils::parseVector(str, vector)) {
         ALOGE("failed to parse integer vector from '%s'", str.c_str());
     }
 }

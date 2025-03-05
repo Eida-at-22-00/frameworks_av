@@ -101,7 +101,7 @@ binder_status_t TunerHidlService::instantiate() {
     return AServiceManager_addService(tunerService->asBinder().get(), getServiceName());
 }
 
-::ndk::ScopedAStatus TunerHidlService::openDemux(int32_t /* in_demuxHandle */,
+::ndk::ScopedAStatus TunerHidlService::openDemux(int64_t /* in_demuxHandle */,
                                                  shared_ptr<ITunerDemux>* _aidl_return) {
     ALOGV("openDemux");
     HidlResult res;
@@ -123,7 +123,7 @@ binder_status_t TunerHidlService::instantiate() {
     return ::ndk::ScopedAStatus::fromServiceSpecificError(static_cast<int32_t>(res));
 }
 
-::ndk::ScopedAStatus TunerHidlService::getDemuxInfo(int32_t /* in_demuxHandle */,
+::ndk::ScopedAStatus TunerHidlService::getDemuxInfo(int64_t /* in_demuxHandle */,
                                                     DemuxInfo* /* _aidl_return */) {
     ALOGE("getDemuxInfo is not supported");
     return ::ndk::ScopedAStatus::fromServiceSpecificError(
@@ -195,7 +195,7 @@ binder_status_t TunerHidlService::instantiate() {
     return ::ndk::ScopedAStatus::ok();
 }
 
-::ndk::ScopedAStatus TunerHidlService::openFrontend(int32_t frontendHandle,
+::ndk::ScopedAStatus TunerHidlService::openFrontend(int64_t frontendHandle,
                                                     shared_ptr<ITunerFrontend>* _aidl_return) {
     HidlResult status;
     sp<HidlIFrontend> frontend;
@@ -221,7 +221,8 @@ binder_status_t TunerHidlService::instantiate() {
     return ::ndk::ScopedAStatus::ok();
 }
 
-::ndk::ScopedAStatus TunerHidlService::openLnb(int lnbHandle, shared_ptr<ITunerLnb>* _aidl_return) {
+::ndk::ScopedAStatus TunerHidlService::openLnb(int64_t lnbHandle,
+                                               shared_ptr<ITunerLnb>* _aidl_return) {
     HidlResult status;
     sp<HidlILnb> lnb;
     int id = TunerHelper::getResourceIdFromHandle(lnbHandle, LNB);
@@ -256,7 +257,7 @@ binder_status_t TunerHidlService::instantiate() {
 }
 
 ::ndk::ScopedAStatus TunerHidlService::openDescrambler(
-        int32_t /*descramblerHandle*/, shared_ptr<ITunerDescrambler>* _aidl_return) {
+        int64_t /*descramblerHandle*/, shared_ptr<ITunerDescrambler>* _aidl_return) {
     HidlResult status;
     sp<HidlIDescrambler> descrambler;
     //int id = TunerHelper::getResourceIdFromHandle(descramblerHandle, DESCRAMBLER);
@@ -410,8 +411,8 @@ vector<TunerFrontendInfo> TunerHidlService::getTRMFrontendInfos() {
     return infos;
 }
 
-vector<int32_t> TunerHidlService::getTRMLnbHandles() {
-    vector<int32_t> lnbHandles;
+vector<int64_t> TunerHidlService::getTRMLnbHandles() {
+    vector<int64_t> lnbHandles;
     if (mTuner != nullptr) {
         HidlResult res;
         vector<HidlLnbId> lnbIds;

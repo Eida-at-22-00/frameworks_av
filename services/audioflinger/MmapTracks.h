@@ -36,7 +36,8 @@ public:
                             const android::content::AttributionSourceState& attributionSource,
                             pid_t creatorPid,
                             audio_port_handle_t portId = AUDIO_PORT_HANDLE_NONE,
-                            float volume = 0.0f);
+                            float volume = 0.0f,
+                            bool muted = false);
     ~MmapTrack() override;
 
     status_t initCheck() const final;
@@ -71,8 +72,13 @@ public:
     void setPortVolume(float volume) override {
         mVolume = volume;
     }
+    void setPortMute(bool muted) override {
+        mMutedFromPort = muted;
+    }
     float getPortVolume() const override { return mVolume; }
+    bool getPortMute() const override { return mMutedFromPort; }
 
+    std::string trackFlagsAsString() const final { return {}; }
 private:
     DISALLOW_COPY_AND_ASSIGN(MmapTrack);
 
@@ -86,6 +92,7 @@ private:
     void onTimestamp(const ExtendedTimestamp &timestamp) final;
 
     const pid_t mPid;
+    const uid_t mUid;
     bool  mSilenced;            // protected by MMapThread::mLock
     bool  mSilencedNotified;    // protected by MMapThread::mLock
 
@@ -95,6 +102,7 @@ private:
             /* GUARDED_BY(MmapPlaybackThread::mLock) */;
     mute_state_t mMuteState
             /* GUARDED_BY(MmapPlaybackThread::mLock) */;
+    bool mMutedFromPort;
 
     float mVolume = 0.0f;
 };  // end of Track

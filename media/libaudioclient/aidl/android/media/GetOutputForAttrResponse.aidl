@@ -26,8 +26,8 @@ parcelable GetOutputForAttrResponse {
     /** Interpreted as audio_io_handle_t. */
     int output;
     AudioStreamType stream;
-    /** Interpreted as audio_port_handle_t. */
-    int selectedDeviceId;
+    /** Interpreted as audio_port_handle_t[]. */
+    int[] selectedDeviceIds;
     /** Interpreted as audio_port_handle_t. */
     int portId;
     /** Interpreted as audio_io_handle_t[]. */
@@ -41,4 +41,6 @@ parcelable GetOutputForAttrResponse {
     AudioAttributes attr;
     /** initial port volume for the new audio track */
     float volume;
+    /** initial port muted state for the new audio track */
+    boolean muted;
 }

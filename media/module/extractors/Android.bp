@@ -28,6 +28,10 @@ cc_defaults {
         "liblog",
     ],
 
+    static_libs: [
+        "libstagefright_metadatautils",
+    ],
+
     // extractors are expected to run on Q(29)
     min_sdk_version: "29",
     apex_available: [
@@ -56,6 +60,7 @@ cc_defaults {
                 "libutils",
                 "libmediandk_format",
                 "libmedia_ndkformatpriv",
+                "libstagefright_metadatautils",
             ],
         },
     },
@@ -67,4 +72,28 @@ cc_defaults {
             "signed-integer-overflow",
         ],
     },
+}
+
+aconfig_declarations {
+    name: "android.media.extractor.flags-aconfig",
+    package: "com.android.media.extractor.flags",
+    container: "com.android.media",
+    srcs: ["extractor.aconfig"],
+}
+
+java_aconfig_library {
+    name: "android.media.extractor.flags-aconfig-java",
+    aconfig_declarations: "android.media.extractor.flags-aconfig",
+    defaults: ["framework-minus-apex-aconfig-java-defaults"],
+}
+
+cc_aconfig_library {
+    name: "android.media.extractor.flags-aconfig-cc",
+    aconfig_declarations: "android.media.extractor.flags-aconfig",
+    host_supported: true,
+    min_sdk_version: "29",
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.media",
+    ],
 }

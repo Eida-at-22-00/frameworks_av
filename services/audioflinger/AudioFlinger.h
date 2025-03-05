@@ -27,6 +27,7 @@
 #include "IAfTrack.h"
 #include "MelReporter.h"
 #include "PatchCommandThread.h"
+#include "audio_utils/clock.h"
 
 // External classes
 #include <audio_utils/mutex.h>
@@ -65,6 +66,11 @@ public:
 
     status_t resetReferencesForTest();
 
+    // Called by main when startup finished -- for logging purposes only
+    void startupFinished() {
+        mStartupFinishedTime.store(audio_utils_get_real_time_ns(), std::memory_order_release);
+    }
+
 private:
 
     // ---- begin IAudioFlinger interface
@@ -93,12 +99,12 @@ private:
     status_t getMasterBalance(float* balance) const final EXCLUDES_AudioFlinger_Mutex;
 
     status_t setStreamVolume(audio_stream_type_t stream, float value,
-            audio_io_handle_t output) final EXCLUDES_AudioFlinger_Mutex;
+            bool muted, audio_io_handle_t output) final EXCLUDES_AudioFlinger_Mutex;
     status_t setStreamMute(audio_stream_type_t stream, bool muted) final
             EXCLUDES_AudioFlinger_Mutex;
 
     status_t setPortsVolume(const std::vector<audio_port_handle_t>& portIds, float volume,
-            audio_io_handle_t output) final EXCLUDES_AudioFlinger_Mutex;
+                            bool muted, audio_io_handle_t output) final EXCLUDES_AudioFlinger_Mutex;
 
     status_t setMode(audio_mode_t mode) final EXCLUDES_AudioFlinger_Mutex;
 
@@ -337,7 +343,7 @@ private:
             audio_config_base_t* mixerConfig,
             audio_devices_t deviceType,
             const String8& address,
-            audio_output_flags_t flags,
+            audio_output_flags_t* flags,
             audio_attributes_t attributes) final REQUIRES(mutex());
     const DefaultKeyedVector<audio_module_handle_t, AudioHwDevice*>&
             getAudioHwDevs_l() const final REQUIRES(mutex(), hardwareMutex()) {
@@ -420,6 +426,10 @@ private:
 
     sp<EffectsFactoryHalInterface> getEffectsFactory();
 
+    int64_t getStartupFinishedTime() {
+        return mStartupFinishedTime.load(std::memory_order_acquire);
+    }
+
 public:
     // TODO(b/292281786): Remove this when Oboeservice can get access to
     // openMmapStream through an IAudioFlinger handle directly.
@@ -429,7 +439,7 @@ public:
                             const audio_attributes_t *attr,
                             audio_config_base_t *config,
                             const AudioClient& client,
-                            audio_port_handle_t *deviceId,
+                            DeviceIdVector *deviceIds,
                             audio_session_t *sessionId,
                             const sp<MmapStreamCallback>& callback,
                             sp<MmapStreamInterface>& interface,
@@ -469,9 +479,10 @@ private:
     // AudioFlinger::setParameters() updates with mutex().
     std::atomic_uint32_t mScreenState{};
 
-    void dumpPermissionDenial(int fd, const Vector<String16>& args);
-    void dumpClients_ll(int fd, const Vector<String16>& args) REQUIRES(mutex(), clientMutex());
-    void dumpInternals_l(int fd, const Vector<String16>& args) REQUIRES(mutex());
+    void dumpPermissionDenial(int fd);
+    void dumpClients_ll(int fd, bool dumpAllocators) REQUIRES(mutex(), clientMutex());
+    void dumpInternals_l(int fd) REQUIRES(mutex());
+    void dumpStats(int fd);
 
     SimpleLog mThreadLog{16}; // 16 Thread history limit
 
@@ -727,7 +738,8 @@ private:
                 // Audio data transfer is directly handled by the client creating the MMAP stream
     DefaultKeyedVector<audio_io_handle_t, sp<IAfMmapThread>> mMmapThreads GUARDED_BY(mutex());
 
-    sp<Client> registerPid(pid_t pid) EXCLUDES_AudioFlinger_ClientMutex; // always returns non-0
+    // always returns non-null
+    sp<Client> registerClient(pid_t pid, uid_t uid) EXCLUDES_AudioFlinger_ClientMutex;
 
     sp<IAfEffectHandle> createOrphanEffect_l(const sp<Client>& client,
                                           const sp<media::IEffectClient>& effectClient,
@@ -762,9 +774,6 @@ private:
     int64_t mTotalMemory GUARDED_BY(mutex()) = 0;
     std::atomic<size_t> mClientSharedHeapSize = kMinimumClientSharedHeapSizeBytes;
     static constexpr size_t kMinimumClientSharedHeapSizeBytes = 1024 * 1024; // 1MB
-
-    // when a global effect was last enabled
-    nsecs_t mGlobalEffectEnableTime GUARDED_BY(mutex()) = 0;
 
     /* const */ sp<IAfPatchPanel> mPatchPanel;
 
@@ -801,6 +810,10 @@ private:
 
     // Local interface to AudioPolicyService, late inited, but logically const
     mediautils::atomic_sp<media::IAudioPolicyServiceLocal> mAudioPolicyServiceLocal;
+
+    const int64_t mStartTime = audio_utils_get_real_time_ns();
+    // Late-inited from main()
+    std::atomic<int64_t> mStartupFinishedTime {};
 };
 
 // ----------------------------------------------------------------------------

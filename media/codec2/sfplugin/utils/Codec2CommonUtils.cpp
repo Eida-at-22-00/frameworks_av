@@ -64,6 +64,13 @@ static bool isP010Allowed() {
     return kVendorApiLevel >= __ANDROID_API_T__;
 }
 
+static bool isP210Allowed() {
+    static const int32_t kVendorApiLevel =
+        base::GetIntProperty<int32_t>("ro.vendor.api_level", 0);
+
+    return kVendorApiLevel > __ANDROID_API_V__;
+}
+
 bool isHalPixelFormatSupported(AHardwareBuffer_Format format) {
     // HAL_PIXEL_FORMAT_YCBCR_P010 requirement was added in T VSR, although it could have been
     // supported prior to this.
@@ -73,6 +80,12 @@ bool isHalPixelFormatSupported(AHardwareBuffer_Format format) {
     // to Android T VSR (as opposed to simply limiting to a T vendor image).
     if (format == (AHardwareBuffer_Format)HAL_PIXEL_FORMAT_YCBCR_P010 &&
             !isP010Allowed()) {
+        return false;
+    }
+
+    // P210 is not available before Android B
+    if (format == (AHardwareBuffer_Format)AHARDWAREBUFFER_FORMAT_YCbCr_P210 &&
+            !isP210Allowed()) {
         return false;
     }
 

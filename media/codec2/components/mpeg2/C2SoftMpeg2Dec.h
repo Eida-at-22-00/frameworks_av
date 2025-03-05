@@ -144,21 +144,22 @@ struct C2SoftMpeg2Dec : public SimpleC2Component {
     };
 
     std::shared_ptr<IntfImpl> mIntf;
-    iv_obj_t *mDecHandle;
-    iv_mem_rec_t *mMemRecords;
-    size_t mNumMemRecords;
+    iv_obj_t *mDecHandle = nullptr;
+    iv_mem_rec_t *mMemRecords = nullptr;
+    size_t mNumMemRecords = 0;
     std::shared_ptr<C2GraphicBlock> mOutBlock;
-    uint8_t *mOutBufferDrain;
+    uint8_t *mOutBufferDrain = nullptr;
 
-    size_t mNumCores;
-    IV_COLOR_FORMAT_T mIvColorformat;
+    size_t mNumCores = 1;
+    IV_COLOR_FORMAT_T mIvColorformat = IV_YUV_420P;
 
-    uint32_t mWidth;
-    uint32_t mHeight;
-    uint32_t mStride;
-    bool mSignalledOutputEos;
-    bool mSignalledError;
-    std::atomic_uint64_t mOutIndex;
+    uint32_t mWidth = 320;
+    uint32_t mHeight = 240;
+    uint32_t mStride = 0;
+    bool mSignalledOutputEos = false;
+    bool mSignalledError = false;
+    bool mKeepThreadsActive = false;
+    std::atomic_uint64_t mOutIndex = 0;
 
     // Color aspects. These are ISO values and are meant to detect changes in aspects to avoid
     // converting them to C2 values for each frame

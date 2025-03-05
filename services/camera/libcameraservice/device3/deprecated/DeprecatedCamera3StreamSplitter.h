@@ -95,6 +95,7 @@ class DeprecatedCamera3StreamSplitter : public BnConsumerListener {
 
     void setHalBufferManager(bool enabled);
 
+    status_t setTransform(size_t surfaceId, int transform);
   private:
     // From IConsumerListener
     //
@@ -258,6 +259,9 @@ class DeprecatedCamera3StreamSplitter : public BnConsumerListener {
 
     // Map surface ids -> gbp outputs
     std::unordered_map<int, sp<Surface>> mOutputSurfaces;
+
+    // Map surface ids -> transform
+    std::unordered_map<int, int> mOutputTransforms;
 
     // Map surface ids -> consumer buffer count
     std::unordered_map<int, size_t> mConsumerBufferCount;

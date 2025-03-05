@@ -54,6 +54,7 @@ using hardware::camera2::impl::PhysicalCaptureResultInfo;
 using hardware::kSynchronizedReadWrite;
 using hardware::MessageQueue;
 using CaptureResultMetadataQueue = MessageQueue<uint8_t, kSynchronizedReadWrite>;
+using CameraMetadataInfo = android::hardware::camera2::CameraMetadataInfo;
 
 struct H2BCameraDeviceCallbacks :
     public H2BConverter<HCameraDeviceCallback, ICameraDeviceCallbacks, BnCameraDeviceCallbacks> {
@@ -72,7 +73,8 @@ struct H2BCameraDeviceCallbacks :
                                             int64_t timestamp) override;
 
     virtual binder::Status onResultReceived(
-        const CameraMetadataNative& result, const CaptureResultExtras& resultExtras,
+        const CameraMetadataInfo &,
+        const CaptureResultExtras& resultExtras,
         const std::vector<PhysicalCaptureResultInfo>& physicalCaptureResultInfos) override;
 
     virtual binder::Status onPrepared(int32_t streamId) override;
@@ -84,6 +86,10 @@ struct H2BCameraDeviceCallbacks :
 
     void setCaptureResultMetadataQueue(std::shared_ptr<CaptureResultMetadataQueue> metadataQueue) {
         mCaptureResultMetadataQueue = metadataQueue;
+    }
+
+    virtual binder::Status onClientSharedAccessPriorityChanged(bool /*primaryClient*/) {
+        return binder::Status::ok();
     }
 
  private:

@@ -22,6 +22,7 @@
 #include <binder/Parcel.h>
 #include <binder/IMemory.h>
 #include <binder/Status.h>
+#include <gui/Flags.h>
 #include <utils/String8.h>
 
 namespace android {
@@ -33,8 +34,13 @@ namespace hardware {
 
 class ICameraClient;
 
-class ICamera: public android::IInterface
-{
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+typedef Surface ProducerType;
+#else
+typedef IGraphicBufferProducer ProducerType;
+#endif
+
+class ICamera : public android::IInterface {
     /**
      * Keep up-to-date with ICamera.aidl in frameworks/base
      */
@@ -61,9 +67,8 @@ public:
     // allow other processes to use this ICamera interface
     virtual status_t        unlock() = 0;
 
-    // pass the buffered IGraphicBufferProducer to the camera service
-    virtual status_t        setPreviewTarget(
-            const sp<IGraphicBufferProducer>& bufferProducer) = 0;
+    // pass the SurfaceType to the camera service
+    virtual status_t        setPreviewTarget(const sp<SurfaceType>& bufferProducer) = 0;
 
     // set the preview callback flag to affect how the received frames from
     // preview are handled. Enabling preview callback flags disables any active
@@ -73,8 +78,7 @@ public:
     // of preview callback buffers. Passing a valid interface here disables any
     // active preview callbacks set by setPreviewCallbackFlag(). Passing NULL
     // disables the use of the callback target.
-    virtual status_t        setPreviewCallbackTarget(
-            const sp<IGraphicBufferProducer>& callbackProducer) = 0;
+    virtual status_t        setPreviewCallbackTarget(const sp<SurfaceType>& callbackProducer) = 0;
 
     // start preview mode, must call setPreviewTarget first
     virtual status_t        startPreview() = 0;
@@ -138,8 +142,7 @@ public:
     virtual status_t        setVideoBufferMode(int32_t videoBufferMode) = 0;
 
     // Set the video buffer producer for camera to use in VIDEO_BUFFER_MODE_BUFFER_QUEUE mode.
-    virtual status_t        setVideoTarget(
-            const sp<IGraphicBufferProducer>& bufferProducer) = 0;
+    virtual status_t        setVideoTarget(const sp<SurfaceType>& bufferProducer) = 0;
 
     // Set the audio restriction mode
     virtual status_t        setAudioRestriction(int32_t mode) = 0;

@@ -17,6 +17,7 @@
 
 #include "aaudio/AAudio.h"
 #include "aaudio/AAudioTesting.h"
+#include "system/aaudio/AAudio.h"
 #include <fuzzer/FuzzedDataProvider.h>
 
 #include <functional>
@@ -24,6 +25,7 @@
 constexpr int32_t kRandomStringLength = 256;
 constexpr int32_t kMaxRuns = 100;
 constexpr int64_t kNanosPerMillisecond = 1000 * 1000;
+constexpr int32_t kAAudioAttributesTagsMaxSize = 256;
 
 constexpr aaudio_direction_t kDirections[] = {
     AAUDIO_DIRECTION_OUTPUT, AAUDIO_DIRECTION_INPUT, AAUDIO_UNSPECIFIED};
@@ -183,6 +185,12 @@ void LibAaudioFuzzer::invokeAAudioSetAPIs(FuzzedDataProvider &fdp){
           fdp.PickValueInArray({AAUDIO_UNSPECIFIED, fdp.ConsumeIntegral<int32_t>()});
   AAudioStreamBuilder_setFramesPerDataCallback(mAaudioBuilder, framesPerDataCallback);
 
+  const size_t tagsNumBytes = fdp.ConsumeIntegralInRange<size_t>(
+          0, kAAudioAttributesTagsMaxSize + 10);
+  AAudioStreamBuilder_addTag(mAaudioBuilder,
+                             (tagsNumBytes == 0 ? nullptr
+                                                : fdp.ConsumeBytesAsString(tagsNumBytes).c_str()));
+
   aaudio_policy_t policy =
           fdp.PickValueInArray({fdp.PickValueInArray(kPolicies), fdp.ConsumeIntegral<int32_t>()});
   AAudio_setMMapPolicy(policy);
@@ -193,6 +201,7 @@ void LibAaudioFuzzer::process(const uint8_t *data, size_t size) {
   int32_t maxFrames = 0;
   int32_t count = 0;
   aaudio_stream_state_t state = AAUDIO_STREAM_STATE_UNKNOWN;
+  int numOfTags = 0;
 
   invokeAAudioSetAPIs(fdp);
 
@@ -310,6 +319,11 @@ void LibAaudioFuzzer::process(const uint8_t *data, size_t size) {
             },
             [&]() {
                 (void)AAudioStream_getBufferSizeInFrames(mAaudioStream);
+            },
+            [&]() {
+                char** tags = nullptr;
+                (void)AAudioStream_obtainTags(mAaudioStream, &tags);
+                AAudioStream_releaseTags(mAaudioStream, tags);
             },
             [&]() {
                 (void)AAudioStream_isMMapUsed(mAaudioStream);

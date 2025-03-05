@@ -45,6 +45,32 @@
             "file_patterns": ["(?i)drm|crypto"]
         }
     ],
+    "postsubmit": [
+        {
+            "name": "MctsMediaCodecTestCases",
+            "options": [
+                {
+                    "include-filter": "android.media.codec.cts.EncodeDecodeTest"
+                }
+            ]
+        },
+        {
+            "name": "MctsMediaCodecTestCases",
+            "options": [
+                {
+                    "include-filter": "android.media.codec.cts.DecodeEditEncodeTest"
+                }
+            ]
+        },
+        {
+            "name": "MctsMediaCodecTestCases",
+            "options": [
+                {
+                    "include-filter": "android.media.codec.cts.ExtractDecodeEditEncodeMuxTest"
+                }
+            ]
+        }
+    ],
     // Postsubmit tests for TV devices
     "tv-postsubmit": [
         {

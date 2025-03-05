@@ -192,6 +192,16 @@ ndk::ScopedAStatus AidlCameraDeviceUser::waitUntilIdle() {
     return fromUStatus(ret);
 }
 
+ndk::ScopedAStatus AidlCameraDeviceUser::isPrimaryClient(bool* _aidl_return) {
+    bool isPrimary;
+    UStatus ret = mDeviceRemote->isPrimaryClient(&isPrimary);
+    if (!ret.isOk()) {
+        ALOGE("%s: Failed to get isPrimaryClient: %s", __FUNCTION__, ret.toString8().c_str());
+    }
+    *_aidl_return = isPrimary;
+    return fromUStatus(ret);
+}
+
 ndk::ScopedAStatus AidlCameraDeviceUser::flush(int64_t* _aidl_return) {
     UStatus ret = mDeviceRemote->flush(_aidl_return);
     return fromUStatus(ret);

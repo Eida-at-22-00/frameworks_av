@@ -41,19 +41,20 @@ status_t AudioHwDevice::openOutputStream(
         AudioStreamOut **ppStreamOut,
         audio_io_handle_t handle,
         audio_devices_t deviceType,
-        audio_output_flags_t flags,
+        audio_output_flags_t *flags,
         struct audio_config *config,
         const char *address,
         const std::vector<playback_track_metadata_v7_t>& sourceMetadata)
 {
 
     struct audio_config originalConfig = *config;
-    auto outputStream = new AudioStreamOut(this, flags);
+    auto outputStream = new AudioStreamOut(this);
 
     // Try to open the HAL first using the current format.
     ALOGV("openOutputStream(), try sampleRate %d, format %#x, channelMask %#x", config->sample_rate,
             config->format, config->channel_mask);
-    status_t status = outputStream->open(handle, deviceType, config, address, sourceMetadata);
+    status_t status = outputStream->open(handle, deviceType, config, flags, address,
+                                        sourceMetadata);
 
     if (status != NO_ERROR) {
         delete outputStream;
@@ -67,19 +68,25 @@ status_t AudioHwDevice::openOutputStream(
 
         // If the data is encoded then try again using wrapped PCM.
         const bool wrapperNeeded = !audio_has_proportional_frames(originalConfig.format)
-                && ((flags & AUDIO_OUTPUT_FLAG_DIRECT) != 0)
-                && ((flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0);
+                && ((*flags & AUDIO_OUTPUT_FLAG_DIRECT) != 0)
+                && ((*flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0);
 
         if (wrapperNeeded) {
             if (SPDIFEncoder::isFormatSupported(originalConfig.format)) {
-                outputStream = new SpdifStreamOut(this, flags, originalConfig.format);
-                status = outputStream->open(handle, deviceType, &originalConfig, address,
+                outputStream = new SpdifStreamOut(this, originalConfig.format);
+                status = outputStream->open(handle, deviceType, &originalConfig, flags, address,
                                             sourceMetadata);
                 if (status != NO_ERROR) {
                     ALOGE("ERROR - openOutputStream(), SPDIF open returned %d",
                         status);
                     delete outputStream;
                     outputStream = nullptr;
+                } else {
+                    // on success, we need to assign the actual HAL stream config so that clients
+                    // know and can later patch correctly.
+                    config->format = originalConfig.format;
+                    config->channel_mask = originalConfig.channel_mask;
+                    config->sample_rate = originalConfig.sample_rate;
                 }
             } else {
                 ALOGE("ERROR - openOutputStream(), SPDIFEncoder does not support format 0x%08x",
@@ -153,6 +160,12 @@ status_t AudioHwDevice::openInputStream(
                         status);
                     delete inputStream;
                     inputStream = nullptr;
+                } else {
+                    // on success, we need to assign the actual HAL stream config so that clients
+                    // know and can later patch correctly.
+                    config->format = originalConfig.format;
+                    config->channel_mask = originalConfig.channel_mask;
+                    config->sample_rate = originalConfig.sample_rate;
                 }
             } else {
                 ALOGE("ERROR - openInputStream(), SPDIFDecoder does not support format 0x%08x",

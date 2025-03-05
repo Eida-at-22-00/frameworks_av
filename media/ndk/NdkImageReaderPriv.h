@@ -20,6 +20,7 @@
 #include <inttypes.h>
 
 #include <media/NdkImageReader.h>
+#include <media-vndk/VndkImageReader.h>
 
 #include <utils/List.h>
 #include <utils/Mutex.h>
@@ -68,6 +69,7 @@ struct AImageReader : public RefBase {
 
     media_status_t setImageListener(AImageReader_ImageListener* listener);
     media_status_t setBufferRemovedListener(AImageReader_BufferRemovedListener* listener);
+    media_status_t setUsage(uint64_t usage);
 
     media_status_t acquireNextImage(/*out*/AImage** image, /*out*/int* fenceFd);
     media_status_t acquireLatestImage(/*out*/AImage** image, /*out*/int* fenceFd);
@@ -121,7 +123,7 @@ struct AImageReader : public RefBase {
     const int32_t mWidth;
     const int32_t mHeight;
     int32_t mFormat;
-    const uint64_t mUsage;  // AHARDWAREBUFFER_USAGE_* flags.
+    uint64_t mUsage;  // AHARDWAREBUFFER_USAGE_* flags.
     const int32_t mMaxImages;
 
     // TODO(jwcai) Seems completely unused in AImageReader class.

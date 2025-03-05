@@ -1,0 +1,80 @@
+//
+// Copyright (C) 2024 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+package {
+    default_applicable_licenses: ["frameworks_av_license"],
+}
+
+cc_defaults {
+    name: "libapexcodecs-defaults",
+    header_libs: [
+        "libbase_headers",
+    ],
+
+    srcs: ["ApexCodecs.cpp"],
+
+    shared_libs: [
+        "libbase",
+        "libnativewindow",
+    ],
+
+    export_include_dirs: ["include"],
+
+    export_shared_lib_headers: [
+        "libbase",
+        "libnativewindow",
+    ],
+
+}
+
+cc_library_headers {
+    name: "libapexcodecs-header",
+    visibility: [
+        "//frameworks/av/apex:__subpackages__",
+        "//frameworks/av/media/codec2/hal/client",
+    ],
+    export_include_dirs: ["include"],
+}
+
+cc_library {
+    name: "libapexcodecs-testing",
+    defaults: ["libapexcodecs-defaults"],
+
+    visibility: [
+        ":__subpackages__",
+    ],
+}
+
+cc_library {
+    name: "libapexcodecs",
+    defaults: ["libapexcodecs-defaults"],
+
+    visibility: [
+        "//frameworks/av/apex:__subpackages__",
+        "//frameworks/av/media/codec2/hal/client",
+    ],
+
+    min_sdk_version: "apex_inherit",
+    version_script: "libapexcodecs.map.txt",
+    stubs: {
+        symbol_file: "libapexcodecs.map.txt",
+        versions: ["36"],
+    },
+
+    apex_available: [
+        "com.android.media.swcodec",
+    ],
+}

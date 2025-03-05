@@ -177,6 +177,34 @@ camera_status_t ACameraCaptureSession_abortCaptures(ACameraCaptureSession* sessi
 }
 
 EXPORT
+camera_status_t ACameraCaptureSessionShared_startStreaming(
+    ACameraCaptureSession* /*session*/, ACameraCaptureSession_captureCallbacksV2* /*callbacks*/,
+    int /*numOutputWindows*/, ANativeWindow** /*window*/,
+    int* /*captureSequenceId*/) {
+    ATRACE_CALL();
+    // Todo: need to add implementation
+    return  ACAMERA_OK;
+}
+
+EXPORT
+camera_status_t ACameraCaptureSessionShared_logicalCamera_startStreaming(
+    ACameraCaptureSession* /*session*/,
+    ACameraCaptureSession_logicalCamera_captureCallbacksV2* /*callbacks*/,
+    int /*numOutputWindows*/, ANativeWindow** /*windows*/,
+    int* /*captureSequenceId*/) {
+    ATRACE_CALL();
+    // Todo: need to add implementation
+    return  ACAMERA_OK;
+}
+
+EXPORT
+camera_status_t ACameraCaptureSessionShared_stopStreaming(ACameraCaptureSession* /*session*/) {
+    ATRACE_CALL();
+    // Todo: need to add implementation
+    return  ACAMERA_OK;
+}
+
+EXPORT
 camera_status_t ACameraCaptureSession_updateSharedOutput(ACameraCaptureSession* session,
         ACaptureSessionOutput* output) {
     ATRACE_CALL();

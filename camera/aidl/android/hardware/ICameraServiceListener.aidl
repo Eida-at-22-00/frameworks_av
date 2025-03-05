@@ -105,5 +105,6 @@ interface ICameraServiceListener
      * will receive such callbacks.
      */
     oneway void onCameraOpened(@utf8InCpp String cameraId, @utf8InCpp String clientPackageId, int deviceId);
+    oneway void onCameraOpenedInSharedMode(@utf8InCpp String cameraId, @utf8InCpp String clientPackageId, int deviceId, boolean primaryClient);
     oneway void onCameraClosed(@utf8InCpp String cameraId, int deviceId);
 }

@@ -858,17 +858,17 @@ status_t MediaRecorder::setInputDevice(audio_port_handle_t deviceId)
     return mMediaRecorder->setInputDevice(deviceId);
 }
 
-status_t MediaRecorder::getRoutedDeviceId(audio_port_handle_t* deviceId)
+status_t MediaRecorder::getRoutedDeviceIds(DeviceIdVector& deviceIds)
 {
-    ALOGV("getRoutedDeviceId");
+    ALOGV("getRoutedDeviceIds");
 
     if (mMediaRecorder == NULL) {
         ALOGE("media recorder is not initialized yet");
         return INVALID_OPERATION;
     }
-    status_t status = mMediaRecorder->getRoutedDeviceId(deviceId);
+    status_t status = mMediaRecorder->getRoutedDeviceIds(deviceIds);
     if (status != NO_ERROR) {
-        *deviceId = AUDIO_PORT_HANDLE_NONE;
+        deviceIds.clear();
     }
     return status;
 }

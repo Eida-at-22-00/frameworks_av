@@ -233,14 +233,14 @@ PowerStats PowerStats::operator+=(const PowerStats& other) {
     health_stats += other.health_stats;
     if (power_entity_state_residency.empty()) {
         power_entity_state_residency = other.power_entity_state_residency;
-    } else {
+    } else if (power_entity_state_residency.size() == other.power_entity_state_residency.size()) {
         for (size_t i = 0; i < power_entity_state_residency.size(); ++i) {
             power_entity_state_residency[i] += other.power_entity_state_residency[i];
         }
     }
     if (rail_energy.empty()) {
         rail_energy = other.rail_energy;
-    } else {
+    } else if (rail_energy.size() == other.rail_energy.size()) {
         for (size_t i = 0; i < rail_energy.size(); ++i) {
             rail_energy[i] += other.rail_energy[i];
         }
@@ -253,14 +253,14 @@ PowerStats PowerStats::operator-=(const PowerStats& other) {
     health_stats -= other.health_stats;
     if (power_entity_state_residency.empty()) {
         power_entity_state_residency = other.power_entity_state_residency;
-    } else {
+    } else if (power_entity_state_residency.size() == other.power_entity_state_residency.size()) {
         for (size_t i = 0; i < power_entity_state_residency.size(); ++i) {
             power_entity_state_residency[i] -= other.power_entity_state_residency[i];
         }
     }
     if (rail_energy.empty()) {
         rail_energy = other.rail_energy;
-    } else {
+    } else if (rail_energy.size() == other.rail_energy.size()) {
         for (size_t i = 0; i < rail_energy.size(); ++i) {
             rail_energy[i] -= other.rail_energy[i];
         }

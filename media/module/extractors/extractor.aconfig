@@ -1,0 +1,23 @@
+# Media Extractor flags.
+#
+# !!! Please add flags in alphabetical order. !!!
+package: "com.android.media.extractor.flags"
+container: "com.android.media"
+
+flag {
+    name: "extractor_sniff_midi_optimizations"
+    is_exported: true
+    is_fixed_read_only: true
+    namespace: "media_solutions"
+    description: "Enable SniffMidi optimizations."
+    bug: "359920208"
+}
+
+flag {
+    name: "extractor_mp4_enable_apv"
+    is_exported: true
+    is_fixed_read_only: true
+    namespace: "media_solutions"
+    description: "Enable APV support in mp4 extractor."
+    bug: "370061501"
+}

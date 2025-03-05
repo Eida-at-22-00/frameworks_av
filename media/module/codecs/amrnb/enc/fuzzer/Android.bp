@@ -19,6 +19,7 @@
  */
 
 package {
+    default_team: "trendy_team_media_codec_framework",
     // See: http://go/android-license-faq
     // A large-scale-change added 'default_applicable_licenses' to import
     // all of the 'license_kinds' from "frameworks_av_media_codecs_amrnb_enc_license"
@@ -39,8 +40,8 @@ cc_fuzz {
 
     static_libs: [
         "liblog",
-        "libstagefright_amrnbenc",
         "libstagefright_amrnb_common",
+        "libstagefright_amrnbenc",
     ],
 
     fuzz_config: {

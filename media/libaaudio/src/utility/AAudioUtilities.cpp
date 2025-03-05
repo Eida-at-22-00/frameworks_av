@@ -147,6 +147,27 @@ audio_format_t AAudioConvert_aaudioToAndroidDataFormat(aaudio_format_t aaudioFor
     case AAUDIO_FORMAT_IEC61937:
         androidFormat = AUDIO_FORMAT_IEC61937;
         break;
+    case AAUDIO_FORMAT_MP3:
+        androidFormat = AUDIO_FORMAT_MP3;
+        break;
+    case AAUDIO_FORMAT_AAC_LC:
+        androidFormat = AUDIO_FORMAT_AAC_LC;
+        break;
+    case AAUDIO_FORMAT_AAC_HE_V1:
+        androidFormat = AUDIO_FORMAT_AAC_HE_V1;
+        break;
+    case AAUDIO_FORMAT_AAC_HE_V2:
+        androidFormat = AUDIO_FORMAT_AAC_HE_V2;
+        break;
+    case AAUDIO_FORMAT_AAC_ELD:
+        androidFormat = AUDIO_FORMAT_AAC_ELD;
+        break;
+    case AAUDIO_FORMAT_AAC_XHE:
+        androidFormat = AUDIO_FORMAT_AAC_XHE;
+        break;
+    case AAUDIO_FORMAT_OPUS:
+        androidFormat = AUDIO_FORMAT_OPUS;
+        break;
     default:
         androidFormat = AUDIO_FORMAT_INVALID;
         ALOGE("%s() 0x%08X unrecognized", __func__, aaudioFormat);
@@ -175,6 +196,27 @@ aaudio_format_t AAudioConvert_androidToAAudioDataFormat(audio_format_t androidFo
         break;
     case AUDIO_FORMAT_IEC61937:
         aaudioFormat = AAUDIO_FORMAT_IEC61937;
+        break;
+    case AUDIO_FORMAT_MP3:
+        aaudioFormat = AAUDIO_FORMAT_MP3;
+        break;
+    case AUDIO_FORMAT_AAC_LC:
+        aaudioFormat = AAUDIO_FORMAT_AAC_LC;
+        break;
+    case AUDIO_FORMAT_AAC_HE_V1:
+        aaudioFormat = AAUDIO_FORMAT_AAC_HE_V1;
+        break;
+    case AUDIO_FORMAT_AAC_HE_V2:
+        aaudioFormat = AAUDIO_FORMAT_AAC_HE_V2;
+        break;
+    case AUDIO_FORMAT_AAC_ELD:
+        aaudioFormat = AAUDIO_FORMAT_AAC_ELD;
+        break;
+    case AUDIO_FORMAT_AAC_XHE:
+        aaudioFormat = AAUDIO_FORMAT_AAC_XHE;
+        break;
+    case AUDIO_FORMAT_OPUS:
+        aaudioFormat = AAUDIO_FORMAT_OPUS;
         break;
     default:
         aaudioFormat = AAUDIO_FORMAT_INVALID;
@@ -692,4 +734,129 @@ aaudio_policy_t AAudio_getAAudioPolicy(const std::vector<AudioMMapPolicyInfo>& p
         }
     }
     return aidl2legacy_aaudio_policy(policy);
+}
+
+audio_devices_t AAudioConvert_aaudioToAndroidDeviceType(AAudio_DeviceType device,
+                                                        aaudio_direction_t direction) {
+    if (direction == AAUDIO_DIRECTION_INPUT) {
+        switch (device) {
+            case AAUDIO_DEVICE_BUILTIN_MIC:
+                return AUDIO_DEVICE_IN_BUILTIN_MIC;
+            case AAUDIO_DEVICE_BLUETOOTH_SCO:
+                return AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET;
+            case AAUDIO_DEVICE_WIRED_HEADSET:
+                return AUDIO_DEVICE_IN_WIRED_HEADSET;
+            case AAUDIO_DEVICE_HDMI:
+                return AUDIO_DEVICE_IN_HDMI;
+            case AAUDIO_DEVICE_TELEPHONY:
+                return AUDIO_DEVICE_IN_TELEPHONY_RX;
+            case AAUDIO_DEVICE_DOCK:
+                return AUDIO_DEVICE_IN_DGTL_DOCK_HEADSET;
+            case AAUDIO_DEVICE_DOCK_ANALOG:
+                return AUDIO_DEVICE_IN_ANLG_DOCK_HEADSET;
+            case AAUDIO_DEVICE_USB_ACCESSORY:
+                return AUDIO_DEVICE_IN_USB_ACCESSORY;
+            case AAUDIO_DEVICE_USB_DEVICE:
+                return AUDIO_DEVICE_IN_USB_DEVICE;
+            case AAUDIO_DEVICE_USB_HEADSET:
+                return AUDIO_DEVICE_IN_USB_HEADSET;
+            case AAUDIO_DEVICE_FM_TUNER:
+                return AUDIO_DEVICE_IN_FM_TUNER;
+            case AAUDIO_DEVICE_TV_TUNER:
+                return AUDIO_DEVICE_IN_TV_TUNER;
+            case AAUDIO_DEVICE_LINE_ANALOG:
+                return AUDIO_DEVICE_IN_LINE;
+            case AAUDIO_DEVICE_LINE_DIGITAL:
+                return AUDIO_DEVICE_IN_SPDIF;
+            case AAUDIO_DEVICE_BLUETOOTH_A2DP:
+                return AUDIO_DEVICE_IN_BLUETOOTH_A2DP;
+            case AAUDIO_DEVICE_IP:
+                return AUDIO_DEVICE_IN_IP;
+            case AAUDIO_DEVICE_BUS:
+                return AUDIO_DEVICE_IN_BUS;
+            case AAUDIO_DEVICE_REMOTE_SUBMIX:
+                return AUDIO_DEVICE_IN_REMOTE_SUBMIX;
+            case AAUDIO_DEVICE_BLE_HEADSET:
+                return AUDIO_DEVICE_IN_BLE_HEADSET;
+            case AAUDIO_DEVICE_HDMI_ARC:
+                return AUDIO_DEVICE_IN_HDMI_ARC;
+            case AAUDIO_DEVICE_HDMI_EARC:
+                return AUDIO_DEVICE_IN_HDMI_EARC;
+            default:
+                break;
+        }
+    } else {
+        switch (device) {
+            case AAUDIO_DEVICE_BUILTIN_EARPIECE:
+                return AUDIO_DEVICE_OUT_EARPIECE;
+            case AAUDIO_DEVICE_BUILTIN_SPEAKER:
+                return AUDIO_DEVICE_OUT_SPEAKER;
+            case AAUDIO_DEVICE_WIRED_HEADSET:
+                return AUDIO_DEVICE_OUT_WIRED_HEADSET;
+            case AAUDIO_DEVICE_WIRED_HEADPHONES:
+                return AUDIO_DEVICE_OUT_WIRED_HEADPHONE;
+            case AAUDIO_DEVICE_LINE_ANALOG:
+                return AUDIO_DEVICE_OUT_LINE;
+            case AAUDIO_DEVICE_LINE_DIGITAL:
+                return AUDIO_DEVICE_OUT_SPDIF;
+            case AAUDIO_DEVICE_BLUETOOTH_SCO:
+                return AUDIO_DEVICE_OUT_BLUETOOTH_SCO;
+            case AAUDIO_DEVICE_BLUETOOTH_A2DP:
+                return AUDIO_DEVICE_OUT_BLUETOOTH_A2DP;
+            case AAUDIO_DEVICE_HDMI:
+                return AUDIO_DEVICE_OUT_HDMI;
+            case AAUDIO_DEVICE_HDMI_ARC:
+                return AUDIO_DEVICE_OUT_HDMI_ARC;
+            case AAUDIO_DEVICE_HDMI_EARC:
+                return AUDIO_DEVICE_OUT_HDMI_EARC;
+            case AAUDIO_DEVICE_USB_DEVICE:
+                return AUDIO_DEVICE_OUT_USB_DEVICE;
+            case AAUDIO_DEVICE_USB_HEADSET:
+                return AUDIO_DEVICE_OUT_USB_HEADSET;
+            case AAUDIO_DEVICE_USB_ACCESSORY:
+                return AUDIO_DEVICE_OUT_USB_ACCESSORY;
+            case AAUDIO_DEVICE_DOCK:
+                return AUDIO_DEVICE_OUT_DGTL_DOCK_HEADSET;
+            case AAUDIO_DEVICE_DOCK_ANALOG:
+                return AUDIO_DEVICE_OUT_ANLG_DOCK_HEADSET;
+            case AAUDIO_DEVICE_FM:
+                return AUDIO_DEVICE_OUT_FM;
+            case AAUDIO_DEVICE_TELEPHONY:
+                return AUDIO_DEVICE_OUT_TELEPHONY_TX;
+            case AAUDIO_DEVICE_AUX_LINE:
+                return AUDIO_DEVICE_OUT_AUX_LINE;
+            case AAUDIO_DEVICE_IP:
+                return AUDIO_DEVICE_OUT_IP;
+            case AAUDIO_DEVICE_BUS:
+                return AUDIO_DEVICE_OUT_BUS;
+            case AAUDIO_DEVICE_HEARING_AID:
+                return AUDIO_DEVICE_OUT_HEARING_AID;
+            case AAUDIO_DEVICE_BUILTIN_SPEAKER_SAFE:
+                return AUDIO_DEVICE_OUT_SPEAKER_SAFE;
+            case AAUDIO_DEVICE_REMOTE_SUBMIX:
+                return AUDIO_DEVICE_OUT_REMOTE_SUBMIX;
+            case AAUDIO_DEVICE_BLE_HEADSET:
+                return AUDIO_DEVICE_OUT_BLE_HEADSET;
+            case AAUDIO_DEVICE_BLE_SPEAKER:
+                return AUDIO_DEVICE_OUT_BLE_SPEAKER;
+            case AAUDIO_DEVICE_BLE_BROADCAST:
+                return AUDIO_DEVICE_OUT_BLE_BROADCAST;
+            default:
+                break;
+        }
+    }
+    return AUDIO_DEVICE_NONE;
+}
+
+aaudio_policy_t AAudioConvert_androidToAAudioMMapPolicy(AudioMMapPolicy policy) {
+    switch (policy) {
+        case AudioMMapPolicy::AUTO:
+            return AAUDIO_POLICY_AUTO;
+        case AudioMMapPolicy::ALWAYS:
+            return AAUDIO_POLICY_ALWAYS;
+        case AudioMMapPolicy::NEVER:
+        case AudioMMapPolicy::UNSPECIFIED:
+        default:
+            return AAUDIO_POLICY_NEVER;
+    }
 }

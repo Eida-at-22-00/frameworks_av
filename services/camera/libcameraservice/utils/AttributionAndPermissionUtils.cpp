@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+#define LOG_TAG "AttributionAndPermissionUtils"
+#define ATRACE_TAG ATRACE_TAG_CAMERA
+
 #include "AttributionAndPermissionUtils.h"
 
 #include <binder/AppOpsManager.h>
@@ -25,8 +28,41 @@
 #include "CameraService.h"
 
 #include <binder/IPCThreadState.h>
-#include <hwbinder/IPCThreadState.h>
 #include <binderthreadstate/CallerUtils.h>
+#include <hwbinder/IPCThreadState.h>
+
+namespace {
+
+using android::content::AttributionSourceState;
+
+static const std::string kPermissionServiceName = "permission";
+
+static std::string getAttributionString(const AttributionSourceState& attributionSource) {
+    std::ostringstream ret;
+    const AttributionSourceState* current = &attributionSource;
+    while (current != nullptr) {
+        if (current != &attributionSource) {
+            ret << ", ";
+        }
+
+        ret << "[uid " << current->uid << ", pid " << current->pid;
+        ret << ", packageName \"" << current->packageName.value_or("<unknown>");
+        ret << "\"]";
+
+        if (!current->next.empty()) {
+            current = &current->next[0];
+        } else {
+            current = nullptr;
+        }
+    }
+    return ret.str();
+}
+
+static std::string getAppOpsMessage(const std::string& cameraId) {
+    return cameraId.empty() ? std::string() : std::string("start camera ") + cameraId;
+}
+
+} // namespace
 
 namespace android {
 
@@ -35,8 +71,7 @@ namespace flags = com::android::internal::camera::flags;
 const std::string AttributionAndPermissionUtils::sDumpPermission("android.permission.DUMP");
 const std::string AttributionAndPermissionUtils::sManageCameraPermission(
         "android.permission.MANAGE_CAMERA");
-const std::string AttributionAndPermissionUtils::sCameraPermission(
-        "android.permission.CAMERA");
+const std::string AttributionAndPermissionUtils::sCameraPermission("android.permission.CAMERA");
 const std::string AttributionAndPermissionUtils::sSystemCameraPermission(
         "android.permission.SYSTEM_CAMERA");
 const std::string AttributionAndPermissionUtils::sCameraHeadlessSystemUserPermission(
@@ -50,14 +85,14 @@ const std::string AttributionAndPermissionUtils::sCameraOpenCloseListenerPermiss
 const std::string AttributionAndPermissionUtils::sCameraInjectExternalCameraPermission(
         "android.permission.CAMERA_INJECT_EXTERNAL_CAMERA");
 
-int AttributionAndPermissionUtils::getCallingUid() {
+int AttributionAndPermissionUtils::getCallingUid() const {
     if (getCurrentServingCall() == BinderCallType::HWBINDER) {
         return hardware::IPCThreadState::self()->getCallingUid();
     }
     return IPCThreadState::self()->getCallingUid();
 }
 
-int AttributionAndPermissionUtils::getCallingPid() {
+int AttributionAndPermissionUtils::getCallingPid() const {
     if (getCurrentServingCall() == BinderCallType::HWBINDER) {
         return hardware::IPCThreadState::self()->getCallingPid();
     }
@@ -80,74 +115,99 @@ void AttributionAndPermissionUtils::restoreCallingIdentity(int64_t token) {
     return;
 }
 
-// TODO(362551824): Make USE_CALLING_UID more explicit with a scoped enum.
-bool AttributionAndPermissionUtils::resolveClientUid(/*inout*/ int& clientUid) {
-    int callingUid = getCallingUid();
-
-    if (clientUid == hardware::ICameraService::USE_CALLING_UID) {
-        clientUid = callingUid;
-    } else if (!isTrustedCallingUid(callingUid)) {
-        return false;
+binder::Status AttributionAndPermissionUtils::resolveAttributionSource(
+        /*inout*/ AttributionSourceState& resolvedAttributionSource, const std::string& methodName,
+        const std::optional<std::string>& cameraIdMaybe) {
+    // Check if we can trust clientUid
+    if (!resolveClientUid(resolvedAttributionSource.uid)) {
+        return errorNotTrusted(resolvedAttributionSource.pid, resolvedAttributionSource.uid,
+                               methodName, cameraIdMaybe, *resolvedAttributionSource.packageName,
+                               /* isPid= */ false);
     }
 
-    return true;
-}
+    resolveAttributionPackage(resolvedAttributionSource);
 
-// TODO(362551824): Make USE_CALLING_UID more explicit with a scoped enum.
-bool AttributionAndPermissionUtils::resolveClientPid(/*inout*/ int& clientPid) {
-    int callingUid = getCallingUid();
-    int callingPid = getCallingPid();
-
-    if (clientPid == hardware::ICameraService::USE_CALLING_PID) {
-        clientPid = callingPid;
-    } else if (!isTrustedCallingUid(callingUid)) {
-        return false;
+    if (!resolveClientPid(resolvedAttributionSource.pid)) {
+        return errorNotTrusted(resolvedAttributionSource.pid, resolvedAttributionSource.uid,
+                               methodName, cameraIdMaybe, *resolvedAttributionSource.packageName,
+                               /* isPid= */ true);
     }
 
-    return true;
+    return binder::Status::ok();
 }
 
-bool AttributionAndPermissionUtils::checkAutomotivePrivilegedClient(const std::string &cameraId,
-        const AttributionSourceState &attributionSource) {
-    if (isAutomotivePrivilegedClient(attributionSource.uid)) {
-        // If cameraId is empty, then it means that this check is not used for the
-        // purpose of accessing a specific camera, hence grant permission just
-        // based on uid to the automotive privileged client.
-        if (cameraId.empty())
-            return true;
+PermissionChecker::PermissionResult AttributionAndPermissionUtils::checkPermission(
+        const std::string& cameraId, const std::string& permission,
+        const AttributionSourceState& attributionSource, const std::string& message,
+        int32_t attributedOpCode, bool forDataDelivery, bool startDataDelivery,
+        bool checkAutomotive) {
+    AttributionSourceState clientAttribution = attributionSource;
+    if (!flags::data_delivery_permission_checks() && !clientAttribution.next.empty()) {
+        clientAttribution.next.clear();
+    }
 
-        auto cameraService = mCameraService.promote();
-        if (cameraService == nullptr) {
-            ALOGE("%s: CameraService unavailable.", __FUNCTION__);
-            return false;
+    if (checkAutomotive && checkAutomotivePrivilegedClient(cameraId, clientAttribution)) {
+        return PermissionChecker::PERMISSION_GRANTED;
+    }
+
+    PermissionChecker::PermissionResult result;
+    if (forDataDelivery) {
+        if (startDataDelivery) {
+            result = mPermissionChecker->checkPermissionForStartDataDeliveryFromDatasource(
+                    toString16(permission), clientAttribution, toString16(message),
+                    attributedOpCode);
+        } else {
+            result = mPermissionChecker->checkPermissionForDataDeliveryFromDatasource(
+                    toString16(permission), clientAttribution, toString16(message),
+                    attributedOpCode);
         }
-
-        // If this call is used for accessing a specific camera then cam_id must be provided.
-        // In that case, only pre-grants the permission for accessing the exterior system only
-        // camera.
-        return cameraService->isAutomotiveExteriorSystemCamera(cameraId);
+    } else {
+        result = mPermissionChecker->checkPermissionForPreflight(
+                toString16(permission), clientAttribution, toString16(message), attributedOpCode);
     }
 
-    return false;
+    if (result == PermissionChecker::PERMISSION_HARD_DENIED) {
+        ALOGI("%s (forDataDelivery %d startDataDelivery %d): Permission hard denied "
+              "for client attribution %s",
+              __FUNCTION__, forDataDelivery, startDataDelivery,
+              getAttributionString(clientAttribution).c_str());
+    } else if (result == PermissionChecker::PERMISSION_SOFT_DENIED) {
+        ALOGI("%s checkPermission (forDataDelivery %d startDataDelivery %d): Permission soft "
+              "denied "
+              "for client attribution %s",
+              __FUNCTION__, forDataDelivery, startDataDelivery,
+              getAttributionString(clientAttribution).c_str());
+    }
+    return result;
 }
 
-bool AttributionAndPermissionUtils::checkPermissionForPreflight(const std::string &cameraId,
-        const std::string &permission, const AttributionSourceState &attributionSource,
-        const std::string& message, int32_t attributedOpCode) {
-    if (checkAutomotivePrivilegedClient(cameraId, attributionSource)) {
-        return true;
-    }
+bool AttributionAndPermissionUtils::checkPermissionForPreflight(
+        const std::string& cameraId, const std::string& permission,
+        const AttributionSourceState& attributionSource, const std::string& message,
+        int32_t attributedOpCode) {
+    return checkPermission(cameraId, permission, attributionSource, message, attributedOpCode,
+                           /* forDataDelivery */ false, /* startDataDelivery */ false,
+                           /* checkAutomotive */ true) != PermissionChecker::PERMISSION_HARD_DENIED;
+}
 
-    if (!flags::cache_permission_services()) {
-        PermissionChecker permissionChecker;
-        return permissionChecker.checkPermissionForPreflight(
-                       toString16(permission), attributionSource, toString16(message),
-                       attributedOpCode) != PermissionChecker::PERMISSION_HARD_DENIED;
-    } else {
-        return mPermissionChecker->checkPermissionForPreflight(
-                       toString16(permission), attributionSource, toString16(message),
-                       attributedOpCode) != PermissionChecker::PERMISSION_HARD_DENIED;
-    }
+bool AttributionAndPermissionUtils::checkPermissionForDataDelivery(
+        const std::string& cameraId, const std::string& permission,
+        const AttributionSourceState& attributionSource, const std::string& message,
+        int32_t attributedOpCode) {
+    return checkPermission(cameraId, permission, attributionSource, message, attributedOpCode,
+                           /* forDataDelivery */ true, /* startDataDelivery */ false,
+                           /* checkAutomotive */ false) !=
+           PermissionChecker::PERMISSION_HARD_DENIED;
+}
+
+PermissionChecker::PermissionResult
+AttributionAndPermissionUtils::checkPermissionForStartDataDelivery(
+        const std::string& cameraId, const std::string& permission,
+        const AttributionSourceState& attributionSource, const std::string& message,
+        int32_t attributedOpCode) {
+    return checkPermission(cameraId, permission, attributionSource, message, attributedOpCode,
+                           /* forDataDelivery */ true, /* startDataDelivery */ true,
+                           /* checkAutomotive */ false);
 }
 
 // Can camera service trust the caller based on the calling UID?
@@ -180,8 +240,7 @@ bool AttributionAndPermissionUtils::isHeadlessSystemUserMode() {
 
 bool AttributionAndPermissionUtils::isAutomotivePrivilegedClient(int32_t uid) {
     // Returns false if this is not an automotive device type.
-    if (!isAutomotiveDevice())
-        return false;
+    if (!isAutomotiveDevice()) return false;
 
     // Returns true if the uid is AID_AUTOMOTIVE_EVS which is a
     // privileged client uid used for safety critical use cases such as
@@ -189,8 +248,35 @@ bool AttributionAndPermissionUtils::isAutomotivePrivilegedClient(int32_t uid) {
     return uid == AID_AUTOMOTIVE_EVS;
 }
 
-status_t AttributionAndPermissionUtils::getUidForPackage(const std::string &packageName,
-        int userId, /*inout*/uid_t& uid, int err) {
+std::string AttributionAndPermissionUtils::getPackageNameFromUid(int clientUid) const {
+    std::string packageName("");
+
+    sp<IPermissionController> permCtrl = getPermissionController();
+    if (permCtrl == nullptr) {
+        // Return empty package name and the further interaction
+        // with camera will likely fail
+        return packageName;
+    }
+
+    Vector<String16> packages;
+
+    permCtrl->getPackagesForUid(clientUid, packages);
+
+    if (packages.isEmpty()) {
+        ALOGE("No packages for calling UID %d", clientUid);
+        // Return empty package name and the further interaction
+        // with camera will likely fail
+        return packageName;
+    }
+
+    // Arbitrarily pick the first name in the list
+    packageName = toStdString(packages[0]);
+
+    return packageName;
+}
+
+status_t AttributionAndPermissionUtils::getUidForPackage(const std::string& packageName, int userId,
+                                                         /*inout*/ uid_t& uid, int err) {
     PermissionController pc;
     uid = pc.getPackageUid(toString16(packageName), 0);
     if (uid <= 0) {
@@ -213,36 +299,183 @@ bool AttributionAndPermissionUtils::isCallerCameraServerNotDelegating() {
     return (getCallingPid() == getpid());
 }
 
-bool AttributionAndPermissionUtils::hasPermissionsForCamera(const std::string& cameraId,
-        const AttributionSourceState& attributionSource) {
-    return checkPermissionForPreflight(cameraId, sCameraPermission,
-            attributionSource, std::string(), AppOpsManager::OP_NONE);
+bool AttributionAndPermissionUtils::hasPermissionsForCamera(
+        const std::string& cameraId, const AttributionSourceState& attributionSource,
+        bool forDataDelivery, bool checkAutomotive) {
+    return checkPermission(cameraId, sCameraPermission, attributionSource,
+                           getAppOpsMessage(cameraId), AppOpsManager::OP_NONE, forDataDelivery,
+                           /* startDataDelivery */ false, checkAutomotive)
+            != PermissionChecker::PERMISSION_HARD_DENIED;
 }
 
-bool AttributionAndPermissionUtils::hasPermissionsForSystemCamera(const std::string& cameraId,
-        const AttributionSourceState& attributionSource, bool checkCameraPermissions) {
-    bool systemCameraPermission = checkPermissionForPreflight(cameraId,
-            sSystemCameraPermission, attributionSource, std::string(), AppOpsManager::OP_NONE);
-    return systemCameraPermission && (!checkCameraPermissions
-            || hasPermissionsForCamera(cameraId, attributionSource));
+PermissionChecker::PermissionResult
+AttributionAndPermissionUtils::checkPermissionsForCameraForPreflight(
+        const std::string& cameraId, const AttributionSourceState& attributionSource) {
+    return checkPermission(cameraId, sCameraPermission, attributionSource,
+                           getAppOpsMessage(cameraId), AppOpsManager::OP_NONE,
+                           /* forDataDelivery */ false, /* startDataDelivery */ false,
+                           /* checkAutomotive */ false);
+}
+
+PermissionChecker::PermissionResult
+AttributionAndPermissionUtils::checkPermissionsForCameraForDataDelivery(
+        const std::string& cameraId, const AttributionSourceState& attributionSource) {
+    return checkPermission(cameraId, sCameraPermission, attributionSource,
+                           getAppOpsMessage(cameraId), AppOpsManager::OP_NONE,
+                           /* forDataDelivery */ true, /* startDataDelivery */ false,
+                           /* checkAutomotive */ false);
+}
+
+PermissionChecker::PermissionResult
+AttributionAndPermissionUtils::checkPermissionsForCameraForStartDataDelivery(
+        const std::string& cameraId, const AttributionSourceState& attributionSource) {
+    return checkPermission(cameraId, sCameraPermission, attributionSource,
+                           getAppOpsMessage(cameraId), AppOpsManager::OP_NONE,
+                           /* forDataDelivery */ true, /* startDataDelivery */ true,
+                           /* checkAutomotive */ false);
+}
+
+bool AttributionAndPermissionUtils::hasPermissionsForSystemCamera(
+        const std::string& cameraId, const AttributionSourceState& attributionSource,
+        bool checkCameraPermissions) {
+    bool systemCameraPermission =
+            checkPermissionForPreflight(cameraId, sSystemCameraPermission, attributionSource,
+                                        std::string(), AppOpsManager::OP_NONE);
+    return systemCameraPermission &&
+           (!checkCameraPermissions || hasPermissionsForCamera(cameraId, attributionSource));
 }
 
 bool AttributionAndPermissionUtils::hasPermissionsForCameraHeadlessSystemUser(
         const std::string& cameraId, const AttributionSourceState& attributionSource) {
     return checkPermissionForPreflight(cameraId, sCameraHeadlessSystemUserPermission,
-            attributionSource, std::string(), AppOpsManager::OP_NONE);
+                                       attributionSource, std::string(), AppOpsManager::OP_NONE);
 }
 
 bool AttributionAndPermissionUtils::hasPermissionsForCameraPrivacyAllowlist(
         const AttributionSourceState& attributionSource) {
     return checkPermissionForPreflight(std::string(), sCameraPrivacyAllowlistPermission,
-            attributionSource, std::string(), AppOpsManager::OP_NONE);
+                                       attributionSource, std::string(), AppOpsManager::OP_NONE);
 }
 
 bool AttributionAndPermissionUtils::hasPermissionsForOpenCloseListener(
         const AttributionSourceState& attributionSource) {
     return checkPermissionForPreflight(std::string(), sCameraOpenCloseListenerPermission,
-            attributionSource, std::string(), AppOpsManager::OP_NONE);
+                                       attributionSource, std::string(), AppOpsManager::OP_NONE);
+}
+
+void AttributionAndPermissionUtils::finishDataDelivery(
+        const AttributionSourceState& attributionSource) {
+    mPermissionChecker->finishDataDeliveryFromDatasource(AppOpsManager::OP_CAMERA,
+                                                         attributionSource);
+}
+
+bool AttributionAndPermissionUtils::checkAutomotivePrivilegedClient(
+        const std::string& cameraId, const AttributionSourceState& attributionSource) {
+    if (isAutomotivePrivilegedClient(attributionSource.uid)) {
+        // If cameraId is empty, then it means that this check is not used for the
+        // purpose of accessing a specific camera, hence grant permission just
+        // based on uid to the automotive privileged client.
+        if (cameraId.empty()) return true;
+
+        auto cameraService = mCameraService.promote();
+        if (cameraService == nullptr) {
+            ALOGE("%s: CameraService unavailable.", __FUNCTION__);
+            return false;
+        }
+
+        // If this call is used for accessing a specific camera then cam_id must be provided.
+        // In that case, only pre-grants the permission for accessing the exterior system only
+        // camera.
+        return cameraService->isAutomotiveExteriorSystemCamera(cameraId);
+    }
+
+    return false;
+}
+
+void AttributionAndPermissionUtils::resolveAttributionPackage(
+        AttributionSourceState& resolvedAttributionSource) {
+    if (resolvedAttributionSource.packageName.has_value() &&
+        resolvedAttributionSource.packageName->size() > 0) {
+        return;
+    }
+
+    // NDK calls don't come with package names, but we need one for various cases.
+    // Generally, there's a 1:1 mapping between UID and package name, but shared UIDs
+    // do exist. For all authentication cases, all packages under the same UID get the
+    // same permissions, so picking any associated package name is sufficient. For some
+    // other cases, this may give inaccurate names for clients in logs.
+    resolvedAttributionSource.packageName = getPackageNameFromUid(resolvedAttributionSource.uid);
+}
+
+// TODO(362551824): Make USE_CALLING_UID more explicit with a scoped enum.
+bool AttributionAndPermissionUtils::resolveClientUid(/*inout*/ int& clientUid) {
+    int callingUid = getCallingUid();
+
+    bool validUid = true;
+    if (clientUid == hardware::ICameraService::USE_CALLING_UID) {
+        clientUid = callingUid;
+    } else {
+        validUid = isTrustedCallingUid(callingUid);
+        if (flags::data_delivery_permission_checks()) {
+            validUid = validUid || (clientUid == callingUid);
+        }
+    }
+
+    return validUid;
+}
+
+// TODO(362551824): Make USE_CALLING_UID more explicit with a scoped enum.
+bool AttributionAndPermissionUtils::resolveClientPid(/*inout*/ int& clientPid) {
+    int callingUid = getCallingUid();
+    int callingPid = getCallingPid();
+
+    bool validPid = true;
+    if (clientPid == hardware::ICameraService::USE_CALLING_PID) {
+        clientPid = callingPid;
+    } else {
+        validPid = isTrustedCallingUid(callingUid);
+        if (flags::data_delivery_permission_checks()) {
+            validPid = validPid || (clientPid == callingPid);
+        }
+    }
+
+    return validPid;
+}
+
+binder::Status AttributionAndPermissionUtils::errorNotTrusted(
+        int clientPid, int clientUid, const std::string& methodName,
+        const std::optional<std::string>& cameraIdMaybe, const std::string& clientName,
+        bool isPid) const {
+    int callingPid = getCallingPid();
+    int callingUid = getCallingUid();
+    ALOGE("CameraService::%s X (calling PID %d, calling UID %d) rejected "
+          "(don't trust %s %d)",
+          methodName.c_str(), callingPid, callingUid, isPid ? "clientPid" : "clientUid",
+          isPid ? clientPid : clientUid);
+    return STATUS_ERROR_FMT(hardware::ICameraService::ERROR_PERMISSION_DENIED,
+                            "Untrusted caller (calling PID %d, UID %d) trying to "
+                            "forward camera access to camera %s for client %s (PID %d, UID %d)",
+                            getCallingPid(), getCallingUid(), cameraIdMaybe.value_or("N/A").c_str(),
+                            clientName.c_str(), clientPid, clientUid);
+}
+
+const sp<IPermissionController>& AttributionAndPermissionUtils::getPermissionController() const {
+    static const char* kPermissionControllerService = "permission";
+    static thread_local sp<IPermissionController> sPermissionController = nullptr;
+
+    if (sPermissionController == nullptr ||
+        !IInterface::asBinder(sPermissionController)->isBinderAlive()) {
+        sp<IServiceManager> sm = defaultServiceManager();
+        sp<IBinder> binder = sm->checkService(toString16(kPermissionControllerService));
+        if (binder == nullptr) {
+            ALOGE("%s: Could not get permission service", __FUNCTION__);
+            sPermissionController = nullptr;
+        } else {
+            sPermissionController = interface_cast<IPermissionController>(binder);
+        }
+    }
+
+    return sPermissionController;
 }
 
 } // namespace android

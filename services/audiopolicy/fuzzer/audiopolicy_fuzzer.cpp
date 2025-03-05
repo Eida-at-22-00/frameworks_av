@@ -198,7 +198,7 @@ class AudioPolicyManagerFuzzer {
     virtual ~AudioPolicyManagerFuzzer() = default;
     virtual bool initialize();
     virtual void SetUpManagerConfig();
-    bool getOutputForAttr(audio_port_handle_t *selectedDeviceId, audio_format_t format,
+    bool getOutputForAttr(DeviceIdVector *selectedDeviceIds, audio_format_t format,
                           audio_channel_mask_t channelMask, int sampleRate,
                           audio_output_flags_t flags = AUDIO_OUTPUT_FLAG_NONE,
                           audio_io_handle_t *output = nullptr,
@@ -248,7 +248,7 @@ bool AudioPolicyManagerFuzzer::initialize() {
 void AudioPolicyManagerFuzzer::SetUpManagerConfig() { mConfig->setDefault(); }
 
 bool AudioPolicyManagerFuzzer::getOutputForAttr(
-    audio_port_handle_t *selectedDeviceId, audio_format_t format, audio_channel_mask_t channelMask,
+    DeviceIdVector *selectedDeviceIds, audio_format_t format, audio_channel_mask_t channelMask,
     int sampleRate, audio_output_flags_t flags, audio_io_handle_t *output,
     audio_port_handle_t *portId, audio_attributes_t attr) {
     audio_io_handle_t localOutput;
@@ -266,14 +266,15 @@ bool AudioPolicyManagerFuzzer::getOutputForAttr(
     bool isSpatialized;
     bool isBitPerfect;
     float volume;
+    bool muted;
 
     // TODO b/182392769: use attribution source util
     AttributionSourceState attributionSource;
     attributionSource.uid = 0;
     attributionSource.token = sp<BBinder>::make();
     if (mManager->getOutputForAttr(&attr, output, AUDIO_SESSION_NONE, &stream, attributionSource,
-            &config, &flags, selectedDeviceId, portId, {}, &outputType, &isSpatialized,
-            &isBitPerfect, &volume) != OK) {
+            &config, &flags, selectedDeviceIds, portId, {}, &outputType, &isSpatialized,
+            &isBitPerfect, &volume, &muted) != OK) {
         return false;
     }
     if (*output == AUDIO_IO_HANDLE_NONE || *portId == AUDIO_PORT_HANDLE_NONE) {
@@ -285,7 +286,7 @@ bool AudioPolicyManagerFuzzer::getOutputForAttr(
 bool AudioPolicyManagerFuzzer::getInputForAttr(
     const audio_attributes_t &attr, audio_unique_id_t riid, audio_port_handle_t *selectedDeviceId,
     audio_format_t format, audio_channel_mask_t channelMask, int sampleRate,
-    audio_input_flags_t flags, audio_port_handle_t *portId, uint32_t *virtualDeviceId) {
+    audio_input_flags_t flags, audio_port_handle_t *portId, uint32_t*) {
     audio_io_handle_t input = AUDIO_IO_HANDLE_NONE;
     audio_config_base_t config = AUDIO_CONFIG_BASE_INITIALIZER;
     config.sample_rate = sampleRate;
@@ -294,16 +295,15 @@ bool AudioPolicyManagerFuzzer::getInputForAttr(
     audio_port_handle_t localPortId;
     if (!portId) portId = &localPortId;
     *portId = AUDIO_PORT_HANDLE_NONE;
-    AudioPolicyInterface::input_type_t inputType;
 
     AttributionSourceState attributionSource;
     attributionSource.uid = 0;
     attributionSource.token = sp<BBinder>::make();
-    if (mManager->getInputForAttr(&attr, &input, riid, AUDIO_SESSION_NONE, attributionSource,
-            &config, flags, selectedDeviceId, &inputType, portId, virtualDeviceId) != OK) {
-        return false;
-    }
-    if (*portId == AUDIO_PORT_HANDLE_NONE || input == AUDIO_IO_HANDLE_NONE) {
+    const auto inputRes = mManager->getInputForAttr(attr, input, *selectedDeviceId, config, flags,
+                                                    riid, AUDIO_SESSION_NONE, attributionSource);
+    if (!inputRes.has_value()) return false;
+
+    if (inputRes->portId == AUDIO_PORT_HANDLE_NONE || inputRes->input == AUDIO_IO_HANDLE_NONE) {
         return false;
     }
     return true;
@@ -725,8 +725,8 @@ void AudioPolicyManagerFuzzerDPPlaybackReRouting::playBackReRouting() {
         std::string tags(mFdp->ConsumeBool() ? "" : "addr=remote_submix_media");
         strncpy(attr.tags, tags.c_str(), AUDIO_ATTRIBUTES_TAGS_MAX_SIZE - 1);
 
-        audio_port_handle_t playbackRoutedPortId = AUDIO_PORT_HANDLE_NONE;
-        getOutputForAttr(&playbackRoutedPortId, mAudioConfig.format, mAudioConfig.channel_mask,
+        DeviceIdVector playbackRoutedPortIds;
+        getOutputForAttr(&playbackRoutedPortIds, mAudioConfig.format, mAudioConfig.channel_mask,
                          mAudioConfig.sample_rate, AUDIO_OUTPUT_FLAG_NONE, nullptr /*output*/,
                          nullptr /*portId*/, attr);
     }
@@ -806,13 +806,13 @@ bool AudioPolicyManagerFuzzerDPMixRecordInjection::initialize() {
     findDevicePort(AUDIO_PORT_ROLE_SINK, getValueFromVector<audio_devices_t>(mFdp, kAudioDevices),
                    mMixAddress, &injectionPort);
 
-    audio_port_handle_t selectedDeviceId = AUDIO_PORT_HANDLE_NONE;
+    DeviceIdVector selectedDeviceIds;
     audio_usage_t usage = getValueFromVector<audio_usage_t>(mFdp, kAudioUsages);
     audio_attributes_t attr = {AUDIO_CONTENT_TYPE_UNKNOWN, usage, AUDIO_SOURCE_DEFAULT,
                                AUDIO_FLAG_NONE, ""};
     std::string tags = std::string("addr=") + mMixAddress;
     strncpy(attr.tags, tags.c_str(), AUDIO_ATTRIBUTES_TAGS_MAX_SIZE - 1);
-    getOutputForAttr(&selectedDeviceId, mAudioConfig.format, mAudioConfig.channel_mask,
+    getOutputForAttr(&selectedDeviceIds, mAudioConfig.format, mAudioConfig.channel_mask,
                      mAudioConfig.sample_rate /*sampleRate*/, AUDIO_OUTPUT_FLAG_NONE,
                      nullptr /*output*/, &mPortId, attr);
     ret = mManager->startOutput(mPortId);
@@ -902,15 +902,17 @@ void AudioPolicyManagerFuzzerDeviceConnection::explicitlyRoutingAfterConnection(
             audio_is_output_device(type) ? AUDIO_PORT_ROLE_SINK : AUDIO_PORT_ROLE_SOURCE;
         findDevicePort(role, type, address, &devicePort);
 
-        audio_port_handle_t routedPortId = devicePort.id;
         // Try start input or output according to the device type
         if (audio_is_output_devices(type)) {
-            getOutputForAttr(&routedPortId, getValueFromVector<audio_format_t>(mFdp, kAudioFormats),
+            DeviceIdVector routedPortIds = { devicePort.id };
+            getOutputForAttr(&routedPortIds,
+                             getValueFromVector<audio_format_t>(mFdp, kAudioFormats),
                              getValueFromVector<audio_channel_mask_t>(mFdp, kAudioChannelOutMasks),
                              getValueFromVector<uint32_t>(mFdp, kSamplingRates),
                              AUDIO_OUTPUT_FLAG_NONE);
         } else if (audio_is_input_device(type)) {
             RecordingActivityTracker tracker;
+            audio_port_handle_t routedPortId = devicePort.id;
             getInputForAttr({}, tracker.getRiid(), &routedPortId,
                             getValueFromVector<audio_format_t>(mFdp, kAudioFormats),
                             getValueFromVector<audio_channel_mask_t>(mFdp, kAudioChannelInMasks),
@@ -983,10 +985,10 @@ void AudioPolicyManagerTVFuzzer::testHDMIPortSelection(audio_output_flags_t flag
     if (ret != NO_ERROR) {
         return;
     }
-    audio_port_handle_t selectedDeviceId = AUDIO_PORT_HANDLE_NONE;
+    DeviceIdVector selectedDeviceIds;
     audio_io_handle_t output;
     audio_port_handle_t portId;
-    getOutputForAttr(&selectedDeviceId, getValueFromVector<audio_format_t>(mFdp, kAudioFormats),
+    getOutputForAttr(&selectedDeviceIds, getValueFromVector<audio_format_t>(mFdp, kAudioFormats),
                      getValueFromVector<audio_channel_mask_t>(mFdp, kAudioChannelOutMasks),
                      getValueFromVector<uint32_t>(mFdp, kSamplingRates), flags, &output, &portId);
     sp<SwAudioOutputDescriptor> outDesc = mManager->getOutputs().valueFor(output);

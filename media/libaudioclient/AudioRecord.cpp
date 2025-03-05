@@ -731,7 +731,7 @@ status_t AudioRecord::setInputDevice(audio_port_handle_t deviceId) {
         mSelectedDeviceId = deviceId;
         if (mStatus == NO_ERROR) {
             if (mActive) {
-                if (mSelectedDeviceId != mRoutedDeviceId) {
+                if (getFirstDeviceId(mRoutedDeviceIds) != mSelectedDeviceId) {
                     // stop capture so that audio policy manager does not reject the new instance
                     // start request as only one capture can be active at a time.
                     if (mAudioRecord != 0) {
@@ -758,7 +758,7 @@ audio_port_handle_t AudioRecord::getInputDevice() {
 }
 
 // must be called with mLock held
-void AudioRecord::updateRoutedDeviceId_l()
+void AudioRecord::updateRoutedDeviceIds_l()
 {
     // if the record is inactive, do not update actual device as the input stream maybe routed
     // from a device not relevant to this client because of other active use cases.
@@ -766,17 +766,21 @@ void AudioRecord::updateRoutedDeviceId_l()
         return;
     }
     if (mInput != AUDIO_IO_HANDLE_NONE) {
-        audio_port_handle_t deviceId = AudioSystem::getDeviceIdForIo(mInput);
-        if (deviceId != AUDIO_PORT_HANDLE_NONE) {
-            mRoutedDeviceId = deviceId;
+        DeviceIdVector deviceIds;
+        status_t result = AudioSystem::getDeviceIdsForIo(mInput, deviceIds);
+        if (result != OK) {
+            ALOGW("%s: getDeviceIdsForIo returned: %d", __func__, result);
+        }
+        if (!deviceIds.empty()) {
+            mRoutedDeviceIds = deviceIds;
         }
      }
 }
 
-audio_port_handle_t AudioRecord::getRoutedDeviceId() {
+DeviceIdVector AudioRecord::getRoutedDeviceIds() {
     AutoMutex lock(mLock);
-    updateRoutedDeviceId_l();
-    return mRoutedDeviceId;
+    updateRoutedDeviceIds_l();
+    return mRoutedDeviceIds;
 }
 
 status_t AudioRecord::dump(int fd, const Vector<String16>& args __unused) const
@@ -794,10 +798,11 @@ status_t AudioRecord::dump(int fd, const Vector<String16>& args __unused) const
                   mFrameCount, mReqFrameCount);
     result.appendFormat("  notif. frame count(%u), req. notif. frame count(%u)\n",
              mNotificationFramesAct, mNotificationFramesReq);
-    result.appendFormat("  input(%d), latency(%u), selected device Id(%d), routed device Id(%d)\n",
-                        mInput, mLatency, mSelectedDeviceId, mRoutedDeviceId);
-    result.appendFormat("  mic direction(%d) mic field dimension(%f)",
-                        mSelectedMicDirection, mSelectedMicFieldDimension);
+    result.appendFormat("  input(%d), latency(%u), selected device Id(%d)\n",
+                        mInput, mLatency, mSelectedDeviceId);
+    result.appendFormat("  routed device Ids(%s), mic direction(%d) mic field dimension(%f)",
+                        toString(mRoutedDeviceIds).c_str(), mSelectedMicDirection,
+                        mSelectedMicFieldDimension);
     ::write(fd, result.c_str(), result.size());
     return NO_ERROR;
 }
@@ -940,7 +945,7 @@ status_t AudioRecord::createRecord_l(const Modulo<uint32_t> &epoch)
         mAwaitBoost = true;
     }
     mFlags = output.flags;
-    mRoutedDeviceId = output.selectedDeviceId;
+    mRoutedDeviceIds = { output.selectedDeviceId };
     mSessionId = output.sessionId;
     mSampleRate = output.sampleRate;
     mServerConfig = output.serverConfig;
@@ -1063,7 +1068,8 @@ status_t AudioRecord::createRecord_l(const Modulo<uint32_t> &epoch)
         .set(AMEDIAMETRICS_PROP_SOURCE, toString(mAttributes.source).c_str())
         .set(AMEDIAMETRICS_PROP_THREADID, (int32_t)output.inputId)
         .set(AMEDIAMETRICS_PROP_SELECTEDDEVICEID, (int32_t)mSelectedDeviceId)
-        .set(AMEDIAMETRICS_PROP_ROUTEDDEVICEID, (int32_t)mRoutedDeviceId)
+        .set(AMEDIAMETRICS_PROP_ROUTEDDEVICEID, (int32_t)(getFirstDeviceId(mRoutedDeviceIds)))
+        .set(AMEDIAMETRICS_PROP_ROUTEDDEVICEIDS, toString(mRoutedDeviceIds).c_str())
         .set(AMEDIAMETRICS_PROP_ENCODING, toString(mFormat).c_str())
         .set(AMEDIAMETRICS_PROP_CHANNELMASK, (int32_t)mChannelMask)
         .set(AMEDIAMETRICS_PROP_FRAMECOUNT, (int32_t)mFrameCount)
@@ -1159,11 +1165,10 @@ status_t AudioRecord::obtainBuffer(Buffer* audioBuffer, const struct timespec *r
             // start of lock scope
             AutoMutex lock(mLock);
 
-            uint32_t newSequence = mSequence;
             // did previous obtainBuffer() fail due to media server death or voluntary invalidation?
             if (status == DEAD_OBJECT) {
                 // re-create track, unless someone else has already done so
-                if (newSequence == oldSequence) {
+                if (mSequence == oldSequence) {
                     if (!audio_is_linear_pcm(mFormat)) {
                         // If compressed capture, don't attempt to restore the track.
                         // Return a DEAD_OBJECT error and let the caller recreate.
@@ -1179,7 +1184,7 @@ status_t AudioRecord::obtainBuffer(Buffer* audioBuffer, const struct timespec *r
                     }
                 }
             }
-            oldSequence = newSequence;
+            oldSequence = mSequence;
 
             // Keep the extra references
             proxy = mProxy;
@@ -1578,11 +1583,6 @@ status_t AudioRecord::restoreRecord_l(const char *from)
     const int INITIAL_RETRIES = 3;
     int retries = INITIAL_RETRIES;
 retry:
-    if (retries < INITIAL_RETRIES) {
-        // refresh the audio configuration cache in this process to make sure we get new
-        // input parameters and new IAudioRecord in createRecord_l()
-        AudioSystem::clearAudioConfigCache();
-    }
     mFlags = mOrigFlags;
 
     // if the new IAudioRecord is created, createRecord_l() will modify the
@@ -1662,7 +1662,7 @@ status_t AudioRecord::removeAudioDeviceCallback(
 }
 
 void AudioRecord::onAudioDeviceUpdate(audio_io_handle_t audioIo,
-                                 audio_port_handle_t deviceId)
+                                      const DeviceIdVector& deviceIds)
 {
     sp<AudioSystem::AudioDeviceCallback> callback;
     {
@@ -1674,11 +1674,11 @@ void AudioRecord::onAudioDeviceUpdate(audio_io_handle_t audioIo,
         // only update device if the record is active as route changes due to other use cases are
         // irrelevant for this client
         if (mActive) {
-            mRoutedDeviceId = deviceId;
+            mRoutedDeviceIds = deviceIds;
         }
     }
     if (callback.get() != nullptr) {
-        callback->onAudioDeviceUpdate(mInput, mRoutedDeviceId);
+        callback->onAudioDeviceUpdate(mInput, mRoutedDeviceIds);
     }
 }
 

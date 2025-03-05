@@ -33,25 +33,36 @@ constexpr inline size_t SHARED_SIZE_LARGE = (SHARED_SIZE * 4) / 6;            //
 constexpr inline size_t SHARED_SIZE_SMALL = SHARED_SIZE - SHARED_SIZE_LARGE;  // 20 MiB
 constexpr inline size_t SMALL_THRESHOLD = 1024 * 40;                          // 40 KiB
 
+template <typename Policy>
+inline auto getSharedPool() {
+    using namespace mediautils;
+    return std::make_shared<LockedAllocator<PolicyAllocator<MemoryHeapBaseAllocator, Policy>>>();
+}
+
+// The following pools are global but lazy initialized. Stored in shared_ptr since they are
+// referred by clients, but they could also be leaked.
+
+// Pool from which every client gets their dedicated, exclusive quota.
 inline auto getDedicated() {
     using namespace mediautils;
-    static const auto allocator =
-            std::make_shared<PolicyAllocator<MemoryHeapBaseAllocator, SizePolicy<DED_SIZE>>>();
+    static const auto allocator = getSharedPool<SizePolicy<DED_SIZE>>();
     return allocator;
 }
 
+// Pool from which clients with large allocation sizes can fall back to when their dedicated
+// allocation is surpassed. More likely to fill.
 inline auto getSharedLarge() {
     using namespace mediautils;
-    static const auto allocator = std::make_shared<
-            PolicyAllocator<MemoryHeapBaseAllocator, SizePolicy<SHARED_SIZE_LARGE>>>();
+    static const auto allocator = getSharedPool<SizePolicy<SHARED_SIZE_LARGE>>();
     return allocator;
 }
 
+// Pool from which clients with reasonable allocation sizes can fall back to when
+// their dedicated allocation is surpassed, so that small buffer clients are always served.
 inline auto getSharedSmall() {
     using namespace mediautils;
     static const auto allocator =
-            std::make_shared<PolicyAllocator<MemoryHeapBaseAllocator,
-                                             SizePolicy<SHARED_SIZE_SMALL, 0, SMALL_THRESHOLD>>>();
+            getSharedPool<SizePolicy<SHARED_SIZE_SMALL, 0, SMALL_THRESHOLD>>();
     return allocator;
 }
 
@@ -78,8 +89,7 @@ inline auto getClientAllocator() {
                 getSharedLarge(), "Large Shared");
     };
     const auto makeSmallShared = []() {
-        return wrapWithPolicySnooping<
-                SizePolicy<SHARED_SIZE_SMALL / ADV_THRESHOLD_INV>>(
+        return wrapWithPolicySnooping<SizePolicy<SHARED_SIZE_SMALL / ADV_THRESHOLD_INV>>(
                 getSharedSmall(), "Small Shared");
     };
 

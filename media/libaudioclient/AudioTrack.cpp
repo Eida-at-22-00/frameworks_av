@@ -1300,7 +1300,7 @@ status_t AudioTrack::setPlaybackRate(const AudioPlaybackRate &playbackRate)
     if (isAudioPlaybackRateEqual(playbackRate, mPlaybackRate)) {
         return NO_ERROR;
     }
-    if (isOffloadedOrDirect_l()) {
+    if (isAfTrackOffloadedOrDirect_l()) {
         const status_t status = statusTFromBinderStatus(mAudioTrack->setPlaybackRateParameters(
                 VALUE_OR_RETURN_STATUS(
                         legacy2aidl_audio_playback_rate_t_AudioPlaybackRate(playbackRate))));
@@ -1736,7 +1736,7 @@ status_t AudioTrack::setOutputDevice(audio_port_handle_t deviceId) {
                 // allow track invalidation when track is not playing to propagate
                 // the updated mSelectedDeviceId
                 if (isPlaying_l()) {
-                    if (mSelectedDeviceId != mRoutedDeviceId) {
+                    if (getFirstDeviceId(mRoutedDeviceIds) != mSelectedDeviceId) {
                         android_atomic_or(CBLK_INVALID, &mCblk->mFlags);
                         mProxy->interrupt();
                     }
@@ -1759,7 +1759,7 @@ audio_port_handle_t AudioTrack::getOutputDevice() {
 }
 
 // must be called with mLock held
-void AudioTrack::updateRoutedDeviceId_l()
+void AudioTrack::updateRoutedDeviceIds_l()
 {
     // if the track is inactive, do not update actual device as the output stream maybe routed
     // to a device not relevant to this client because of other active use cases.
@@ -1767,17 +1767,21 @@ void AudioTrack::updateRoutedDeviceId_l()
         return;
     }
     if (mOutput != AUDIO_IO_HANDLE_NONE) {
-        audio_port_handle_t deviceId = AudioSystem::getDeviceIdForIo(mOutput);
-        if (deviceId != AUDIO_PORT_HANDLE_NONE) {
-            mRoutedDeviceId = deviceId;
+        DeviceIdVector deviceIds;
+        status_t result = AudioSystem::getDeviceIdsForIo(mOutput, deviceIds);
+        if (result != OK) {
+            ALOGW("%s: getDeviceIdsForIo returned: %d", __func__, result);
+        }
+        if (!deviceIds.empty()) {
+            mRoutedDeviceIds = deviceIds;
         }
     }
 }
 
-audio_port_handle_t AudioTrack::getRoutedDeviceId() {
+DeviceIdVector AudioTrack::getRoutedDeviceIds() {
     AutoMutex lock(mLock);
-    updateRoutedDeviceId_l();
-    return mRoutedDeviceId;
+    updateRoutedDeviceIds_l();
+    return mRoutedDeviceIds;
 }
 
 status_t AudioTrack::attachAuxEffect(int effectId)
@@ -1937,7 +1941,7 @@ status_t AudioTrack::createTrack_l()
 
     mFrameCount = output.frameCount;
     mNotificationFramesAct = (uint32_t)output.notificationFrameCount;
-    mRoutedDeviceId = output.selectedDeviceId;
+    mRoutedDeviceIds = output.selectedDeviceIds;
     mSessionId = output.sessionId;
     mStreamType = output.streamType;
 
@@ -2106,7 +2110,8 @@ status_t AudioTrack::createTrack_l()
         .set(AMEDIAMETRICS_PROP_USAGE, toString(mAttributes.usage).c_str())
         .set(AMEDIAMETRICS_PROP_THREADID, (int32_t)output.outputId)
         .set(AMEDIAMETRICS_PROP_SELECTEDDEVICEID, (int32_t)mSelectedDeviceId)
-        .set(AMEDIAMETRICS_PROP_ROUTEDDEVICEID, (int32_t)mRoutedDeviceId)
+        .set(AMEDIAMETRICS_PROP_ROUTEDDEVICEID, (int32_t)(getFirstDeviceId(mRoutedDeviceIds)))
+        .set(AMEDIAMETRICS_PROP_ROUTEDDEVICEIDS, toString(mRoutedDeviceIds).c_str())
         .set(AMEDIAMETRICS_PROP_ENCODING, toString(mFormat).c_str())
         .set(AMEDIAMETRICS_PROP_CHANNELMASK, (int32_t)mChannelMask)
         .set(AMEDIAMETRICS_PROP_FRAMECOUNT, (int32_t)mFrameCount)
@@ -2221,11 +2226,10 @@ status_t AudioTrack::obtainBuffer(Buffer* audioBuffer, const struct timespec *re
         {   // start of lock scope
             AutoMutex lock(mLock);
 
-            uint32_t newSequence = mSequence;
             // did previous obtainBuffer() fail due to media server death or voluntary invalidation?
             if (status == DEAD_OBJECT) {
                 // re-create track, unless someone else has already done so
-                if (newSequence == oldSequence) {
+                if (mSequence == oldSequence) {
                     status = restoreTrack_l("obtainBuffer");
                     if (status != NO_ERROR) {
                         buffer.mFrameCount = 0;
@@ -2235,7 +2239,7 @@ status_t AudioTrack::obtainBuffer(Buffer* audioBuffer, const struct timespec *re
                     }
                 }
             }
-            oldSequence = newSequence;
+            oldSequence = mSequence;
 
             if (status == NOT_ENOUGH_DATA) {
                 restartIfDisabled();
@@ -2876,10 +2880,6 @@ status_t AudioTrack::restoreTrack_l(const char *from, bool forceRestore)
             __func__, mPortId, isOffloadedOrDirect_l() ? "Offloaded or Direct" : "PCM", from);
     ++mSequence;
 
-    // refresh the audio configuration cache in this process to make sure we get new
-    // output parameters and new IAudioFlinger in createTrack_l()
-    AudioSystem::clearAudioConfigCache();
-
     if (!forceRestore &&
         (isOffloadedOrDirect_l() || mDoNotReconnect)) {
         // FIXME re-creation of offloaded and direct tracks is not yet implemented;
@@ -2912,10 +2912,6 @@ status_t AudioTrack::restoreTrack_l(const char *from, bool forceRestore)
     const int INITIAL_RETRIES = 3;
     int retries = INITIAL_RETRIES;
 retry:
-    if (retries < INITIAL_RETRIES) {
-        // See the comment for clearAudioConfigCache at the start of the function.
-        AudioSystem::clearAudioConfigCache();
-    }
     mFlags = mOrigFlags;
 
     // If a new IAudioTrack is successfully created, createTrack_l() will modify the
@@ -3564,8 +3560,8 @@ status_t AudioTrack::dump(int fd, const Vector<String16>& args __unused) const
     result.appendFormat("  notif. frame count(%u), req. notif. frame count(%u),"
             " req. notif. per buff(%u)\n",
              mNotificationFramesAct, mNotificationFramesReq, mNotificationsPerBufferReq);
-    result.appendFormat("  latency (%d), selected device Id(%d), routed device Id(%d)\n",
-                        mLatency, mSelectedDeviceId, mRoutedDeviceId);
+    result.appendFormat("  latency (%d), selected device Id(%d), routed device Ids(%s)\n",
+                        mLatency, mSelectedDeviceId, toString(mRoutedDeviceIds).c_str());
     result.appendFormat("  output(%d) AF latency (%u) AF frame count(%zu) AF SampleRate(%u)\n",
                         mOutput, mAfLatency, mAfFrameCount, mAfSampleRate);
     ::write(fd, result.c_str(), result.size());
@@ -3632,7 +3628,7 @@ void AudioTrack::triggerPortIdUpdate_l() {
 
     // first time when the track is created we do not have a valid piid
     if (mPlayerIId != PLAYER_PIID_INVALID) {
-        mAudioManager->playerEvent(mPlayerIId, PLAYER_UPDATE_PORT_ID, mPortId);
+        mAudioManager->playerEvent(mPlayerIId, PLAYER_UPDATE_PORT_ID, {mPortId});
     }
 }
 
@@ -3681,7 +3677,7 @@ status_t AudioTrack::removeAudioDeviceCallback(
 
 
 void AudioTrack::onAudioDeviceUpdate(audio_io_handle_t audioIo,
-                                 audio_port_handle_t deviceId)
+                                     const DeviceIdVector& deviceIds)
 {
     sp<AudioSystem::AudioDeviceCallback> callback;
     {
@@ -3693,12 +3689,12 @@ void AudioTrack::onAudioDeviceUpdate(audio_io_handle_t audioIo,
         // only update device if the track is active as route changes due to other use cases are
         // irrelevant for this client
         if (mState == STATE_ACTIVE) {
-            mRoutedDeviceId = deviceId;
+            mRoutedDeviceIds = deviceIds;
         }
     }
 
     if (callback.get() != nullptr) {
-        callback->onAudioDeviceUpdate(mOutput, mRoutedDeviceId);
+        callback->onAudioDeviceUpdate(mOutput, mRoutedDeviceIds);
     }
 }
 

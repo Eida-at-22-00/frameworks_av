@@ -445,10 +445,6 @@ struct TestAidlInteractionProxy : public CameraProviderManager::AidlServiceInter
 
     virtual std::shared_ptr<aidl::android::hardware::camera::provider::ICameraProvider>
             getService(const std::string& serviceName) override {
-        if (!flags::delay_lazy_hal_instantiation()) {
-            return mTestAidlCameraProvider;
-        }
-
         // If no provider has been given, fail; in reality, getService would
         // block for HALs that don't start correctly, so we should never use
         // getService when we don't have a valid HAL running

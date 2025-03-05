@@ -11,7 +11,7 @@
 
     <hal format="aidl">
         <name>android.frameworks.cameraservice.service</name>
-        <version>2</version>
+        <version>3</version>
         <interface>
             <name>ICameraService</name>
             <instance>default</instance>

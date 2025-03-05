@@ -248,9 +248,7 @@ status_t RingBufferConsumer::releaseOldestBufferLocked(size_t* pinnedFrames) {
 
         // item.mGraphicBuffer was populated with the proper graphic-buffer
         // at acquire even if it was previously acquired
-        err = releaseBufferLocked(item.mSlot, item.mGraphicBuffer,
-                                  EGL_NO_DISPLAY,
-                                  EGL_NO_SYNC_KHR);
+        err = releaseBufferLocked(item.mSlot, item.mGraphicBuffer);
         if (err != OK) {
             BI_LOGE("Failed to release buffer: %s (%d)",
                     strerror(-err), err);

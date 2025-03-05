@@ -22,6 +22,11 @@ package {
     default_applicable_licenses: ["frameworks_av_camera_license"],
 }
 
+vintf_fragment {
+    name: "manifest_android.frameworks.cameraservice.service.xml",
+    src: "manifest_android.frameworks.cameraservice.service.xml",
+}
+
 cc_binary {
     name: "cameraserver",
 
@@ -61,7 +66,7 @@ cc_binary {
 
     init_rc: ["cameraserver.rc"],
 
-    vintf_fragments: [
+    vintf_fragment_modules: [
         "manifest_android.frameworks.cameraservice.service.xml",
     ],
 }

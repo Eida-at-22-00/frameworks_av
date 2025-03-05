@@ -119,7 +119,8 @@ void CaptureEnv::capture() {
     CHECK_OK(capture->start(), "start recording failed")
     CHECK_OK(capture->audioProcess(), "recording process failed")
     CHECK_OK(cbCapture->waitForAudioDeviceCb(), "audio device callback notification timed out");
-    if (port.id != capture->getAudioRecordHandle()->getRoutedDeviceId()) {
+    DeviceIdVector routedDeviceIds = capture->getAudioRecordHandle()->getRoutedDeviceIds();
+    if (port.id != routedDeviceIds[0]) {
         CHECK_OK(BAD_VALUE, "Capture NOT routed on expected port")
     }
     CHECK_OK(getPortByAttributes(AUDIO_PORT_ROLE_SINK, AUDIO_PORT_TYPE_DEVICE,

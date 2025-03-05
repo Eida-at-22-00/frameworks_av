@@ -17,11 +17,12 @@
 
 #define LOG_TAG "mediaserver"
 //#define LOG_NDEBUG 0
-
+#include <android/binder_process.h>
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
 #include <binder/IServiceManager.h>
 #include <hidl/HidlTransportSupport.h>
+#include <codec2/common/HalSelection.h>
 #include <utils/Log.h>
 #include "RegisterExtensions.h"
 
@@ -29,6 +30,14 @@
 #include <ResourceManagerService.h>
 
 using namespace android;
+
+namespace {
+    constexpr int kCodecThreadPoolCount = 16;
+
+    // This is the default thread count for binder thread pool
+    // if the thread count is not configured.
+    constexpr int kDefaultBinderThreadPoolCount = 15;
+}; // anonymous
 
 int main(int argc __unused, char **argv __unused)
 {
@@ -40,8 +49,14 @@ int main(int argc __unused, char **argv __unused)
     MediaPlayerService::instantiate();
     ResourceManagerService::instantiate();
     registerExtensions();
-    ::android::hardware::configureRpcThreadpool(16, false);
+
+    bool aidl = ::android::IsCodec2AidlHalSelected();
+    if (!aidl) {
+        ::android::hardware::configureRpcThreadpool(kCodecThreadPoolCount, false);
+    } else {
+        ABinderProcess_setThreadPoolMaxThreadCount(
+                kCodecThreadPoolCount + kDefaultBinderThreadPoolCount);
+    }
     ProcessState::self()->startThreadPool();
     IPCThreadState::self()->joinThreadPool();
-    ::android::hardware::joinRpcThreadpool();
 }

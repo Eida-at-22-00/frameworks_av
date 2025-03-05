@@ -458,6 +458,12 @@ void VideoTrackTranscoder::transferBuffer(int32_t bufferIndex, AMediaCodecBuffer
 
     if (bufferInfo.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) {
         LOG(DEBUG) << "EOS from decoder.";
+        // NOTE - b/360057459
+        // There is a synchronization problem between feeding the frame to the encoder input surface
+        // and signaling end of stream.
+        // Waiting before signaling end of stream so that input surface has time to feed remaining
+        // frames to the encoder.
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
         media_status_t status = AMediaCodec_signalEndOfInputStream(mEncoder->getCodec());
         if (status != AMEDIA_OK) {
             LOG(ERROR) << "SignalEOS on encoder returned error: " << status;

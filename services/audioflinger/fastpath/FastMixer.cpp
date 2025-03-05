@@ -36,6 +36,7 @@
 #include <cpustats/ThreadCpuUsage.h>
 #endif
 #endif
+#include <audio_utils/Trace.h>
 #include <audio_utils/channels.h>
 #include <audio_utils/format.h>
 #include <audio_utils/mono_blend.h>
@@ -397,12 +398,7 @@ void FastMixer::onWork()
             // in the overall fast mix cycle being delayed.  Should use a non-blocking FIFO.
             const size_t framesReady = fastTrack->mBufferProvider->framesReady();
             if (ATRACE_ENABLED()) {
-                // I wish we had formatted trace names
-                char traceName[16];
-                strcpy(traceName, "fRdy");
-                traceName[4] = i + (i < 10 ? '0' : 'A' - 10);
-                traceName[5] = '\0';
-                ATRACE_INT(traceName, framesReady);
+                ATRACE_INT(fastTrack->mTraceName, framesReady);
             }
             FastTrackDump *ftDump = &dumpState->mTracks[i];
             FastTrackUnderruns underruns = ftDump->mUnderruns;

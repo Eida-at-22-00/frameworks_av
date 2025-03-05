@@ -24,6 +24,7 @@ package {
     // to get the below license kinds:
     //   SPDX-license-identifier-Apache-2.0
     default_applicable_licenses: ["frameworks_av_license"],
+    default_team: "trendy_team_android_media_solutions_playback",
 }
 
 cc_defaults {
@@ -128,9 +129,16 @@ cc_fuzz {
     ],
 
     static_libs: [
+        "android.media.extractor.flags-aconfig-cc",
+        "libaconfig_storage_read_api_cc",
         "libstagefright_id3",
         "libstagefright_esds",
         "libmp4extractor",
+        "libstagefright_metadatautils",
+    ],
+
+    shared_libs: [
+        "server_configurable_flags",
     ],
 
     dictionary: "mp4_extractor_fuzzer.dict",
@@ -301,10 +309,16 @@ cc_fuzz {
     ],
 
     static_libs: [
+        "android.media.extractor.flags-aconfig-cc",
+        "libaconfig_storage_read_api_cc",
         "libsonivox",
         "libmedia_midiiowrapper",
         "libmidiextractor",
         "libwatchdog",
+    ],
+
+    shared_libs: [
+        "server_configurable_flags",
     ],
 
     dictionary: "midi_extractor_fuzzer.dict",

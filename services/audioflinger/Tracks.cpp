@@ -28,6 +28,7 @@
 #include "IAfThread.h"
 #include "ResamplerBufferProvider.h"
 
+#include <audio_utils/StringUtils.h>
 #include <audio_utils/minifloat.h>
 #include <media/AudioValidator.h>
 #include <media/RecordBufferConverter.h>
@@ -124,7 +125,12 @@ TrackBase::TrackBase(
         mPortId(portId),
         mIsInvalid(false),
         mTrackMetrics(std::move(metricsId), isOut, clientUid),
-        mCreatorPid(creatorPid)
+        mCreatorPid(creatorPid),
+        mTraceSuffix{std::to_string(mPortId).append(".").append(std::to_string(mId))
+                .append(".").append(std::to_string(mThreadIoHandle))},
+        mTraceActionId{std::string(AUDIO_TRACE_PREFIX_AUDIO_TRACK_ACTION).append(mTraceSuffix)},
+        mTraceIntervalId{std::string(AUDIO_TRACE_PREFIX_AUDIO_TRACK_INTERVAL)
+                .append(mTraceSuffix)}
 {
     const uid_t callingUid = IPCThreadState::self()->getCallingUid();
     if (!isAudioServerOrMediaServerUid(callingUid) || clientUid == AUDIO_UID_INVALID) {
@@ -335,6 +341,91 @@ void TrackBase::beginBatteryAttribution() {
 void TrackBase::endBatteryAttribution() {
     mBatteryStatsHolder.reset();
     mTrackToken.reset();
+}
+
+audio_utils::trace::Object TrackBase::createDeviceIntervalTrace(const std::string& devices) {
+    audio_utils::trace::Object trace;
+
+    // Please do not modify any items without approval (look at git blame).
+    // Sanitize the device string to remove addresses.
+    std::string plainDevices;
+    if (devices.find(")") != std::string::npos) {
+        auto deviceAddrVector = audio_utils::stringutils::getDeviceAddressPairs(devices);
+        for (const auto& deviceAddr : deviceAddrVector) {
+            // "|" not compatible with ATRACE filtering so we use "+".
+            if (!plainDevices.empty()) plainDevices.append("+");
+            plainDevices.append(deviceAddr.first);
+        }
+    } else {
+        plainDevices = devices;
+    }
+
+    trace // the following key, value pairs should be alphabetical
+            .set(AUDIO_TRACE_OBJECT_KEY_CHANNEL_MASK, static_cast<int32_t>(mChannelMask))
+            .set(AUDIO_TRACE_OBJECT_KEY_CONTENT_TYPE, toString(mAttr.content_type))
+            .set(AUDIO_TRACE_OBJECT_KEY_DEVICES, plainDevices)
+            .set(AUDIO_TRACE_OBJECT_KEY_FLAGS, trackFlagsAsString())
+            .set(AUDIO_TRACE_OBJECT_KEY_FORMAT, IAfThreadBase::formatToString(mFormat))
+            .set(AUDIO_TRACE_OBJECT_KEY_FRAMECOUNT, static_cast<int64_t>(mFrameCount))
+            .set(AUDIO_TRACE_OBJECT_KEY_PID, static_cast<int32_t>(
+                    mClient ? mClient->pid() : getpid()))
+            .set(AUDIO_TRACE_OBJECT_KEY_SAMPLE_RATE, static_cast<int32_t>(sampleRate()));
+    if (const auto thread = mThread.promote()) {
+        trace // continue in alphabetical order
+                .set(AUDIO_TRACE_PREFIX_THREAD AUDIO_TRACE_OBJECT_KEY_CHANNEL_MASK,
+                        static_cast<int32_t>(thread->channelMask()))
+                .set(AUDIO_TRACE_PREFIX_THREAD AUDIO_TRACE_OBJECT_KEY_FLAGS,
+                        thread->flagsAsString())
+                .set(AUDIO_TRACE_PREFIX_THREAD AUDIO_TRACE_OBJECT_KEY_FORMAT,
+                        IAfThreadBase::formatToString(thread->format()))
+                .set(AUDIO_TRACE_PREFIX_THREAD AUDIO_TRACE_OBJECT_KEY_FRAMECOUNT,
+                        static_cast<int64_t>(thread->frameCount()))
+                .set(AUDIO_TRACE_PREFIX_THREAD AUDIO_TRACE_OBJECT_KEY_ID,
+                        static_cast<int32_t>(mThreadIoHandle))
+                .set(AUDIO_TRACE_PREFIX_THREAD AUDIO_TRACE_OBJECT_KEY_SAMPLE_RATE,
+                        static_cast<int32_t>(thread->sampleRate()))
+                .set(AUDIO_TRACE_PREFIX_THREAD AUDIO_TRACE_OBJECT_KEY_TYPE,
+                        IAfThreadBase::threadTypeToString(thread->type()));
+    }
+    trace // continue in alphabetical order
+            .set(AUDIO_TRACE_OBJECT_KEY_UID, static_cast<int32_t>(uid()))
+            .set(AUDIO_TRACE_OBJECT_KEY_USAGE, toString(mAttr.usage));
+    return trace;
+}
+
+void TrackBase::logBeginInterval(const std::string& devices) {
+    mTrackMetrics.logBeginInterval(devices);
+
+    if (ATRACE_ENABLED()) [[unlikely]] {
+        auto trace = createDeviceIntervalTrace(devices);
+        mLastTrace = trace;
+        ATRACE_INSTANT_FOR_TRACK(mTraceIntervalId.c_str(),
+                trace.set(AUDIO_TRACE_OBJECT_KEY_EVENT, AUDIO_TRACE_EVENT_BEGIN_INTERVAL)
+                        .toTrace().c_str());
+    }
+}
+
+void TrackBase::logEndInterval() {
+    if (!mLastTrace.empty()) {
+        if (ATRACE_ENABLED()) [[unlikely]] {
+            ATRACE_INSTANT_FOR_TRACK(mTraceIntervalId.c_str(),
+                    mLastTrace.set(AUDIO_TRACE_OBJECT_KEY_EVENT, AUDIO_TRACE_EVENT_END_INTERVAL)
+                            .toTrace().c_str());
+        }
+        mLastTrace.clear();
+    }
+    mTrackMetrics.logEndInterval();
+}
+
+void TrackBase::logRefreshInterval(const std::string& devices) {
+    if (ATRACE_ENABLED()) [[unlikely]] {
+        if (mLastTrace.empty()) mLastTrace = createDeviceIntervalTrace(devices);
+        auto trace = mLastTrace;
+        ATRACE_INSTANT_FOR_TRACK(mTraceIntervalId.c_str(),
+                trace.set(AUDIO_TRACE_OBJECT_KEY_EVENT,
+                               AUDIO_TRACE_EVENT_REFRESH_INTERVAL)
+                        .toTrace().c_str());
+    }
 }
 
 PatchTrackBase::PatchTrackBase(const sp<ClientProxy>& proxy,
@@ -728,7 +819,8 @@ sp<IAfTrack> IAfTrack::create(
         float speed,
         bool isSpatialized,
         bool isBitPerfect,
-        float volume) {
+        float volume,
+        bool muted) {
     return sp<Track>::make(thread,
             client,
             streamType,
@@ -750,7 +842,8 @@ sp<IAfTrack> IAfTrack::create(
             speed,
             isSpatialized,
             isBitPerfect,
-            volume);
+            volume,
+            muted);
 }
 
 // Track constructor must be called with AudioFlinger::mLock and ThreadBase::mLock held
@@ -776,7 +869,8 @@ Track::Track(
             float speed,
             bool isSpatialized,
             bool isBitPerfect,
-            float volume)
+            float volume,
+            bool muted)
     :   TrackBase(thread, client, attr, sampleRate, format, channelMask, frameCount,
                   // TODO: Using unsecurePointer() has some associated security pitfalls
                   //       (see declaration for details).
@@ -861,10 +955,13 @@ Track::Track(
 
     populateUsageAndContentTypeFromStreamType();
 
+    mMutedFromPort = muted;
+
     // Audio patch and call assistant volume are always max
     if (mAttr.usage == AUDIO_USAGE_CALL_ASSISTANT
             || mAttr.usage == AUDIO_USAGE_VIRTUAL_SOURCE) {
         mVolume = 1.0f;
+        mMutedFromPort = false;
     }
 
     mServerLatencySupported = checkServerLatencySupported(format, flags);
@@ -1000,13 +1097,8 @@ void Track::destroy()
 
 void Track::appendDumpHeader(String8& result) const
 {
-    result.appendFormat("Type     Id Active Client Session Port Id S  Flags "
-                        "  Format Chn mask  SRate "
-                        "ST Usg CT "
-                        " G db  L dB  R dB  VS dB  PortVol dB "
-                        "  Server FrmCnt  FrmRdy F Underruns  Flushed BitPerfect InternalMute"
-                        "%s\n",
-                        isServerLatencySupported() ? "   Latency" : "");
+    const auto res = IAfTrack::getLogHeader();
+    result.append(res.data(), res.size());
 }
 
 void Track::appendDump(String8& result, bool active) const
@@ -1086,13 +1178,14 @@ void Track::appendDump(String8& result, bool active) const
             ? 'r' /* buffer reduced */: bufferSizeInFrames > mFrameCount
                     ? 'e' /* error */ : ' ' /* identical */;
 
-    result.appendFormat("%7s %6u %7u %7u %2s 0x%03X "
+    result.appendFormat("%7s %7u/%7u %7u %7u %2s 0x%03X "
                         "%08X %08X %6u "
                         "%2u %3x %2x "
-                        "%5.2g %5.2g %5.2g %5.2g%c %11.2g "
+                        "%5.2g %5.2g %5.2g %5.2g%c %11.2g %10s "
                         "%08X %6zu%c %6zu %c %9u%c %7u %10s %12s",
             active ? "yes" : "no",
-            (mClient == 0) ? getpid() : mClient->pid(),
+            mClient ? mClient->pid() : getpid() ,
+            mClient ? mClient->uid() : getuid(),
             mSessionId,
             mPortId,
             getTrackStateAsCodedString(),
@@ -1112,6 +1205,7 @@ void Track::appendDump(String8& result, bool active) const
             20.0 * log10(vsVolume.first), // VolumeShaper(s) total volume
             vsVolume.second ? 'A' : ' ',  // if any VolumeShapers active
             20.0 * log10(mVolume),
+            getPortMute() ? "true" : "false",
 
             mCblk->mServer,
             bufferSizeInFrames,
@@ -1156,6 +1250,12 @@ status_t Track::getNextBuffer(AudioBufferProvider::Buffer* buffer)
         ALOGV("%s(%d): underrun,  framesReady(%zu) < framesDesired(%zd), state: %d",
                 __func__, mId, buf.mFrameCount, desiredFrames, (int)mState);
         mAudioTrackServerProxy->tallyUnderrunFrames(desiredFrames);
+        if (ATRACE_ENABLED()) [[unlikely]] {
+            ATRACE_INSTANT_FOR_TRACK(mTraceActionId.c_str(), audio_utils::trace::Object{}
+                    .set(AUDIO_TRACE_OBJECT_KEY_EVENT, AUDIO_TRACE_EVENT_UNDERRUN)
+                    .set(AUDIO_TRACE_OBJECT_KEY_FRAMECOUNT, desiredFrames)
+                    .toTrace().c_str());
+        }
     } else {
         mAudioTrackServerProxy->tallyUnderrunFrames(0);
     }
@@ -1268,6 +1368,11 @@ bool Track::isReady() const {
 status_t Track::start(AudioSystem::sync_event_t event __unused,
                                                     audio_session_t triggerSession __unused)
 {
+    if (ATRACE_ENABLED()) [[unlikely]] {
+        ATRACE_INSTANT_FOR_TRACK(mTraceActionId.c_str(), audio_utils::trace::Object{}
+                .set(AUDIO_TRACE_OBJECT_KEY_EVENT, AUDIO_TRACE_EVENT_START)
+                .toTrace().c_str());
+    }
     status_t status = NO_ERROR;
     ALOGV("%s(%d): calling pid %d session %d",
             __func__, mId, IPCThreadState::self()->getCallingPid(), mSessionId);
@@ -1324,7 +1429,8 @@ status_t Track::start(AudioSystem::sync_event_t event __unused,
 
         // states to reset position info for pcm tracks
         if (audio_is_linear_pcm(mFormat)
-                && (state == IDLE || state == STOPPED || state == FLUSHED)) {
+                && (state == IDLE || state == STOPPED || state == FLUSHED
+                        || state == PAUSED)) {
             mFrameMap.reset();
 
             if (!isFastTrack()) {
@@ -1411,6 +1517,11 @@ status_t Track::start(AudioSystem::sync_event_t event __unused,
 void Track::stop()
 {
     ALOGV("%s(%d): calling pid %d", __func__, mId, IPCThreadState::self()->getCallingPid());
+    if (ATRACE_ENABLED()) [[unlikely]] {
+        ATRACE_INSTANT_FOR_TRACK(mTraceActionId.c_str(), audio_utils::trace::Object{}
+                .set(AUDIO_TRACE_OBJECT_KEY_EVENT, AUDIO_TRACE_EVENT_STOP)
+                .toTrace().c_str());
+    }
     const sp<IAfThreadBase> thread = mThread.promote();
     if (thread != 0) {
         audio_utils::unique_lock ul(thread->mutex());
@@ -1448,6 +1559,11 @@ void Track::stop()
 void Track::pause()
 {
     ALOGV("%s(%d): calling pid %d", __func__, mId, IPCThreadState::self()->getCallingPid());
+    if (ATRACE_ENABLED()) [[unlikely]] {
+        ATRACE_INSTANT_FOR_TRACK(mTraceActionId.c_str(), audio_utils::trace::Object{}
+                .set(AUDIO_TRACE_OBJECT_KEY_EVENT, AUDIO_TRACE_EVENT_PAUSE)
+                .toTrace().c_str());
+    }
     const sp<IAfThreadBase> thread = mThread.promote();
     if (thread != 0) {
         audio_utils::unique_lock ul(thread->mutex());
@@ -1487,6 +1603,11 @@ void Track::pause()
 void Track::flush()
 {
     ALOGV("%s(%d)", __func__, mId);
+    if (ATRACE_ENABLED()) [[unlikely]] {
+        ATRACE_INSTANT_FOR_TRACK(mTraceActionId.c_str(), audio_utils::trace::Object{}
+                .set(AUDIO_TRACE_OBJECT_KEY_EVENT, AUDIO_TRACE_EVENT_FLUSH)
+                .toTrace().c_str());
+    }
     const sp<IAfThreadBase> thread = mThread.promote();
     if (thread != 0) {
         audio_utils::unique_lock ul(thread->mutex());
@@ -1618,8 +1739,23 @@ void Track::setPortVolume(float volume) {
     if (mType != TYPE_PATCH) {
         // Do not recursively propagate a PatchTrack setPortVolume to
         // downstream PatchTracks.
-        forEachTeePatchTrack_l([volume](const auto& patchTrack) {
-                patchTrack->setPortVolume(volume); });
+        forEachTeePatchTrack_l([volume](const auto &patchTrack) {
+            patchTrack->setPortVolume(volume);
+        });
+    }
+}
+
+void Track::setPortMute(bool muted) {
+    if (mMutedFromPort == muted) {
+        return;
+    }
+    mMutedFromPort = muted;
+    if (mType != TYPE_PATCH) {
+        // Do not recursively propagate a PatchTrack setPortVolume to
+        // downstream PatchTracks.
+        forEachTeePatchTrack_l([muted](const auto &patchTrack) {
+            patchTrack->setPortMute(muted);
+        });
     }
 }
 
@@ -1724,8 +1860,8 @@ void Track::processMuteEvent_l(const sp<
     }
 
     if (result == OK) {
-        ALOGI("%s(%d): processed mute state for port ID %d from %d to %d", __func__, id(), mPortId,
-                static_cast<int>(mMuteState), static_cast<int>(muteState));
+        ALOGI("%s(%d): processed mute state for port ID %d from %#x to %#x", __func__, id(),
+              mPortId, static_cast<int>(mMuteState.load()), static_cast<int>(muteState));
         mMuteState = muteState;
     } else {
         ALOGW("%s(%d): cannot process mute state for port ID %d, status error %d", __func__, id(),
@@ -2502,7 +2638,8 @@ sp<IAfPatchTrack> IAfPatchTrack::create(
                                          *  the lowest possible latency
                                          *  even if it might glitch. */
         float speed,
-        float volume)
+        float volume,
+        bool muted)
 {
     return sp<PatchTrack>::make(
             playbackThread,
@@ -2517,7 +2654,8 @@ sp<IAfPatchTrack> IAfPatchTrack::create(
             timeout,
             frameCountToBeReady,
             speed,
-            volume);
+            volume,
+            muted);
 }
 
 PatchTrack::PatchTrack(IAfPlaybackThread* playbackThread,
@@ -2532,14 +2670,15 @@ PatchTrack::PatchTrack(IAfPlaybackThread* playbackThread,
                                                      const Timeout& timeout,
                                                      size_t frameCountToBeReady,
                                                      float speed,
-                                                     float volume)
+                                                     float volume,
+                                                     bool muted)
     :   Track(playbackThread, NULL, streamType,
               AUDIO_ATTRIBUTES_INITIALIZER,
               sampleRate, format, channelMask, frameCount,
               buffer, bufferSize, nullptr /* sharedBuffer */,
               AUDIO_SESSION_NONE, getpid(), audioServerAttributionSource(getpid()), flags,
               TYPE_PATCH, AUDIO_PORT_HANDLE_NONE, frameCountToBeReady, speed,
-              false /*isSpatialized*/, false /*isBitPerfect*/, volume),
+              false /*isSpatialized*/, false /*isBitPerfect*/, volume, muted),
         PatchTrackBase(mCblk ? new AudioTrackClientProxy(mCblk, mBuffer, frameCount, mFrameSize,
                         true /*clientInServer*/) : nullptr,
                        playbackThread, timeout)
@@ -2914,6 +3053,11 @@ status_t RecordTrack::getNextBuffer(AudioBufferProvider::Buffer* buffer)
 status_t RecordTrack::start(AudioSystem::sync_event_t event,
                                                         audio_session_t triggerSession)
 {
+    if (ATRACE_ENABLED()) [[unlikely]] {
+        ATRACE_INSTANT_FOR_TRACK(mTraceActionId.c_str(), audio_utils::trace::Object{}
+                .set(AUDIO_TRACE_OBJECT_KEY_EVENT, AUDIO_TRACE_EVENT_START)
+                .toTrace().c_str());
+    }
     const sp<IAfThreadBase> thread = mThread.promote();
     if (thread != 0) {
         auto* const recordThread = thread->asIAfRecordThread().get();
@@ -2926,6 +3070,11 @@ status_t RecordTrack::start(AudioSystem::sync_event_t event,
 
 void RecordTrack::stop()
 {
+    if (ATRACE_ENABLED()) [[unlikely]] {
+        ATRACE_INSTANT_FOR_TRACK(mTraceActionId.c_str(), audio_utils::trace::Object{}
+                .set(AUDIO_TRACE_OBJECT_KEY_EVENT, AUDIO_TRACE_EVENT_STOP)
+                .toTrace().c_str());
+    }
     const sp<IAfThreadBase> thread = mThread.promote();
     if (thread != 0) {
         auto* const recordThread = thread->asIAfRecordThread().get();
@@ -2989,21 +3138,20 @@ void RecordTrack::invalidate()
 
 void RecordTrack::appendDumpHeader(String8& result) const
 {
-    result.appendFormat("Active     Id Client Session Port Id  S  Flags  "
-                        " Format Chn mask  SRate Source  "
-                        " Server FrmCnt FrmRdy Sil%s\n",
-                        isServerLatencySupported() ? "   Latency" : "");
+    const auto res = IAfRecordTrack::getLogHeader();
+    result.append(res.data(), res.size());
 }
 
 void RecordTrack::appendDump(String8& result, bool active) const
 {
-    result.appendFormat("%c%5s %6d %6u %7u %7u  %2s 0x%03X "
+    result.appendFormat("%c%5s %6d %7u/%7u %7u %7u  %2s 0x%03X "
             "%08X %08X %6u %6X "
             "%08X %6zu %6zu %3c",
             isFastTrack() ? 'F' : ' ',
             active ? "yes" : "no",
             mId,
-            (mClient == 0) ? getpid() : mClient->pid(),
+            mClient ? mClient->pid() : getpid(),
+            mClient ? mClient->uid() : getuid(),
             mSessionId,
             mPortId,
             getTrackStateAsCodedString(),
@@ -3175,6 +3323,14 @@ void RecordTrack::copyMetadataTo(MetadataInserter& backInserter) const
     strncpy(metadata.tags, mAttr.tags, AUDIO_ATTRIBUTES_TAGS_MAX_SIZE);
 
     *backInserter++ = metadata;
+}
+
+void RecordTrack::setSilenced(bool silenced) {
+    if (!isPatchTrack() && mSilenced != silenced) {
+        mSilenced = silenced;
+        ALOGD("%s: track with port id: %d, (%s)", __func__, mPortId,
+              mSilenced ? "silenced" : "unsilenced");
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -3524,7 +3680,8 @@ sp<IAfMmapTrack> IAfMmapTrack::create(IAfThreadBase* thread,
           const android::content::AttributionSourceState& attributionSource,
           pid_t creatorPid,
           audio_port_handle_t portId,
-          float volume)
+          float volume,
+          bool muted)
 {
     return sp<MmapTrack>::make(
             thread,
@@ -3537,7 +3694,8 @@ sp<IAfMmapTrack> IAfMmapTrack::create(IAfThreadBase* thread,
             attributionSource,
             creatorPid,
             portId,
-            volume);
+            volume,
+            muted);
 }
 
 MmapTrack::MmapTrack(IAfThreadBase* thread,
@@ -3550,7 +3708,8 @@ MmapTrack::MmapTrack(IAfThreadBase* thread,
         const AttributionSourceState& attributionSource,
         pid_t creatorPid,
         audio_port_handle_t portId,
-        float volume)
+        float volume,
+        bool muted)
     :   TrackBase(thread, NULL, attr, sampleRate, format,
                   channelMask, (size_t)0 /* frameCount */,
                   nullptr /* buffer */, (size_t)0 /* bufferSize */,
@@ -3561,14 +3720,17 @@ MmapTrack::MmapTrack(IAfThreadBase* thread,
                   TYPE_DEFAULT, portId,
                   std::string(AMEDIAMETRICS_KEY_PREFIX_AUDIO_MMAP) + std::to_string(portId)),
         mPid(VALUE_OR_FATAL(aidl2legacy_int32_t_uid_t(attributionSource.pid))),
+        mUid(VALUE_OR_FATAL(aidl2legacy_int32_t_uid_t(attributionSource.uid))),
             mSilenced(false), mSilencedNotified(false), mVolume(volume)
 {
+    mMutedFromPort = muted;
     // Once this item is logged by the server, the client can add properties.
     mTrackMetrics.logConstructor(creatorPid, uid(), id());
     if (isOut && (attr.usage == AUDIO_USAGE_CALL_ASSISTANT
             || attr.usage == AUDIO_USAGE_VIRTUAL_SOURCE)) {
         // Audio patch and call assistant volume are always max
         mVolume = 1.0f;
+        mMutedFromPort = false;
     }
 }
 
@@ -3584,11 +3746,21 @@ status_t MmapTrack::initCheck() const
 status_t MmapTrack::start(AudioSystem::sync_event_t event __unused,
                                                     audio_session_t triggerSession __unused)
 {
+    if (ATRACE_ENABLED()) [[unlikely]] {
+        ATRACE_INSTANT_FOR_TRACK(mTraceActionId.c_str(), audio_utils::trace::Object{}
+                .set(AUDIO_TRACE_OBJECT_KEY_EVENT, AUDIO_TRACE_EVENT_START)
+                .toTrace().c_str());
+    }
     return NO_ERROR;
 }
 
 void MmapTrack::stop()
 {
+    if (ATRACE_ENABLED()) [[unlikely]] {
+        ATRACE_INSTANT_FOR_TRACK(mTraceActionId.c_str(), audio_utils::trace::Object{}
+                .set(AUDIO_TRACE_OBJECT_KEY_EVENT, AUDIO_TRACE_EVENT_STOP)
+                .toTrace().c_str());
+    }
 }
 
 // AudioBufferProvider interface
@@ -3648,14 +3820,15 @@ void MmapTrack::processMuteEvent_l(const sp<IAudioManager>& audioManager, mute_s
 
 void MmapTrack::appendDumpHeader(String8& result) const
 {
-    result.appendFormat("Client Session Port Id  Format Chn mask  SRate Flags %s  %s\n",
-                        isOut() ? "Usg CT": "Source", isOut() ? "PortVol dB" : "");
+    const auto res = IAfMmapTrack::getLogHeader();
+    result.append(res.data(), res.size());
 }
 
 void MmapTrack::appendDump(String8& result, bool active __unused) const
 {
-    result.appendFormat("%6u %7u %7u %08X %08X %6u 0x%03X ",
+    result.appendFormat("%7u/%7u %7u %7u %08X %08X %6u 0x%03X ",
             mPid,
+            mUid,
             mSessionId,
             mPortId,
             mFormat,
@@ -3663,10 +3836,11 @@ void MmapTrack::appendDump(String8& result, bool active __unused) const
             mSampleRate,
             mAttr.flags);
     if (isOut()) {
-        result.appendFormat("%3x %2x", mAttr.usage, mAttr.content_type);
+        result.appendFormat("%4x %2x", mAttr.usage, mAttr.content_type);
         result.appendFormat("%11.2g", 20.0 * log10(mVolume));
+        result.appendFormat("%12s", mMutedFromPort ? "true" : "false");
     } else {
-        result.appendFormat("%6x", mAttr.source);
+        result.appendFormat("%7x", mAttr.source);
     }
     result.append("\n");
 }

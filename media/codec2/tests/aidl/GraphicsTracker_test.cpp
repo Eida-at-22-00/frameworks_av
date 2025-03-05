@@ -92,8 +92,7 @@ struct TestConsumerListener : public android::BnConsumerListener {
         sp<IGraphicBufferConsumer> consumer = mConsumer.promote();
         if (consumer != nullptr && consumer->acquireBuffer(&buffer, 0) == android::NO_ERROR) {
             ::usleep(kRenderDelayUs);
-            consumer->releaseBuffer(buffer.mSlot, buffer.mFrameNumber,
-                                    EGL_NO_DISPLAY, EGL_NO_SYNC_KHR, buffer.mFence);
+            consumer->releaseBuffer(buffer.mSlot, buffer.mFrameNumber, buffer.mFence);
         }
     }
     void onBuffersReleased() override {}
@@ -438,8 +437,7 @@ TEST_F(GraphicsTrackerTest, DropAndReleaseTest) {
     // Consume one buffer and release
     BufferItem item;
     ASSERT_EQ(OK, mConsumer->acquireBuffer(&item, 0));
-    ASSERT_EQ(OK, mConsumer->releaseBuffer(item.mSlot, item.mFrameNumber,
-            EGL_NO_DISPLAY, EGL_NO_SYNC_KHR, item.mFence));
+    ASSERT_EQ(OK, mConsumer->releaseBuffer(item.mSlot, item.mFrameNumber, item.mFence));
     // Nothing to consume
     ASSERT_NE(OK, mConsumer->acquireBuffer(&item, 0));
 

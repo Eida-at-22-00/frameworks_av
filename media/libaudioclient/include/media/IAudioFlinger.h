@@ -109,7 +109,7 @@ public:
         audio_output_flags_t flags;
         size_t frameCount;
         size_t notificationFrameCount;
-        audio_port_handle_t selectedDeviceId;
+        DeviceIdVector selectedDeviceIds;
         audio_session_t sessionId;
 
         /* output */
@@ -181,6 +181,8 @@ public:
         fromAidl(const media::CreateRecordResponse& aidl);
     };
 
+    virtual sp<media::IAudioFlingerService> getDelegate() const { return {}; }
+
     /* create an audio track and registers it with AudioFlinger.
      * The audioTrack field will be null if the track cannot be created and the status will reflect
      * failure.
@@ -226,18 +228,19 @@ public:
      * the preference panel, mostly.
      */
     virtual     status_t    setStreamVolume(audio_stream_type_t stream, float value,
-                                    audio_io_handle_t output) = 0;
+                                    bool muted, audio_io_handle_t output) = 0;
     virtual     status_t    setStreamMute(audio_stream_type_t stream, bool muted) = 0;
 
     /**
      * Set volume for given AudioTrack port ids on specified output
      * @param portIds to consider
      * @param volume to set
+     * @param muted to set
      * @param output to consider
      * @return NO_ERROR if successful
      */
     virtual status_t setPortsVolume(const std::vector<audio_port_handle_t>& portIds, float volume,
-            audio_io_handle_t output) = 0;
+            bool muted, audio_io_handle_t output) = 0;
 
     // set audio mode
     virtual     status_t    setMode(audio_mode_t mode) = 0;
@@ -413,6 +416,8 @@ class AudioFlingerClientAdapter : public IAudioFlinger {
 public:
     explicit AudioFlingerClientAdapter(const sp<media::IAudioFlingerService> delegate);
 
+    sp<media::IAudioFlingerService> getDelegate() const final { return mDelegate; }
+
     status_t createTrack(const media::CreateTrackRequest& input,
                          media::CreateTrackResponse& output) override;
     status_t createRecord(const media::CreateRecordRequest& input,
@@ -428,10 +433,10 @@ public:
     status_t setMasterBalance(float balance) override;
     status_t getMasterBalance(float* balance) const override;
     status_t setStreamVolume(audio_stream_type_t stream, float value,
-                             audio_io_handle_t output) override;
+                             bool muted, audio_io_handle_t output) override;
     status_t setStreamMute(audio_stream_type_t stream, bool muted) override;
     status_t setPortsVolume(const std::vector<audio_port_handle_t>& portIds, float volume,
-            audio_io_handle_t output) override;
+            bool muted, audio_io_handle_t output) override;
     status_t setMode(audio_mode_t mode) override;
     status_t setMicMute(bool state) override;
     bool getMicMute() const override;
@@ -675,10 +680,10 @@ public:
     Status setMasterBalance(float balance) override;
     Status getMasterBalance(float* _aidl_return) override;
     Status setStreamVolume(media::audio::common::AudioStreamType stream,
-                           float value, int32_t output) override;
+                           float value, bool muted, int32_t output) override;
     Status setStreamMute(media::audio::common::AudioStreamType stream, bool muted) override;
-    Status setPortsVolume(const std::vector<int32_t>& portIds, float volume, int32_t output)
-            override;
+    Status setPortsVolume(const std::vector<int32_t>& portIds, float volume, bool muted,
+                          int32_t output) override;
     Status setMode(media::audio::common::AudioMode mode) override;
     Status setMicMute(bool state) override;
     Status getMicMute(bool* _aidl_return) override;

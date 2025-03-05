@@ -576,7 +576,7 @@ void Pre_Process(
         *(p_signal++) = (Word16)((L_tmp + 0x0000800L) >> 12);
 
         st->y1_hi = (Word16)(L_tmp >> 12);
-        st->y1_lo = (Word16)((L_tmp << 3) - ((Word32)(st->y1_hi) << 15));
+        __builtin_sub_overflow((Word16)(L_tmp << 3), (st->y1_hi) << 15, &st->y1_lo);
 
     }
 

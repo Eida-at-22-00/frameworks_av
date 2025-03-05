@@ -127,7 +127,8 @@ void AAudioServiceStreamBase::logOpen(aaudio_handle_t streamHandle) {
         .set(AMEDIAMETRICS_PROP_DIRECTION,
                 AudioGlobal_convertDirectionToText(getDirection()))
         .set(AMEDIAMETRICS_PROP_ENCODING, toString(getFormat()).c_str())
-        .set(AMEDIAMETRICS_PROP_ROUTEDDEVICEID, (int32_t)getDeviceId())
+        .set(AMEDIAMETRICS_PROP_ROUTEDDEVICEID, android::getFirstDeviceId(getDeviceIds()))
+        .set(AMEDIAMETRICS_PROP_ROUTEDDEVICEIDS, android::toString(getDeviceIds()).c_str())
         .set(AMEDIAMETRICS_PROP_SAMPLERATE, (int32_t)getSampleRate())
         .set(AMEDIAMETRICS_PROP_SESSIONID, (int32_t)getSessionId())
         .set(AMEDIAMETRICS_PROP_SOURCE, toString(attributes.source).c_str())

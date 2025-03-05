@@ -78,4 +78,21 @@ public class CodecUtils {
         }
         return null;
     }
+    /**
+     * Returns compression ratio for a given mediaType.
+     * @param mediaType mime type for which compression ratio is to be returned.
+     */
+    public static float getCompressionRatio(String mediaType) {
+        switch (mediaType) {
+            case MediaFormat.MIMETYPE_AUDIO_FLAC:
+                return 0.7f;
+            case MediaFormat.MIMETYPE_AUDIO_G711_MLAW:
+            case MediaFormat.MIMETYPE_AUDIO_G711_ALAW:
+            case MediaFormat.MIMETYPE_AUDIO_MSGSM:
+                return 0.5f;
+            case MediaFormat.MIMETYPE_AUDIO_RAW:
+                return 1.0f;
+        }
+        return 0.1f;
+    }
 }

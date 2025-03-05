@@ -1,4 +1,5 @@
 package {
+    default_team: "trendy_team_media_codec_framework",
     default_applicable_licenses: [
         "frameworks_av_media_codecs_amrnb_enc_license",
     ],
@@ -42,12 +43,12 @@ cc_library_static {
     srcs: [
         "src/amrencode.cpp",
         "src/autocorr.cpp",
-        "src/c1035pf.cpp",
-        "src/c2_11pf.cpp",
         "src/c2_9pf.cpp",
+        "src/c2_11pf.cpp",
         "src/c3_14pf.cpp",
         "src/c4_17pf.cpp",
         "src/c8_31pf.cpp",
+        "src/c1035pf.cpp",
         "src/calc_cor.cpp",
         "src/calc_en.cpp",
         "src/cbsearch.cpp",
@@ -132,7 +133,10 @@ cc_test {
 
     srcs: ["test/amrnb_enc_test.cpp"],
 
-    cflags: ["-Wall", "-Werror"],
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
 
     local_include_dirs: ["src"],
 

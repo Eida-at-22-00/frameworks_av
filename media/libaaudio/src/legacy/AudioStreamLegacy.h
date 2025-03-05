@@ -95,7 +95,7 @@ protected:
                                      android::ExtendedTimestamp *extendedTimestamp);
 
     void onAudioDeviceUpdate(audio_io_handle_t audioIo,
-            audio_port_handle_t deviceId) override;
+            const android::DeviceIdVector& deviceIds) override;
 
     /*
      * Check to see whether a callback thread has requested a disconnected.

@@ -281,8 +281,8 @@ static void Get_lsp_pol(
             t0 += ((Word32)lo * *lsp) >> 15;
 
             *(f) +=  *(f - 2);          /*      *f += f[-2]      */
-            *(f--) -=  t0 << 2;         /*      *f -= t0         */
-
+            __builtin_sub_overflow(*(f), (t0 << 2), f);   /*      *f -= t0         */
+            f--;
         }
 
         *f -= (Word32)(*lsp++) << 10;

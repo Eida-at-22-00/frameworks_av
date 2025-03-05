@@ -588,7 +588,7 @@ status_t DepthCompositeStream::checkAndGetMatchingDepthSize(size_t width, size_t
 }
 
 
-status_t DepthCompositeStream::createInternalStreams(const std::vector<sp<Surface>>& consumers,
+status_t DepthCompositeStream::createInternalStreams(const std::vector<SurfaceHolder>& consumers,
         bool /*hasDeferredConsumer*/, uint32_t width, uint32_t height, int format,
         camera_stream_rotation_t rotation, int *id, const std::string& physicalCameraId,
         const std::unordered_set<int32_t> &sensorPixelModesUsed,
@@ -643,7 +643,7 @@ status_t DepthCompositeStream::createInternalStreams(const std::vector<sp<Surfac
     if (ret == OK) {
         mBlobStreamId = *id;
         mBlobSurfaceId = (*surfaceIds)[0];
-        mOutputSurface = consumers[0];
+        mOutputSurface = consumers[0].mSurface;
     } else {
         return ret;
     }

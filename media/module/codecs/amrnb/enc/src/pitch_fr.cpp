@@ -326,6 +326,7 @@ static void Norm_Corr(Word16 exc[],
     Word16 norm_h;
     Word16 norm_l;
     Word32 s;
+    Word32 mul;
     Word32 s2;
     Word16 excf[L_SUBFR];
     Word16 scaling;
@@ -353,10 +354,12 @@ static void Norm_Corr(Word16 exc[],
     {
         temp = *(p_excf++);
         *(p_s_excf++) = temp >> 2;
-        s += (Word32) temp * temp;
+        __builtin_mul_overflow(temp, temp, &mul);
+        __builtin_add_overflow(s, mul, &s);
         temp = *(p_excf++);
         *(p_s_excf++) = temp >> 2;
-        s += (Word32) temp * temp;
+        __builtin_mul_overflow(temp, temp, &mul);
+        __builtin_add_overflow(s, mul, &s);
     }
 
 
@@ -387,20 +390,24 @@ static void Norm_Corr(Word16 exc[],
 
         while (j--)
         {
-            s  += (Word32) * (p_x++) * *(p_s_excf);
-            s2 += ((Word32)(*(p_s_excf)) * (*(p_s_excf)));
+            __builtin_mul_overflow(*(p_x++), *p_s_excf, &mul);
+            __builtin_add_overflow(s, mul, &s);
+            __builtin_mul_overflow(*p_s_excf, *p_s_excf, &mul);
+            __builtin_add_overflow(s2, mul, &s2);
             p_s_excf++;
-            s  += (Word32) * (p_x++) * *(p_s_excf);
-            s2 += ((Word32)(*(p_s_excf)) * (*(p_s_excf)));
+            __builtin_mul_overflow(*(p_x++), *p_s_excf, &mul);
+            __builtin_add_overflow(s, mul, &s);
+            __builtin_mul_overflow(*p_s_excf, *p_s_excf, &mul);
+            __builtin_add_overflow(s2, mul, &s2);
             p_s_excf++;
         }
 
         s2     = s2 << 1;
         s2     = Inv_sqrt(s2, pOverflow);
         norm_h = (Word16)(s2 >> 16);
-        norm_l = (Word16)((s2 >> 1) - (norm_h << 15));
+        __builtin_sub_overflow((s2 >> 1), (norm_h << 15), &norm_l);
         corr_h = (Word16)(s >> 15);
-        corr_l = (Word16)((s) - (corr_h << 15));
+        __builtin_sub_overflow(s, (corr_h << 15), &corr_l);
 
         /* Normalize correlation = correlation * (1/sqrt(energy)) */
 

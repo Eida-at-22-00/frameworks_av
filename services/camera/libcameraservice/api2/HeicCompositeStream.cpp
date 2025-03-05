@@ -27,54 +27,79 @@
 #include <aidl/android/hardware/camera/device/CameraBlobId.h>
 #include <camera/StringUtils.h>
 #include <com_android_graphics_libgui_flags.h>
+#include <com_android_internal_camera_flags.h>
 #include <gui/Surface.h>
 #include <libyuv.h>
 #include <utils/Log.h>
 #include <utils/Trace.h>
+#include <ultrahdr/jpegr.h>
+#include <ultrahdr/ultrahdrcommon.h>
 
-#include <mediadrm/ICrypto.h>
 #include <media/MediaCodecBuffer.h>
+#include <media/stagefright/MediaCodecConstants.h>
+#include <media/stagefright/MetaData.h>
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/MediaDefs.h>
-#include <media/stagefright/MediaCodecConstants.h>
+#include <mediadrm/ICrypto.h>
+#include <memory>
 
+#include "HeicCompositeStream.h"
+#include "HeicEncoderInfoManager.h"
 #include "common/CameraDeviceBase.h"
+#include "system/camera_metadata.h"
 #include "utils/ExifUtils.h"
 #include "utils/SessionConfigurationUtils.h"
 #include "utils/Utils.h"
-#include "HeicEncoderInfoManager.h"
-#include "HeicCompositeStream.h"
 
 using aidl::android::hardware::camera::device::CameraBlob;
 using aidl::android::hardware::camera::device::CameraBlobId;
+
+namespace flags = com::android::internal::camera::flags;
 
 namespace android {
 namespace camera3 {
 
 HeicCompositeStream::HeicCompositeStream(sp<CameraDeviceBase> device,
-        wp<hardware::camera2::ICameraDeviceCallbacks> cb) :
-        CompositeStream(device, cb),
-        mUseHeic(false),
-        mNumOutputTiles(1),
-        mOutputWidth(0),
-        mOutputHeight(0),
-        mMaxHeicBufferSize(0),
-        mGridWidth(HeicEncoderInfoManager::kGridWidth),
-        mGridHeight(HeicEncoderInfoManager::kGridHeight),
-        mGridRows(1),
-        mGridCols(1),
-        mUseGrid(false),
-        mAppSegmentStreamId(-1),
-        mAppSegmentSurfaceId(-1),
-        mMainImageStreamId(-1),
-        mMainImageSurfaceId(-1),
-        mYuvBufferAcquired(false),
-        mStreamSurfaceListener(new StreamSurfaceListener()),
-        mDequeuedOutputBufferCnt(0),
-        mCodecOutputCounter(0),
-        mQuality(-1),
-        mGridTimestampUs(0),
-        mStatusId(StatusTracker::NO_STATUS_ID) {
+                                         wp<hardware::camera2::ICameraDeviceCallbacks> cb)
+    : CompositeStream(device, cb),
+      mUseHeic(false),
+      mNumOutputTiles(1),
+      mNumGainmapOutputTiles(1),
+      mOutputWidth(0),
+      mOutputHeight(0),
+      mGainmapOutputWidth(0),
+      mGainmapOutputHeight(0),
+      mMaxHeicBufferSize(0),
+      mGridWidth(HeicEncoderInfoManager::kGridWidth),
+      mGridHeight(HeicEncoderInfoManager::kGridHeight),
+      mGainmapGridWidth(HeicEncoderInfoManager::kGridWidth),
+      mGainmapGridHeight(HeicEncoderInfoManager::kGridHeight),
+      mGridRows(1),
+      mGridCols(1),
+      mGainmapGridRows(1),
+      mGainmapGridCols(1),
+      mUseGrid(false),
+      mGainmapUseGrid(false),
+      mAppSegmentStreamId(-1),
+      mAppSegmentSurfaceId(-1),
+      mMainImageStreamId(-1),
+      mMainImageSurfaceId(-1),
+      mYuvBufferAcquired(false),
+      mStreamSurfaceListener(new StreamSurfaceListener()),
+      mDequeuedOutputBufferCnt(0),
+      mCodecOutputCounter(0),
+      mCodecGainmapOutputCounter(0),
+      mQuality(-1),
+      mGridTimestampUs(0),
+      mStatusId(StatusTracker::NO_STATUS_ID) {
+    mStaticInfo = device->info();
+    camera_metadata_entry halHeicSupport = mStaticInfo.find(ANDROID_HEIC_INFO_SUPPORTED);
+    if (halHeicSupport.count == 1 &&
+            halHeicSupport.data.u8[0] == ANDROID_HEIC_INFO_SUPPORTED_TRUE) {
+        // The camera device supports the HEIC stream combination,
+        // use the standard stream combintion.
+        mAppSegmentSupported = true;
+    }
 }
 
 HeicCompositeStream::~HeicCompositeStream() {
@@ -84,6 +109,7 @@ HeicCompositeStream::~HeicCompositeStream() {
 
     mInputAppSegmentBuffers.clear();
     mCodecOutputBuffers.clear();
+    mGainmapCodecOutputBuffers.clear();
 
     mAppSegmentStreamId = -1;
     mAppSegmentSurfaceId = -1;
@@ -97,7 +123,8 @@ HeicCompositeStream::~HeicCompositeStream() {
 }
 
 bool HeicCompositeStream::isHeicCompositeStreamInfo(const OutputStreamInfo& streamInfo) {
-    return ((streamInfo.dataSpace == static_cast<android_dataspace_t>(HAL_DATASPACE_HEIF)) &&
+    return ((streamInfo.dataSpace == static_cast<android_dataspace_t>(HAL_DATASPACE_HEIF) ||
+                (streamInfo.dataSpace == static_cast<android_dataspace_t>(kUltraHDRDataSpace))) &&
             (streamInfo.format == HAL_PIXEL_FORMAT_BLOB));
 }
 
@@ -120,23 +147,38 @@ bool HeicCompositeStream::isHeicCompositeStream(const sp<Surface> &surface) {
         return false;
     }
 
-    return ((format == HAL_PIXEL_FORMAT_BLOB) && (dataspace == HAL_DATASPACE_HEIF));
+    return ((format == HAL_PIXEL_FORMAT_BLOB) && ((dataspace == HAL_DATASPACE_HEIF) ||
+                (dataspace == static_cast<int>(kUltraHDRDataSpace))));
 }
 
-status_t HeicCompositeStream::createInternalStreams(const std::vector<sp<Surface>>& consumers,
+status_t HeicCompositeStream::createInternalStreams(const std::vector<SurfaceHolder>& consumers,
         bool /*hasDeferredConsumer*/, uint32_t width, uint32_t height, int format,
         camera_stream_rotation_t rotation, int *id, const std::string& physicalCameraId,
         const std::unordered_set<int32_t> &sensorPixelModesUsed,
         std::vector<int> *surfaceIds,
         int /*streamSetId*/, bool /*isShared*/, int32_t colorSpace,
         int64_t /*dynamicProfile*/, int64_t /*streamUseCase*/, bool useReadoutTimestamp) {
+
     sp<CameraDeviceBase> device = mDevice.promote();
     if (!device.get()) {
         ALOGE("%s: Invalid camera device!", __FUNCTION__);
         return NO_INIT;
     }
 
-    status_t res = initializeCodec(width, height, device);
+    ANativeWindow* anw = consumers[0].mSurface.get();
+    int dataspace;
+    status_t res;
+    if ((res = anw->query(anw, NATIVE_WINDOW_DEFAULT_DATASPACE, &dataspace)) != OK) {
+        ALOGE("%s: Failed to query Surface dataspace: %s (%d)", __FUNCTION__, strerror(-res),
+                res);
+        return res;
+    }
+    if ((dataspace == static_cast<int>(kUltraHDRDataSpace)) && flags::camera_heif_gainmap()) {
+        mHDRGainmapEnabled = true;
+        mInternalDataSpace = static_cast<android_dataspace_t>(HAL_DATASPACE_BT2020_HLG);
+    }
+
+    res = initializeCodec(width, height, device);
     if (res != OK) {
         ALOGE("%s: Failed to initialize HEIC/HEVC codec: %s (%d)",
                 __FUNCTION__, strerror(-res), res);
@@ -144,42 +186,48 @@ status_t HeicCompositeStream::createInternalStreams(const std::vector<sp<Surface
     }
 
 #if COM_ANDROID_GRAPHICS_LIBGUI_FLAGS(WB_CONSUMER_BASE_OWNS_BQ)
-    mAppSegmentConsumer = new CpuConsumer(kMaxAcquiredAppSegment);
-    mAppSegmentConsumer->setFrameAvailableListener(this);
-    mAppSegmentConsumer->setName(String8("Camera3-HeicComposite-AppSegmentStream"));
-    mAppSegmentSurface = mAppSegmentConsumer->getSurface();
-    sp<IGraphicBufferProducer> producer = mAppSegmentSurface->getIGraphicBufferProducer();
+    if (mAppSegmentSupported) {
+        mAppSegmentConsumer = new CpuConsumer(kMaxAcquiredAppSegment);
+        mAppSegmentConsumer->setFrameAvailableListener(this);
+        mAppSegmentConsumer->setName(String8("Camera3-HeicComposite-AppSegmentStream"));
+        mAppSegmentSurface = mAppSegmentConsumer->getSurface();
+    }
+    sp<IGraphicBufferProducer> producer = mAppSegmentSurface.get() != nullptr ?
+        mAppSegmentSurface->getIGraphicBufferProducer() : nullptr;
 #else
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
-    BufferQueue::createBufferQueue(&producer, &consumer);
-    mAppSegmentConsumer = new CpuConsumer(consumer, kMaxAcquiredAppSegment);
-    mAppSegmentConsumer->setFrameAvailableListener(this);
-    mAppSegmentConsumer->setName(String8("Camera3-HeicComposite-AppSegmentStream"));
-    mAppSegmentSurface = new Surface(producer);
+    if (mAppSegmentSupported) {
+        BufferQueue::createBufferQueue(&producer, &consumer);
+        mAppSegmentConsumer = new CpuConsumer(consumer, kMaxAcquiredAppSegment);
+        mAppSegmentConsumer->setFrameAvailableListener(this);
+        mAppSegmentConsumer->setName(String8("Camera3-HeicComposite-AppSegmentStream"));
+        mAppSegmentSurface = new Surface(producer);
+    }
 #endif  // COM_ANDROID_GRAPHICS_LIBGUI_FLAGS(WB_CONSUMER_BASE_OWNS_BQ)
 
-    mStaticInfo = device->info();
-
-    res = device->createStream(mAppSegmentSurface, mAppSegmentMaxSize, 1, format,
-            kAppSegmentDataSpace, rotation, &mAppSegmentStreamId, physicalCameraId,
-            sensorPixelModesUsed, surfaceIds, camera3::CAMERA3_STREAM_SET_ID_INVALID,
-            /*isShared*/false, /*isMultiResolution*/false,
-            /*consumerUsage*/0, ANDROID_REQUEST_AVAILABLE_DYNAMIC_RANGE_PROFILES_MAP_STANDARD,
-            ANDROID_SCALER_AVAILABLE_STREAM_USE_CASES_DEFAULT,
-            OutputConfiguration::TIMESTAMP_BASE_DEFAULT,
-            OutputConfiguration::MIRROR_MODE_AUTO,
-            colorSpace,
-            useReadoutTimestamp);
-    if (res == OK) {
-        mAppSegmentSurfaceId = (*surfaceIds)[0];
-    } else {
-        ALOGE("%s: Failed to create JPEG App segment stream: %s (%d)", __FUNCTION__,
-                strerror(-res), res);
-        return res;
+    if (mAppSegmentSupported) {
+        std::vector<int> sourceSurfaceId;
+        res = device->createStream(mAppSegmentSurface, mAppSegmentMaxSize, 1, format,
+                kAppSegmentDataSpace, rotation, &mAppSegmentStreamId, physicalCameraId,
+                sensorPixelModesUsed, &sourceSurfaceId, camera3::CAMERA3_STREAM_SET_ID_INVALID,
+                /*isShared*/false, /*isMultiResolution*/false,
+                /*consumerUsage*/0, ANDROID_REQUEST_AVAILABLE_DYNAMIC_RANGE_PROFILES_MAP_STANDARD,
+                ANDROID_SCALER_AVAILABLE_STREAM_USE_CASES_DEFAULT,
+                OutputConfiguration::TIMESTAMP_BASE_DEFAULT,
+                OutputConfiguration::MIRROR_MODE_AUTO,
+                colorSpace,
+                useReadoutTimestamp);
+        if (res == OK) {
+            mAppSegmentSurfaceId = sourceSurfaceId[0];
+        } else {
+            ALOGE("%s: Failed to create JPEG App segment stream: %s (%d)", __FUNCTION__,
+                    strerror(-res), res);
+            return res;
+        }
     }
 
-    if (!mUseGrid) {
+    if (!mUseGrid && !mHDRGainmapEnabled) {
         res = mCodec->createInputSurface(&producer);
         if (res != OK) {
             ALOGE("%s: Failed to create input surface for Heic codec: %s (%d)",
@@ -206,21 +254,32 @@ status_t HeicCompositeStream::createInternalStreams(const std::vector<sp<Surface
         return res;
     }
 
-    std::vector<int> sourceSurfaceId;
-    //Use YUV_888 format if framework tiling is needed.
-    int srcStreamFmt = mUseGrid ? HAL_PIXEL_FORMAT_YCbCr_420_888 :
-            HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED;
-    res = device->createStream(mMainImageSurface, width, height, srcStreamFmt, kHeifDataSpace,
-            rotation, id, physicalCameraId, sensorPixelModesUsed, &sourceSurfaceId,
+    if (mHDRGainmapEnabled) {
+        res = mGainmapCodec->start();
+        if (res != OK) {
+            ALOGE("%s: Failed to start gainmap codec: %s (%d)", __FUNCTION__,
+                    strerror(-res), res);
+            return res;
+        }
+    }
+
+    //Use YUV_420 format if framework tiling is needed.
+    int srcStreamFmt = mHDRGainmapEnabled ?
+        static_cast<android_pixel_format_t>(HAL_PIXEL_FORMAT_YCBCR_P010) : mUseGrid ?
+        HAL_PIXEL_FORMAT_YCbCr_420_888 : HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED;
+    res = device->createStream(mMainImageSurface, width, height, srcStreamFmt, mInternalDataSpace,
+            rotation, id, physicalCameraId, sensorPixelModesUsed, surfaceIds,
             camera3::CAMERA3_STREAM_SET_ID_INVALID, /*isShared*/false, /*isMultiResolution*/false,
-            /*consumerUsage*/0, ANDROID_REQUEST_AVAILABLE_DYNAMIC_RANGE_PROFILES_MAP_STANDARD,
+            /*consumerUsage*/0, mHDRGainmapEnabled ?
+            ANDROID_REQUEST_AVAILABLE_DYNAMIC_RANGE_PROFILES_MAP_HLG10 :
+            ANDROID_REQUEST_AVAILABLE_DYNAMIC_RANGE_PROFILES_MAP_STANDARD,
             ANDROID_SCALER_AVAILABLE_STREAM_USE_CASES_DEFAULT,
             OutputConfiguration::TIMESTAMP_BASE_DEFAULT,
             OutputConfiguration::MIRROR_MODE_AUTO,
             colorSpace,
             useReadoutTimestamp);
     if (res == OK) {
-        mMainImageSurfaceId = sourceSurfaceId[0];
+        mMainImageSurfaceId = (*surfaceIds)[0];
         mMainImageStreamId = *id;
     } else {
         ALOGE("%s: Failed to create main image stream: %s (%d)", __FUNCTION__,
@@ -228,7 +287,7 @@ status_t HeicCompositeStream::createInternalStreams(const std::vector<sp<Surface
         return res;
     }
 
-    mOutputSurface = consumers[0];
+    mOutputSurface = consumers[0].mSurface;
     res = registerCompositeStreamListener(mMainImageStreamId);
     if (res != OK) {
         ALOGE("%s: Failed to register HAL main image stream: %s (%d)", __FUNCTION__,
@@ -236,11 +295,13 @@ status_t HeicCompositeStream::createInternalStreams(const std::vector<sp<Surface
         return res;
     }
 
-    res = registerCompositeStreamListener(mAppSegmentStreamId);
-    if (res != OK) {
-        ALOGE("%s: Failed to register HAL app segment stream: %s (%d)", __FUNCTION__,
-                strerror(-res), res);
-        return res;
+    if (mAppSegmentSupported) {
+        res = registerCompositeStreamListener(mAppSegmentStreamId);
+        if (res != OK) {
+            ALOGE("%s: Failed to register HAL app segment stream: %s (%d)", __FUNCTION__,
+                    strerror(-res), res);
+            return res;
+        }
     }
 
     initCopyRowFunction(width);
@@ -299,6 +360,9 @@ void HeicCompositeStream::onBufferReleased(const BufferInfo& bufferInfo) {
         mCodecOutputBufferFrameNumbers.push(bufferInfo.mFrameNumber);
         ALOGV("%s: [%" PRId64 "]: Adding main image frame number (%zu frame numbers in total)",
                 __FUNCTION__, bufferInfo.mFrameNumber, mMainImageFrameNumbers.size());
+        if (mHDRGainmapEnabled) {
+            mCodecGainmapOutputBufferFrameNumbers.push(bufferInfo.mFrameNumber);
+        }
     } else if (bufferInfo.mStreamId == mAppSegmentStreamId) {
         mAppSegmentFrameNumbers.push(bufferInfo.mFrameNumber);
         ALOGV("%s: [%" PRId64 "]: Adding app segment frame number (%zu frame numbers in total)",
@@ -346,13 +410,13 @@ void HeicCompositeStream::onFrameAvailable(const BufferItem& item) {
             mInputAppSegmentBuffers.push_back(item.mTimestamp);
             mInputReadyCondition.signal();
         }
-    } else if (item.mDataSpace == kHeifDataSpace) {
-        ALOGV("%s: YUV_888 buffer with ts: %" PRIu64 " ms. arrived!",
+    } else if (item.mDataSpace == mInternalDataSpace) {
+        ALOGV("%s: YUV_420 buffer with ts: %" PRIu64 " ms. arrived!",
                 __func__, ns2ms(item.mTimestamp));
 
         Mutex::Autolock l(mMutex);
-        if (!mUseGrid) {
-            ALOGE("%s: YUV_888 internal stream is only supported for HEVC tiling",
+        if (!mUseGrid && !mHDRGainmapEnabled) {
+            ALOGE("%s: YUV_420 internal stream is only supported for HEVC tiling",
                     __FUNCTION__);
             return;
         }
@@ -367,6 +431,7 @@ void HeicCompositeStream::onFrameAvailable(const BufferItem& item) {
 
 status_t HeicCompositeStream::getCompositeStreamInfo(const OutputStreamInfo &streamInfo,
             const CameraMetadata& ch, std::vector<OutputStreamInfo>* compositeOutput /*out*/) {
+    bool gainmapEnabled = false;
     if (compositeOutput == nullptr) {
         return BAD_VALUE;
     }
@@ -381,30 +446,44 @@ status_t HeicCompositeStream::getCompositeStreamInfo(const OutputStreamInfo &str
         return OK;
     }
 
-    compositeOutput->insert(compositeOutput->end(), 2, streamInfo);
+    if (streamInfo.dataSpace == static_cast<android_dataspace_t>(kUltraHDRDataSpace)) {
+        gainmapEnabled = true;
+    }
 
-    // JPEG APPS segments Blob stream info
-    (*compositeOutput)[0].width = calcAppSegmentMaxSize(ch);
-    (*compositeOutput)[0].height = 1;
-    (*compositeOutput)[0].format = HAL_PIXEL_FORMAT_BLOB;
-    (*compositeOutput)[0].dataSpace = kAppSegmentDataSpace;
-    (*compositeOutput)[0].consumerUsage = GRALLOC_USAGE_SW_READ_OFTEN;
+    compositeOutput->clear();
+    compositeOutput->push_back({});
 
     // YUV/IMPLEMENTATION_DEFINED stream info
-    (*compositeOutput)[1].width = streamInfo.width;
-    (*compositeOutput)[1].height = streamInfo.height;
-    (*compositeOutput)[1].format = useGrid ? HAL_PIXEL_FORMAT_YCbCr_420_888 :
-            HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED;
-    (*compositeOutput)[1].dataSpace = kHeifDataSpace;
-    (*compositeOutput)[1].consumerUsage = useHeic ? GRALLOC_USAGE_HW_IMAGE_ENCODER :
+    (*compositeOutput)[0].width = streamInfo.width;
+    (*compositeOutput)[0].height = streamInfo.height;
+    (*compositeOutput)[0].format = gainmapEnabled ?
+        static_cast<android_pixel_format_t>(HAL_PIXEL_FORMAT_YCBCR_P010) : useGrid ?
+        HAL_PIXEL_FORMAT_YCbCr_420_888 : HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED;
+    (*compositeOutput)[0].dataSpace = gainmapEnabled ?
+        static_cast<android_dataspace_t>(HAL_DATASPACE_BT2020_HLG) : kHeifDataSpace;
+    (*compositeOutput)[0].consumerUsage = useHeic ? GRALLOC_USAGE_HW_IMAGE_ENCODER :
             useGrid ? GRALLOC_USAGE_SW_READ_OFTEN : GRALLOC_USAGE_HW_VIDEO_ENCODER;
+
+
+    camera_metadata_ro_entry halHeicSupport = ch.find(ANDROID_HEIC_INFO_SUPPORTED);
+    if (halHeicSupport.count == 1 &&
+            halHeicSupport.data.u8[0] == ANDROID_HEIC_INFO_SUPPORTED_TRUE) {
+
+        compositeOutput->push_back({});
+        // JPEG APPS segments Blob stream info
+        (*compositeOutput)[1].width = calcAppSegmentMaxSize(ch);
+        (*compositeOutput)[1].height = 1;
+        (*compositeOutput)[1].format = HAL_PIXEL_FORMAT_BLOB;
+        (*compositeOutput)[1].dataSpace = kAppSegmentDataSpace;
+        (*compositeOutput)[1].consumerUsage = GRALLOC_USAGE_SW_READ_OFTEN;
+    }
 
     return NO_ERROR;
 }
 
 bool HeicCompositeStream::isSizeSupportedByHeifEncoder(int32_t width, int32_t height,
-        bool* useHeic, bool* useGrid, int64_t* stall, AString* hevcName) {
-    static HeicEncoderInfoManager& heicManager = HeicEncoderInfoManager::getInstance();
+        bool* useHeic, bool* useGrid, int64_t* stall, AString* hevcName, bool allowSWCodec) {
+    static HeicEncoderInfoManager& heicManager = HeicEncoderInfoManager::getInstance(allowSWCodec);
     return heicManager.isSizeSupported(width, height, useHeic, useGrid, stall, hevcName);
 }
 
@@ -421,7 +500,7 @@ bool HeicCompositeStream::isInMemoryTempFileSupported() {
 }
 
 void HeicCompositeStream::onHeicOutputFrameAvailable(
-        const CodecOutputBufferInfo& outputBufferInfo) {
+        const CodecOutputBufferInfo& outputBufferInfo, bool isGainmap) {
     Mutex::Autolock l(mMutex);
 
     ALOGV("%s: index %d, offset %d, size %d, time %" PRId64 ", flags 0x%x",
@@ -431,36 +510,99 @@ void HeicCompositeStream::onHeicOutputFrameAvailable(
     if (!mErrorState) {
         if ((outputBufferInfo.size > 0) &&
                 ((outputBufferInfo.flags & MediaCodec::BUFFER_FLAG_CODECCONFIG) == 0)) {
-            mCodecOutputBuffers.push_back(outputBufferInfo);
+            isGainmap ? mGainmapCodecOutputBuffers.push_back(outputBufferInfo) :
+                mCodecOutputBuffers.push_back(outputBufferInfo);
             mInputReadyCondition.signal();
         } else {
             ALOGV("%s: Releasing output buffer: size %d flags: 0x%x ", __FUNCTION__,
                 outputBufferInfo.size, outputBufferInfo.flags);
-            mCodec->releaseOutputBuffer(outputBufferInfo.index);
+            isGainmap ? mGainmapCodec->releaseOutputBuffer(outputBufferInfo.index) :
+                mCodec->releaseOutputBuffer(outputBufferInfo.index);
         }
     } else {
-        mCodec->releaseOutputBuffer(outputBufferInfo.index);
+        isGainmap ? mGainmapCodec->releaseOutputBuffer(outputBufferInfo.index) :
+            mCodec->releaseOutputBuffer(outputBufferInfo.index);
     }
 }
 
-void HeicCompositeStream::onHeicInputFrameAvailable(int32_t index) {
+void HeicCompositeStream::onHeicInputFrameAvailable(int32_t index, bool isGainmap) {
     Mutex::Autolock l(mMutex);
 
-    if (!mUseGrid) {
+    if (!mUseGrid && !mHDRGainmapEnabled) {
         ALOGE("%s: Codec YUV input mode must only be used for Hevc tiling mode", __FUNCTION__);
         return;
     }
 
-    mCodecInputBuffers.push_back(index);
+    isGainmap ? mGainmapCodecInputBuffers.push_back(index) : mCodecInputBuffers.push_back(index);
     mInputReadyCondition.signal();
 }
 
-void HeicCompositeStream::onHeicFormatChanged(sp<AMessage>& newFormat) {
+void HeicCompositeStream::onHeicGainmapFormatChanged(sp<AMessage>& newFormat) {
     if (newFormat == nullptr) {
         ALOGE("%s: newFormat must not be null!", __FUNCTION__);
         return;
     }
 
+    Mutex::Autolock l(mMutex);
+
+    AString mime;
+    AString mimeHeic(MIMETYPE_IMAGE_ANDROID_HEIC);
+    newFormat->findString(KEY_MIME, &mime);
+    if (mime != mimeHeic) {
+        // For HEVC codec, below keys need to be filled out or overwritten so that the
+        // muxer can handle them as HEIC output image.
+        newFormat->setString(KEY_MIME, mimeHeic);
+        newFormat->setInt32(KEY_WIDTH, mGainmapOutputWidth);
+        newFormat->setInt32(KEY_HEIGHT, mGainmapOutputHeight);
+    }
+
+    if (mGainmapUseGrid) {
+        int32_t gridRows, gridCols, tileWidth, tileHeight;
+        if (newFormat->findInt32(KEY_GRID_ROWS, &gridRows) &&
+                newFormat->findInt32(KEY_GRID_COLUMNS, &gridCols) &&
+                newFormat->findInt32(KEY_TILE_WIDTH, &tileWidth) &&
+                newFormat->findInt32(KEY_TILE_HEIGHT, &tileHeight)) {
+            mGainmapGridWidth = tileWidth;
+            mGainmapGridHeight = tileHeight;
+            mGainmapGridRows = gridRows;
+            mGainmapGridCols = gridCols;
+        } else {
+            newFormat->setInt32(KEY_TILE_WIDTH, mGainmapGridWidth);
+            newFormat->setInt32(KEY_TILE_HEIGHT, mGainmapGridHeight);
+            newFormat->setInt32(KEY_GRID_ROWS, mGainmapGridRows);
+            newFormat->setInt32(KEY_GRID_COLUMNS, mGainmapGridCols);
+        }
+        int32_t left, top, right, bottom;
+        if (newFormat->findRect("crop", &left, &top, &right, &bottom)) {
+            newFormat->setRect("crop", 0, 0, mGainmapOutputWidth - 1, mGainmapOutputHeight - 1);
+        }
+    }
+    newFormat->setInt32(KEY_IS_DEFAULT, 1 /*isPrimary*/);
+
+    int32_t gridRows, gridCols;
+    if (newFormat->findInt32(KEY_GRID_ROWS, &gridRows) &&
+            newFormat->findInt32(KEY_GRID_COLUMNS, &gridCols)) {
+        mNumGainmapOutputTiles = gridRows * gridCols;
+    } else {
+        mNumGainmapOutputTiles = 1;
+    }
+
+    mGainmapFormat = newFormat;
+
+    ALOGV("%s: mNumOutputTiles is %zu", __FUNCTION__, mNumOutputTiles);
+    mInputReadyCondition.signal();
+}
+
+
+void HeicCompositeStream::onHeicFormatChanged(sp<AMessage>& newFormat, bool isGainmap) {
+    if (newFormat == nullptr) {
+        ALOGE("%s: newFormat must not be null!", __FUNCTION__);
+        return;
+    }
+
+    if (isGainmap) {
+        return onHeicGainmapFormatChanged(newFormat);
+    }
     Mutex::Autolock l(mMutex);
 
     AString mime;
@@ -577,10 +719,12 @@ status_t HeicCompositeStream::configureStream() {
 
 status_t HeicCompositeStream::insertGbp(SurfaceMap* /*out*/outSurfaceMap,
         Vector<int32_t>* /*out*/outputStreamIds, int32_t* /*out*/currentStreamId) {
-    if (outSurfaceMap->find(mAppSegmentStreamId) == outSurfaceMap->end()) {
-        outputStreamIds->push_back(mAppSegmentStreamId);
+    if (mAppSegmentSupported) {
+        if (outSurfaceMap->find(mAppSegmentStreamId) == outSurfaceMap->end()) {
+            outputStreamIds->push_back(mAppSegmentStreamId);
+        }
+        (*outSurfaceMap)[mAppSegmentStreamId].push_back(mAppSegmentSurfaceId);
     }
-    (*outSurfaceMap)[mAppSegmentStreamId].push_back(mAppSegmentSurfaceId);
 
     if (outSurfaceMap->find(mMainImageStreamId) == outSurfaceMap->end()) {
         outputStreamIds->push_back(mMainImageStreamId);
@@ -600,7 +744,9 @@ status_t HeicCompositeStream::insertCompositeStreamIds(
         return BAD_VALUE;
     }
 
-    compositeStreamIds->push_back(mAppSegmentStreamId);
+    if (mAppSegmentSupported) {
+        compositeStreamIds->push_back(mAppSegmentStreamId);
+    }
     compositeStreamIds->push_back(mMainImageStreamId);
 
     return OK;
@@ -762,6 +908,31 @@ void HeicCompositeStream::compilePendingInputLocked() {
         mCodecOutputBuffers.erase(it);
     }
 
+    while (!mGainmapCodecOutputBuffers.empty()) {
+        auto it = mGainmapCodecOutputBuffers.begin();
+        // Assume encoder input to output is FIFO, use a queue to look up
+        // frameNumber when handling codec outputs.
+        int64_t bufferFrameNumber = -1;
+        if (mCodecGainmapOutputBufferFrameNumbers.empty()) {
+            ALOGV("%s: Failed to find buffer frameNumber for gainmap codec output buffer!",
+                    __FUNCTION__);
+            break;
+        } else {
+            // Direct mapping between camera frame number and codec timestamp (in us).
+            bufferFrameNumber = mCodecGainmapOutputBufferFrameNumbers.front();
+            mCodecGainmapOutputCounter++;
+            if (mCodecGainmapOutputCounter == mNumGainmapOutputTiles) {
+                mCodecGainmapOutputBufferFrameNumbers.pop();
+                mCodecGainmapOutputCounter = 0;
+            }
+
+            mPendingInputFrames[bufferFrameNumber].gainmapCodecOutputBuffers.push_back(*it);
+            ALOGV("%s: [%" PRId64 "]: Pushing gainmap codecOutputBuffers (frameNumber %" PRId64 ")",
+                    __FUNCTION__, bufferFrameNumber, it->timeUs);
+        }
+        mGainmapCodecOutputBuffers.erase(it);
+    }
+
     while (!mCaptureResults.empty()) {
         auto it = mCaptureResults.begin();
         // Negative frame number indicates that something went wrong during the capture result
@@ -772,6 +943,9 @@ void HeicCompositeStream::compilePendingInputLocked() {
             if (mPendingInputFrames[frameNumber].timestamp == it->first) {
                 mPendingInputFrames[frameNumber].result =
                         std::make_unique<CameraMetadata>(std::get<1>(it->second));
+                if (!mAppSegmentSupported) {
+                    mPendingInputFrames[frameNumber].exifError = true;
+                }
             } else {
                 ALOGE("%s: Capture result frameNumber/timestamp mapping changed between "
                         "shutter and capture result! before: %" PRId64 ", after: %" PRId64,
@@ -825,6 +999,27 @@ void HeicCompositeStream::compilePendingInputLocked() {
             break;
         }
     }
+
+    // Distribute codec input buffers to be filled out from YUV output
+    for (auto it = mPendingInputFrames.begin();
+            it != mPendingInputFrames.end() && mGainmapCodecInputBuffers.size() > 0; it++) {
+        InputFrame& inputFrame(it->second);
+        if (inputFrame.gainmapCodecInputCounter < mGainmapGridRows * mGainmapGridCols) {
+            // Available input tiles that are required for the current input
+            // image.
+            size_t newInputTiles = std::min(mGainmapCodecInputBuffers.size(),
+                    mGainmapGridRows * mGainmapGridCols - inputFrame.gainmapCodecInputCounter);
+            for (size_t i = 0; i < newInputTiles; i++) {
+                CodecInputBufferInfo inputInfo = { mGainmapCodecInputBuffers[0],
+                    mGridTimestampUs++, inputFrame.gainmapCodecInputCounter };
+                inputFrame.gainmapCodecInputBuffers.push_back(inputInfo);
+
+                mGainmapCodecInputBuffers.erase(mGainmapCodecInputBuffers.begin());
+                inputFrame.gainmapCodecInputCounter++;
+            }
+            break;
+        }
+    }
 }
 
 bool HeicCompositeStream::getNextReadyInputLocked(int64_t *frameNumber /*out*/) {
@@ -845,7 +1040,8 @@ bool HeicCompositeStream::getNextReadyInputLocked(int64_t *frameNumber /*out*/) 
                 (it.second.appSegmentBuffer.data != nullptr || it.second.exifError) &&
                 !it.second.appSegmentWritten && it.second.result != nullptr &&
                 it.second.muxer != nullptr;
-        bool codecOutputReady = !it.second.codecOutputBuffers.empty();
+        bool codecOutputReady = !it.second.codecOutputBuffers.empty() ||
+                !it.second.gainmapCodecOutputBuffers.empty();
         bool codecInputReady = (it.second.yuvBuffer.data != nullptr) &&
                 (!it.second.codecInputBuffers.empty());
         bool hasOutputBuffer = it.second.muxer != nullptr ||
@@ -855,6 +1051,10 @@ bool HeicCompositeStream::getNextReadyInputLocked(int64_t *frameNumber /*out*/) 
             *frameNumber = it.first;
             if (it.second.format == nullptr && mFormat != nullptr) {
                 it.second.format = mFormat->dup();
+            }
+            if (it.second.gainmapFormat == nullptr && mGainmapFormat != nullptr){
+                it.second.gainmapFormat = mGainmapFormat->dup();
+                it.second.gainmapFormat->setInt32("gainmap", 1);
             }
             newInputAvailable = true;
             break;
@@ -886,11 +1086,15 @@ status_t HeicCompositeStream::processInputFrame(int64_t frameNumber,
             (inputFrame.appSegmentBuffer.data != nullptr || inputFrame.exifError) &&
             !inputFrame.appSegmentWritten && inputFrame.result != nullptr &&
             inputFrame.muxer != nullptr;
-    bool codecOutputReady = inputFrame.codecOutputBuffers.size() > 0;
+    bool codecOutputReady = inputFrame.codecOutputBuffers.size() > 0 ||
+            inputFrame.gainmapCodecOutputBuffers.size() > 0;
     bool codecInputReady = inputFrame.yuvBuffer.data != nullptr &&
             !inputFrame.codecInputBuffers.empty();
+    bool gainmapCodecInputReady = inputFrame.gainmapImage.get() != nullptr &&
+            !inputFrame.gainmapCodecInputBuffers.empty();
     bool hasOutputBuffer = inputFrame.muxer != nullptr ||
             (mDequeuedOutputBufferCnt < kMaxOutputSurfaceProducerCount);
+    bool hasGainmapMetadata = !inputFrame.isoGainmapMetadata.empty();
 
     ALOGV("%s: [%" PRId64 "]: appSegmentReady %d, codecOutputReady %d, codecInputReady %d,"
             " dequeuedOutputBuffer %d, timestamp %" PRId64, __FUNCTION__, frameNumber,
@@ -899,9 +1103,27 @@ status_t HeicCompositeStream::processInputFrame(int64_t frameNumber,
 
     // Handle inputs for Hevc tiling
     if (codecInputReady) {
+        if (mHDRGainmapEnabled && (inputFrame.baseBuffer.get() == nullptr)) {
+            auto res = generateBaseImageAndGainmap(inputFrame);
+            if (res != OK) {
+                ALOGE("%s: Error generating SDR base image and HDR gainmap: %s (%d)", __FUNCTION__,
+                        strerror(-res), res);
+                return res;
+            }
+        }
+
         res = processCodecInputFrame(inputFrame);
         if (res != OK) {
             ALOGE("%s: Failed to process codec input frame: %s (%d)", __FUNCTION__,
+                    strerror(-res), res);
+            return res;
+        }
+    }
+
+    if (gainmapCodecInputReady) {
+        res = processCodecGainmapInputFrame(inputFrame);
+        if (res != OK) {
+            ALOGE("%s: Failed to process gainmap codec input frame: %s (%d)", __FUNCTION__,
                     strerror(-res), res);
             return res;
         }
@@ -921,6 +1143,31 @@ status_t HeicCompositeStream::processInputFrame(int64_t frameNumber,
                     strerror(-res), res);
             return res;
         }
+    }
+
+    // Write the HDR gainmap metadata
+    if (hasGainmapMetadata) {
+        uint8_t kGainmapMetaMarker[] = {'t', 'm', 'a', 'p', '\0', '\0'};
+        sp<ABuffer> aBuffer =
+                new ABuffer(inputFrame.isoGainmapMetadata.size() + sizeof(kGainmapMetaMarker));
+        memcpy(aBuffer->data(), kGainmapMetaMarker, sizeof(kGainmapMetaMarker));
+        memcpy(aBuffer->data() + sizeof(kGainmapMetaMarker), inputFrame.isoGainmapMetadata.data(),
+               inputFrame.isoGainmapMetadata.size());
+
+        aBuffer->meta()->setInt32(KEY_COLOR_FORMAT, kCodecColorFormat);
+        aBuffer->meta()->setInt32("color-primaries", kCodecColorPrimaries);
+        aBuffer->meta()->setInt32("color-transfer", kCodecColorTransfer);
+        aBuffer->meta()->setInt32("color-matrix", kCodecColorMatrix);
+        aBuffer->meta()->setInt32("color-range", kCodecColorRange);
+        auto res = inputFrame.muxer->writeSampleData(aBuffer, inputFrame.trackIndex,
+                                                     inputFrame.timestamp,
+                                                     MediaCodec::BUFFER_FLAG_MUXER_DATA);
+        if (res != OK) {
+            ALOGE("%s: Failed to write HDR gainmap metadata to muxer: %s (%d)",
+                    __FUNCTION__, strerror(-res), res);
+            return res;
+        }
+        inputFrame.isoGainmapMetadata.clear();
     }
 
     // Write JPEG APP segments data to the muxer.
@@ -943,7 +1190,17 @@ status_t HeicCompositeStream::processInputFrame(int64_t frameNumber,
         }
     }
 
-    if (inputFrame.pendingOutputTiles == 0) {
+    // Write media codec gainmap bitstream buffers to muxer.
+    while (!inputFrame.gainmapCodecOutputBuffers.empty()) {
+        res = processOneCodecGainmapOutputFrame(frameNumber, inputFrame);
+        if (res != OK) {
+            ALOGE("%s: Failed to process codec gainmap output frame: %s (%d)", __FUNCTION__,
+                    strerror(-res), res);
+            return res;
+        }
+    }
+
+    if ((inputFrame.pendingOutputTiles == 0) && (inputFrame.gainmapPendingOutputTiles == 0)) {
         if (inputFrame.appSegmentWritten) {
             res = processCompletedInputFrame(frameNumber, inputFrame);
             if (res != OK) {
@@ -1000,6 +1257,16 @@ status_t HeicCompositeStream::startMuxerForInputFrame(int64_t frameNumber, Input
 
     inputFrame.trackIndex = trackId;
     inputFrame.pendingOutputTiles = mNumOutputTiles;
+
+    if (inputFrame.gainmapFormat.get() != nullptr) {
+        trackId = inputFrame.muxer->addTrack(inputFrame.gainmapFormat);
+        if (trackId < 0) {
+            ALOGE("%s: Failed to addTrack to the muxer: %zd", __FUNCTION__, trackId);
+            return NO_INIT;
+        }
+        inputFrame.gainmapTrackIndex = trackId;
+        inputFrame.gainmapPendingOutputTiles = mNumGainmapOutputTiles;
+    }
 
     res = inputFrame.muxer->start();
     if (res != OK) {
@@ -1085,9 +1352,106 @@ status_t HeicCompositeStream::processAppSegment(int64_t frameNumber, InputFrame 
 
     inputFrame.appSegmentWritten = true;
     // Release the buffer now so any pending input app segments can be processed
-    mAppSegmentConsumer->unlockBuffer(inputFrame.appSegmentBuffer);
-    inputFrame.appSegmentBuffer.data = nullptr;
-    inputFrame.exifError = false;
+    if (!inputFrame.exifError) {
+        mAppSegmentConsumer->unlockBuffer(inputFrame.appSegmentBuffer);
+        inputFrame.appSegmentBuffer.data = nullptr;
+        inputFrame.exifError = false;
+    }
+
+    return OK;
+}
+
+status_t HeicCompositeStream::generateBaseImageAndGainmap(InputFrame &inputFrame) {
+    ultrahdr::JpegR jpegR(nullptr /*gles ctx*/, kGainmapScale);
+    inputFrame.baseBuffer = std::make_unique<ultrahdr::uhdr_raw_image_ext_t>(
+            kUltraHdrOutputFmt, kUltraHdrOutputGamut, kUltraHdrInputTransfer, kUltraHdrOutputRange,
+            inputFrame.yuvBuffer.width, inputFrame.yuvBuffer.height, 8/*stride*/);
+
+    uhdr_raw_image_t hdr_intent;
+    hdr_intent.fmt = kUltraHdrInputFmt;
+    hdr_intent.cg = kUltraHdrInputGamut;
+    hdr_intent.ct = kUltraHdrInputTransfer;
+    hdr_intent.range = kUltraHdrInputRange;
+    hdr_intent.w = inputFrame.yuvBuffer.width;
+    hdr_intent.h = inputFrame.yuvBuffer.height;
+    hdr_intent.planes[UHDR_PLANE_Y] = inputFrame.yuvBuffer.data;
+    hdr_intent.planes[UHDR_PLANE_UV] = inputFrame.yuvBuffer.dataCb;
+    hdr_intent.planes[UHDR_PLANE_V] = nullptr;
+    //libUltraHDR expects the stride in pixels
+    hdr_intent.stride[UHDR_PLANE_Y] = inputFrame.yuvBuffer.stride / 2;
+    hdr_intent.stride[UHDR_PLANE_UV] = inputFrame.yuvBuffer.chromaStride / 2;
+    hdr_intent.stride[UHDR_PLANE_V] = 0;
+    auto res = jpegR.toneMap(&hdr_intent, inputFrame.baseBuffer.get());
+    if (res.error_code == UHDR_CODEC_OK) {
+        ALOGV("%s: Base image tonemapped successfully", __FUNCTION__);
+    } else {
+        ALOGE("%s: Failed during HDR to SDR tonemap: %d", __FUNCTION__, res.error_code);
+        return BAD_VALUE;
+    }
+
+    inputFrame.baseImage = std::make_unique<CpuConsumer::LockedBuffer>();
+    *inputFrame.baseImage = inputFrame.yuvBuffer;
+    inputFrame.baseImage->data = reinterpret_cast<uint8_t*>(
+            inputFrame.baseBuffer->planes[UHDR_PLANE_Y]);
+    inputFrame.baseImage->dataCb = reinterpret_cast<uint8_t*>(
+            inputFrame.baseBuffer->planes[UHDR_PLANE_U]);
+    inputFrame.baseImage->dataCr = reinterpret_cast<uint8_t*>(
+            inputFrame.baseBuffer->planes[UHDR_PLANE_V]);
+    inputFrame.baseImage->chromaStep = 1;
+    inputFrame.baseImage->stride = inputFrame.baseBuffer->stride[UHDR_PLANE_Y];
+    inputFrame.baseImage->chromaStride = inputFrame.baseBuffer->stride[UHDR_PLANE_UV];
+    inputFrame.baseImage->dataSpace = HAL_DATASPACE_V0_JFIF;
+
+    ultrahdr::uhdr_gainmap_metadata_ext_t metadata;
+    res = jpegR.generateGainMap(inputFrame.baseBuffer.get(), &hdr_intent, &metadata,
+            inputFrame.gainmap, false /*sdr_is_601*/, true /*use_luminance*/);
+    if (res.error_code == UHDR_CODEC_OK) {
+        ALOGV("%s: HDR gainmap generated successfully!", __FUNCTION__);
+    } else {
+        ALOGE("%s: Failed HDR gainmap: %d", __FUNCTION__, res.error_code);
+        return BAD_VALUE;
+    }
+    // We can only generate a single channel gainmap at the moment. However only
+    // multi channel HEVC encoding (like YUV420) is required. Set the extra U/V
+    // planes to 128 to avoid encoding any actual color data.
+    inputFrame.gainmapChroma = std::make_unique<uint8_t[]>(
+            inputFrame.gainmap->w * inputFrame.gainmap->h / 2);
+    memset(inputFrame.gainmapChroma.get(), 128, inputFrame.gainmap->w * inputFrame.gainmap->h / 2);
+
+    ultrahdr::uhdr_gainmap_metadata_frac iso_secondary_metadata;
+    res = ultrahdr::uhdr_gainmap_metadata_frac::gainmapMetadataFloatToFraction(
+                &metadata, &iso_secondary_metadata);
+    if (res.error_code == UHDR_CODEC_OK) {
+        ALOGV("%s: HDR gainmap converted to fractions successfully!", __FUNCTION__);
+    } else {
+        ALOGE("%s: Failed to convert HDR gainmap to fractions: %d", __FUNCTION__,
+                res.error_code);
+        return BAD_VALUE;
+    }
+
+    res = ultrahdr::uhdr_gainmap_metadata_frac::encodeGainmapMetadata(&iso_secondary_metadata,
+                                                               inputFrame.isoGainmapMetadata);
+    if (res.error_code == UHDR_CODEC_OK) {
+        ALOGV("%s: HDR gainmap encoded to ISO format successfully!", __FUNCTION__);
+    } else {
+        ALOGE("%s: Failed to encode HDR gainmap to ISO format: %d", __FUNCTION__,
+                res.error_code);
+        return BAD_VALUE;
+    }
+    // 6.6.2.4.2 of ISO/IEC 23008-12:2024 expects the ISO 21496-1 gainmap to be
+    // preceded by an u8 version equal to 0
+    inputFrame.isoGainmapMetadata.insert(inputFrame.isoGainmapMetadata.begin(), 0);
+
+    inputFrame.gainmapImage = std::make_unique<CpuConsumer::LockedBuffer>();
+    *inputFrame.gainmapImage = inputFrame.yuvBuffer;
+    inputFrame.gainmapImage->data = reinterpret_cast<uint8_t*>(
+            inputFrame.gainmap->planes[UHDR_PLANE_Y]);
+    inputFrame.gainmapImage->dataCb = inputFrame.gainmapChroma.get();
+    inputFrame.gainmapImage->dataCr = inputFrame.gainmapChroma.get() + 1;
+    inputFrame.gainmapImage->chromaStep = 2;
+    inputFrame.gainmapImage->stride = inputFrame.gainmap->stride[UHDR_PLANE_Y];
+    inputFrame.gainmapImage->chromaStride = inputFrame.gainmap->w;
+    inputFrame.gainmapImage->dataSpace = HAL_DATASPACE_V0_JFIF;
 
     return OK;
 }
@@ -1115,7 +1479,9 @@ status_t HeicCompositeStream::processCodecInputFrame(InputFrame &inputFrame) {
                 " timeUs %" PRId64, __FUNCTION__, tileX, tileY, top, left, width, height,
                 inputBuffer.timeUs);
 
-        res = copyOneYuvTile(buffer, inputFrame.yuvBuffer, top, left, width, height);
+        auto yuvInput = (inputFrame.baseImage.get() != nullptr) ?
+            *inputFrame.baseImage.get() : inputFrame.yuvBuffer;
+        res = copyOneYuvTile(buffer, yuvInput, top, left, width, height);
         if (res != OK) {
             ALOGE("%s: Failed to copy YUV tile %s (%d)", __FUNCTION__,
                     strerror(-res), res);
@@ -1132,6 +1498,50 @@ status_t HeicCompositeStream::processCodecInputFrame(InputFrame &inputFrame) {
     }
 
     inputFrame.codecInputBuffers.clear();
+    return OK;
+}
+
+status_t HeicCompositeStream::processCodecGainmapInputFrame(InputFrame &inputFrame) {
+    for (auto& inputBuffer : inputFrame.gainmapCodecInputBuffers) {
+        sp<MediaCodecBuffer> buffer;
+        auto res = mGainmapCodec->getInputBuffer(inputBuffer.index, &buffer);
+        if (res != OK) {
+            ALOGE("%s: Error getting codec input buffer: %s (%d)", __FUNCTION__,
+                    strerror(-res), res);
+            return res;
+        }
+
+        // Copy one tile from source to destination.
+        size_t tileX = inputBuffer.tileIndex % mGainmapGridCols;
+        size_t tileY = inputBuffer.tileIndex / mGainmapGridCols;
+        size_t top = mGainmapGridHeight * tileY;
+        size_t left = mGainmapGridWidth * tileX;
+        size_t width = (tileX == static_cast<size_t>(mGainmapGridCols) - 1) ?
+                mGainmapOutputWidth - tileX * mGainmapGridWidth : mGainmapGridWidth;
+        size_t height = (tileY == static_cast<size_t>(mGainmapGridRows) - 1) ?
+                mGainmapOutputHeight - tileY * mGainmapGridHeight : mGainmapGridHeight;
+        ALOGV("%s: gainmap inputBuffer tileIndex [%zu, %zu], top %zu, left %zu, width %zu, "
+                "height %zu, timeUs %" PRId64, __FUNCTION__, tileX, tileY, top, left, width, height,
+                inputBuffer.timeUs);
+
+        auto yuvInput = *inputFrame.gainmapImage;
+        res = copyOneYuvTile(buffer, yuvInput, top, left, width, height);
+        if (res != OK) {
+            ALOGE("%s: Failed to copy YUV tile %s (%d)", __FUNCTION__,
+                    strerror(-res), res);
+            return res;
+        }
+
+        res = mGainmapCodec->queueInputBuffer(inputBuffer.index, 0, buffer->capacity(),
+                inputBuffer.timeUs, 0, nullptr /*errorDetailMsg*/);
+        if (res != OK) {
+            ALOGE("%s: Failed to queueInputBuffer to Codec: %s (%d)",
+                    __FUNCTION__, strerror(-res), res);
+            return res;
+        }
+    }
+
+    inputFrame.gainmapCodecInputBuffers.clear();
     return OK;
 }
 
@@ -1152,6 +1562,13 @@ status_t HeicCompositeStream::processOneCodecOutputFrame(int64_t frameNumber,
     }
 
     sp<ABuffer> aBuffer = new ABuffer(buffer->data(), buffer->size());
+    if (mHDRGainmapEnabled) {
+        aBuffer->meta()->setInt32(KEY_COLOR_FORMAT, kCodecColorFormat);
+        aBuffer->meta()->setInt32("color-primaries", kCodecColorPrimaries);
+        aBuffer->meta()->setInt32("color-transfer", kCodecColorTransfer);
+        aBuffer->meta()->setInt32("color-matrix", kCodecColorMatrix);
+        aBuffer->meta()->setInt32("color-range", kCodecColorRange);
+    }
     res = inputFrame.muxer->writeSampleData(
             aBuffer, inputFrame.trackIndex, inputFrame.timestamp, 0 /*flags*/);
     if (res != OK) {
@@ -1170,6 +1587,54 @@ status_t HeicCompositeStream::processOneCodecOutputFrame(int64_t frameNumber,
     inputFrame.codecOutputBuffers.erase(inputFrame.codecOutputBuffers.begin());
 
     ALOGV("%s: [%" PRId64 "]: Output buffer index %d",
+        __FUNCTION__, frameNumber, it->index);
+    return OK;
+}
+
+status_t HeicCompositeStream::processOneCodecGainmapOutputFrame(int64_t frameNumber,
+        InputFrame &inputFrame) {
+    auto it = inputFrame.gainmapCodecOutputBuffers.begin();
+    sp<MediaCodecBuffer> buffer;
+    status_t res = mGainmapCodec->getOutputBuffer(it->index, &buffer);
+    if (res != OK) {
+        ALOGE("%s: Error getting Heic gainmap codec output buffer at index %d: %s (%d)",
+                __FUNCTION__, it->index, strerror(-res), res);
+        return res;
+    }
+    if (buffer == nullptr) {
+        ALOGE("%s: Invalid Heic gainmap codec output buffer at index %d",
+                __FUNCTION__, it->index);
+        return BAD_VALUE;
+    }
+
+    uint8_t kGainmapMarker[] = {'g', 'm', 'a', 'p', '\0', '\0'};
+    sp<ABuffer> aBuffer = new ABuffer(buffer->size() + sizeof(kGainmapMarker));
+    memcpy(aBuffer->data(), kGainmapMarker, sizeof(kGainmapMarker));
+    memcpy(aBuffer->data() + sizeof(kGainmapMarker), buffer->data(), buffer->size());
+    aBuffer->meta()->setInt32(KEY_COLOR_FORMAT, kCodecGainmapColorFormat);
+    aBuffer->meta()->setInt32("color-primaries", kCodecGainmapColorPrimaries);
+    aBuffer->meta()->setInt32("color-transfer", kCodecGainmapColorTransfer);
+    aBuffer->meta()->setInt32("color-matrix", kCodecGainmapColorMatrix);
+    aBuffer->meta()->setInt32("color-range", kCodecGainmapColorRange);
+    res = inputFrame.muxer->writeSampleData(aBuffer, inputFrame.gainmapTrackIndex,
+                                            inputFrame.timestamp,
+                                            MediaCodec::BUFFER_FLAG_MUXER_DATA);
+    if (res != OK) {
+        ALOGE("%s: Failed to write buffer index %d to muxer: %s (%d)",
+                __FUNCTION__, it->index, strerror(-res), res);
+        return res;
+    }
+
+    mGainmapCodec->releaseOutputBuffer(it->index);
+    if (inputFrame.gainmapPendingOutputTiles == 0) {
+        ALOGW("%s: Codec generated more gainmap tiles than expected!", __FUNCTION__);
+    } else {
+        inputFrame.gainmapPendingOutputTiles--;
+    }
+
+    inputFrame.gainmapCodecOutputBuffers.erase(inputFrame.gainmapCodecOutputBuffers.begin());
+
+    ALOGV("%s: [%" PRId64 "]: Gainmap output buffer index %d",
         __FUNCTION__, frameNumber, it->index);
     return OK;
 }
@@ -1256,6 +1721,13 @@ void HeicCompositeStream::releaseInputFrameLocked(int64_t frameNumber,
         inputFrame->codecOutputBuffers.erase(it);
     }
 
+    while (!inputFrame->gainmapCodecOutputBuffers.empty()) {
+        auto it = inputFrame->gainmapCodecOutputBuffers.begin();
+        ALOGV("%s: release gainmap output buffer index %d", __FUNCTION__, it->index);
+        mGainmapCodec->releaseOutputBuffer(it->index);
+        inputFrame->gainmapCodecOutputBuffers.erase(it);
+    }
+
     if (inputFrame->yuvBuffer.data != nullptr) {
         mMainImageConsumer->unlockBuffer(inputFrame->yuvBuffer);
         inputFrame->yuvBuffer.data = nullptr;
@@ -1265,6 +1737,11 @@ void HeicCompositeStream::releaseInputFrameLocked(int64_t frameNumber,
     while (!inputFrame->codecInputBuffers.empty()) {
         auto it = inputFrame->codecInputBuffers.begin();
         inputFrame->codecInputBuffers.erase(it);
+    }
+
+    while (!inputFrame->gainmapCodecInputBuffers.empty()) {
+        auto it = inputFrame->gainmapCodecInputBuffers.begin();
+        inputFrame->gainmapCodecInputBuffers.erase(it);
     }
 
     if (inputFrame->error || mErrorState) {
@@ -1292,7 +1769,8 @@ void HeicCompositeStream::releaseInputFramesLocked() {
     while (it != mPendingInputFrames.end()) {
         auto& inputFrame = it->second;
         if (inputFrame.error ||
-                (inputFrame.appSegmentWritten && inputFrame.pendingOutputTiles == 0)) {
+                (inputFrame.appSegmentWritten && inputFrame.pendingOutputTiles == 0 &&
+                 inputFrame.gainmapPendingOutputTiles == 0)) {
             releaseInputFrameLocked(it->first, &inputFrame);
             it = mPendingInputFrames.erase(it);
             inputFrameDone = true;
@@ -1318,6 +1796,110 @@ void HeicCompositeStream::releaseInputFramesLocked() {
     }
 }
 
+status_t HeicCompositeStream::initializeGainmapCodec() {
+    ALOGV("%s", __FUNCTION__);
+
+    if (!mHDRGainmapEnabled) {
+        return OK;
+    }
+    uint32_t width = mOutputWidth / kGainmapScale;
+    uint32_t height = mOutputHeight / kGainmapScale;
+    bool useGrid = false;
+    bool useHeic = false;
+    AString hevcName;
+    bool isSizeSupported = isSizeSupportedByHeifEncoder(width, height,
+            &useHeic, &useGrid, nullptr, &hevcName);
+    if (!isSizeSupported) {
+        ALOGE("%s: Encoder doesn't support size %u x %u!",
+                __FUNCTION__, width, height);
+        return BAD_VALUE;
+    }
+
+    // Create HEVC codec.
+    mGainmapCodec = MediaCodec::CreateByComponentName(mCodecLooper, hevcName);
+    if (mGainmapCodec == nullptr) {
+        ALOGE("%s: Failed to create gainmap codec", __FUNCTION__);
+        return NO_INIT;
+    }
+
+    // Create Looper and handler for Codec callback.
+    mGainmapCodecCallbackHandler = new CodecCallbackHandler(this, true /*isGainmap*/);
+    if (mGainmapCodecCallbackHandler == nullptr) {
+        ALOGE("%s: Failed to create gainmap codec callback handler", __FUNCTION__);
+        return NO_MEMORY;
+    }
+    mGainmapCallbackLooper = new ALooper;
+    mGainmapCallbackLooper->setName("Camera3-HeicComposite-MediaCodecGainmapCallbackLooper");
+    auto res = mGainmapCallbackLooper->start(
+            false,   // runOnCallingThread
+            false,    // canCallJava
+            PRIORITY_AUDIO);
+    if (res != OK) {
+        ALOGE("%s: Failed to start gainmap media callback looper: %s (%d)",
+                __FUNCTION__, strerror(-res), res);
+        return NO_INIT;
+    }
+    mGainmapCallbackLooper->registerHandler(mGainmapCodecCallbackHandler);
+
+    mGainmapAsyncNotify = new AMessage(kWhatCallbackNotify, mGainmapCodecCallbackHandler);
+    res = mGainmapCodec->setCallback(mGainmapAsyncNotify);
+    if (res != OK) {
+        ALOGE("%s: Failed to set MediaCodec callback: %s (%d)", __FUNCTION__,
+                strerror(-res), res);
+        return res;
+    }
+
+    // Create output format and configure the Codec.
+    sp<AMessage> outputFormat = new AMessage();
+    outputFormat->setString(KEY_MIME, MIMETYPE_VIDEO_HEVC);
+    outputFormat->setInt32(KEY_BITRATE_MODE, BITRATE_MODE_CQ);
+    outputFormat->setInt32(KEY_QUALITY, kDefaultJpegQuality);
+    // Ask codec to skip timestamp check and encode all frames.
+    outputFormat->setInt64(KEY_MAX_PTS_GAP_TO_ENCODER, kNoFrameDropMaxPtsGap);
+
+    int32_t gridWidth, gridHeight, gridRows, gridCols;
+    if (useGrid){
+        gridWidth = HeicEncoderInfoManager::kGridWidth;
+        gridHeight = HeicEncoderInfoManager::kGridHeight;
+        gridRows = (height + gridHeight - 1)/gridHeight;
+        gridCols = (width + gridWidth - 1)/gridWidth;
+    } else {
+        gridWidth = width;
+        gridHeight = height;
+        gridRows = 1;
+        gridCols = 1;
+    }
+
+    outputFormat->setInt32(KEY_WIDTH, !useGrid ? width : gridWidth);
+    outputFormat->setInt32(KEY_HEIGHT, !useGrid ? height : gridHeight);
+    outputFormat->setInt32(KEY_I_FRAME_INTERVAL, 0);
+    outputFormat->setInt32(KEY_COLOR_FORMAT, COLOR_FormatYUV420Flexible);
+    outputFormat->setInt32(KEY_FRAME_RATE, useGrid ? gridRows * gridCols : kNoGridOpRate);
+    // This only serves as a hint to encoder when encoding is not real-time.
+    outputFormat->setInt32(KEY_OPERATING_RATE, useGrid ? kGridOpRate : kNoGridOpRate);
+
+    res = mGainmapCodec->configure(outputFormat, nullptr /*nativeWindow*/,
+            nullptr /*crypto*/, CONFIGURE_FLAG_ENCODE);
+    if (res != OK) {
+        ALOGE("%s: Failed to configure codec: %s (%d)", __FUNCTION__,
+                strerror(-res), res);
+        return res;
+    }
+
+    mGainmapGridWidth = gridWidth;
+    mGainmapGridHeight = gridHeight;
+    mGainmapGridRows = gridRows;
+    mGainmapGridCols = gridCols;
+    mGainmapUseGrid = useGrid;
+    mGainmapOutputWidth = width;
+    mGainmapOutputHeight = height;
+    mMaxHeicBufferSize +=
+        ALIGN(mGainmapOutputWidth, HeicEncoderInfoManager::kGridWidth) *
+        ALIGN(mGainmapOutputHeight, HeicEncoderInfoManager::kGridHeight) * 3 / 2;
+
+    return OK;
+}
+
 status_t HeicCompositeStream::initializeCodec(uint32_t width, uint32_t height,
         const sp<CameraDeviceBase>& cameraDevice) {
     ALOGV("%s", __FUNCTION__);
@@ -1330,6 +1912,12 @@ status_t HeicCompositeStream::initializeCodec(uint32_t width, uint32_t height,
         ALOGE("%s: Encoder doesnt' support size %u x %u!",
                 __FUNCTION__, width, height);
         return BAD_VALUE;
+    }
+    if (mHDRGainmapEnabled) {
+        // HDR Gainmap tonemapping and generation can only be done in SW
+        // using P010 as input. HEIC codecs expect private/impl.defined
+        // which is opaque.
+        mUseHeic = false;
     }
 
     // Create Looper for MediaCodec.
@@ -1417,7 +2005,7 @@ status_t HeicCompositeStream::initializeCodec(uint32_t width, uint32_t height,
     outputFormat->setInt32(KEY_HEIGHT, !useGrid ? height : gridHeight);
     outputFormat->setInt32(KEY_I_FRAME_INTERVAL, 0);
     outputFormat->setInt32(KEY_COLOR_FORMAT,
-            useGrid ? COLOR_FormatYUV420Flexible : COLOR_FormatSurface);
+            useGrid || mHDRGainmapEnabled ? COLOR_FormatYUV420Flexible : COLOR_FormatSurface);
     outputFormat->setInt32(KEY_FRAME_RATE, useGrid ? gridRows * gridCols : kNoGridOpRate);
     // This only serves as a hint to encoder when encoding is not real-time.
     outputFormat->setInt32(KEY_OPERATING_RATE, useGrid ? kGridOpRate : kNoGridOpRate);
@@ -1442,7 +2030,24 @@ status_t HeicCompositeStream::initializeCodec(uint32_t width, uint32_t height,
         ALIGN(mOutputWidth, HeicEncoderInfoManager::kGridWidth) *
         ALIGN(mOutputHeight, HeicEncoderInfoManager::kGridHeight) * 3 / 2 + mAppSegmentMaxSize;
 
-    return OK;
+    return initializeGainmapCodec();
+}
+
+void HeicCompositeStream::deinitGainmapCodec() {
+    ALOGV("%s", __FUNCTION__);
+    if (mGainmapCodec != nullptr) {
+        mGainmapCodec->stop();
+        mGainmapCodec->release();
+        mGainmapCodec.clear();
+    }
+
+    if (mGainmapCallbackLooper != nullptr) {
+        mGainmapCallbackLooper->stop();
+        mGainmapCallbackLooper.clear();
+    }
+
+    mGainmapAsyncNotify.clear();
+    mGainmapFormat.clear();
 }
 
 void HeicCompositeStream::deinitCodec() {
@@ -1452,6 +2057,8 @@ void HeicCompositeStream::deinitCodec() {
         mCodec->release();
         mCodec.clear();
     }
+
+    deinitGainmapCodec();
 
     if (mCodecLooper != nullptr) {
         mCodecLooper->stop();
@@ -1873,7 +2480,7 @@ void HeicCompositeStream::CodecCallbackHandler::onMessageReceived(const sp<AMess
                          ALOGE("CB_INPUT_AVAILABLE: index is expected.");
                          break;
                      }
-                     parent->onHeicInputFrameAvailable(index);
+                     parent->onHeicInputFrameAvailable(index, mIsGainmap);
                      break;
                  }
 
@@ -1912,7 +2519,7 @@ void HeicCompositeStream::CodecCallbackHandler::onMessageReceived(const sp<AMess
                          timeUs,
                          (uint32_t)flags};
 
-                     parent->onHeicOutputFrameAvailable(bufferInfo);
+                     parent->onHeicOutputFrameAvailable(bufferInfo, mIsGainmap);
                      break;
                  }
 
@@ -1928,7 +2535,7 @@ void HeicCompositeStream::CodecCallbackHandler::onMessageReceived(const sp<AMess
                      if (format != nullptr) {
                          formatCopy = format->dup();
                      }
-                     parent->onHeicFormatChanged(formatCopy);
+                     parent->onHeicFormatChanged(formatCopy, mIsGainmap);
                      break;
                  }
 

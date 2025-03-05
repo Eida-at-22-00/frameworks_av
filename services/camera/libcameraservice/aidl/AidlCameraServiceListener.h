@@ -75,6 +75,11 @@ class AidlCameraServiceListener : public UBnCameraServiceListener {
                          uint32_t flags) override;
     status_t unlinkToDeath(const wp<DeathRecipient>& recipient, void* cookie, uint32_t flags,
                            wp<DeathRecipient>* outRecipient) override;
+    binder::Status onCameraOpenedInSharedMode(const std::string& /*cameraId*/,
+            const std::string& /*clientPackageId*/, int32_t /*deviceId*/, bool /*primaryClient*/) {
+         // empty implementation
+        return binder::Status::ok();
+    }
 
   private:
     std::shared_ptr<SICameraServiceListener> mBase;

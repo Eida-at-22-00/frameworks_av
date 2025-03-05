@@ -288,10 +288,10 @@ DrmStatus DrmHal::getLogMessages(Vector<drm::V1_4::LogMessage>& logs) const {
 }
 
 DrmStatus DrmHal::getSupportedSchemes(std::vector<uint8_t>& schemes) const {
-    status_t statusResult;
-    statusResult = mDrmHalAidl->getSupportedSchemes(schemes);
-    if (statusResult == OK) return statusResult;
-    return mDrmHalHidl->getSupportedSchemes(schemes);
+    const DrmStatus statusResultAidl = mDrmHalAidl->getSupportedSchemes(schemes);
+    const DrmStatus statusResultHidl = mDrmHalHidl->getSupportedSchemes(schemes);
+    if (statusResultHidl == OK || statusResultAidl == OK) return OK;
+    return statusResultAidl;
 }
 
 }  // namespace android

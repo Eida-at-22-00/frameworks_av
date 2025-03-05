@@ -105,6 +105,8 @@ class CameraManagerGlobal final : public RefBase {
     template <class T>
     void registerAvailCallback(const DeviceContext& deviceContext, const T* callback);
 
+    bool setupVendorTags(sp<hardware::ICameraService> &cameraService);
+
     class DeathNotifier : public IBinder::DeathRecipient {
       public:
         explicit DeathNotifier(CameraManagerGlobal* cm) : mCameraManager(cm) {}
@@ -134,6 +136,10 @@ class CameraManagerGlobal final : public RefBase {
 
         virtual binder::Status onCameraAccessPrioritiesChanged();
         virtual binder::Status onCameraOpened(const std::string&, const std::string&, int32_t) {
+            return binder::Status::ok();
+        }
+        virtual binder::Status onCameraOpenedInSharedMode(const std::string&, const std::string&,
+                int32_t, bool)  {
             return binder::Status::ok();
         }
         virtual binder::Status onCameraClosed(const std::string&, int32_t) {
@@ -325,16 +331,17 @@ struct ACameraManager {
 
     camera_status_t getCameraCharacteristics(
             const char* cameraId, android::sp<ACameraMetadata>* characteristics);
-    camera_status_t openCamera(const char* cameraId,
+    camera_status_t openCamera(const char* cameraId, bool sharedMode,
                                ACameraDevice_StateCallbacks* callback,
-                               /*out*/ACameraDevice** device);
+                               /*out*/ACameraDevice** device, /*out*/bool* primaryClient);
     void registerAvailabilityCallback(const ACameraManager_AvailabilityCallbacks* callback);
     void unregisterAvailabilityCallback(const ACameraManager_AvailabilityCallbacks* callback);
     void registerExtendedAvailabilityCallback(
             const ACameraManager_ExtendedAvailabilityCallbacks* callback);
     void unregisterExtendedAvailabilityCallback(
             const ACameraManager_ExtendedAvailabilityCallbacks* callback);
-
+    camera_status_t isCameraDeviceSharingSupported(
+            const char* cameraId, bool* isSharingSupported);
   private:
     enum {
         kCameraIdListNotInit = -1

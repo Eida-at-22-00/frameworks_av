@@ -147,6 +147,7 @@ public:
 private:
     bool mixMatch(const AudioMix* mix, size_t mixIndex,
                             const audio_attributes_t& attributes,
+                            const audio_output_flags_t outputFlags,
                             const audio_config_base_t& config,
                             uid_t uid,
                             audio_session_t session);

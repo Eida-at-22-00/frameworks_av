@@ -76,7 +76,7 @@ void Camera3FakeStream::dump(int fd, [[maybe_unused]] const Vector<String16> &ar
     Camera3IOStreamBase::dump(fd, args);
 }
 
-status_t Camera3FakeStream::setTransform(int, bool) {
+status_t Camera3FakeStream::setTransform(int, bool, int) {
     ATRACE_CALL();
     // Do nothing
     return OK;
@@ -120,13 +120,13 @@ const std::string& Camera3FakeStream::getPhysicalCameraId() const {
     return FAKE_ID;
 }
 
-status_t Camera3FakeStream::setConsumers(const std::vector<sp<Surface>>& /*consumers*/) {
+status_t Camera3FakeStream::setConsumers(const std::vector<SurfaceHolder>& /*consumers*/) {
     ALOGE("%s: Stream %d: Fake stream doesn't support set consumer surface!",
             __FUNCTION__, mId);
     return INVALID_OPERATION;
 }
 
-status_t Camera3FakeStream::updateStream(const std::vector<sp<Surface>> &/*outputSurfaces*/,
+status_t Camera3FakeStream::updateStream(const std::vector<SurfaceHolder> &/*outputSurfaces*/,
             const std::vector<OutputStreamInfo> &/*outputInfo*/,
             const std::vector<size_t> &/*removedSurfaceIds*/,
             KeyedVector<sp<Surface>, size_t> * /*outputMap*/) {

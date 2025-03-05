@@ -26,6 +26,7 @@
 #include <aidl/android/hardware/camera/device/CameraBlobId.h>
 #include "aidl/android/hardware/graphics/common/Dataspace.h"
 
+#include <android/data_space.h>
 #include <android-base/unique_fd.h>
 #include <com_android_internal_camera_flags.h>
 #include <cutils/properties.h>
@@ -136,7 +137,7 @@ Camera3OutputStream::Camera3OutputStream(int id,
         const std::unordered_set<int32_t> &sensorPixelModesUsed, IPCTransport transport,
         int setId, bool isMultiResolution, int64_t dynamicRangeProfile,
         int64_t streamUseCase, bool deviceTimeBaseIsRealtime, int timestampBase,
-        int mirrorMode, int32_t colorSpace, bool useReadoutTimestamp) :
+        int32_t colorSpace, bool useReadoutTimestamp) :
         Camera3IOStreamBase(id, CAMERA_STREAM_OUTPUT, width, height,
                             /*maxSize*/0, format, dataSpace, rotation,
                             physicalCameraId, sensorPixelModesUsed, setId, isMultiResolution,
@@ -150,7 +151,7 @@ Camera3OutputStream::Camera3OutputStream(int id,
         mUseReadoutTime(useReadoutTimestamp),
         mConsumerUsage(consumerUsage),
         mDropBuffers(false),
-        mMirrorMode(mirrorMode),
+        mMirrorMode(OutputConfiguration::MIRROR_MODE_AUTO),
         mDequeueBufferLatency(kDequeueLatencyBinSize),
         mIPCTransport(transport) {
     // Deferred consumer only support preview surface format now.
@@ -184,8 +185,7 @@ Camera3OutputStream::Camera3OutputStream(int id, camera_stream_type_t type,
                                          int setId, bool isMultiResolution,
                                          int64_t dynamicRangeProfile, int64_t streamUseCase,
                                          bool deviceTimeBaseIsRealtime, int timestampBase,
-                                         int mirrorMode, int32_t colorSpace,
-                                         bool useReadoutTimestamp) :
+                                         int32_t colorSpace, bool useReadoutTimestamp) :
         Camera3IOStreamBase(id, type, width, height,
                             /*maxSize*/0,
                             format, dataSpace, rotation,
@@ -199,7 +199,7 @@ Camera3OutputStream::Camera3OutputStream(int id, camera_stream_type_t type,
         mUseReadoutTime(useReadoutTimestamp),
         mConsumerUsage(consumerUsage),
         mDropBuffers(false),
-        mMirrorMode(mirrorMode),
+        mMirrorMode(OutputConfiguration::MIRROR_MODE_AUTO),
         mDequeueBufferLatency(kDequeueLatencyBinSize),
         mIPCTransport(transport) {
 
@@ -404,6 +404,9 @@ status_t Camera3OutputStream::returnBufferCheckedLocked(
         if (getFormat() == HAL_PIXEL_FORMAT_BLOB && (getDataSpace() == HAL_DATASPACE_V0_JFIF ||
                     (getDataSpace() ==
                      static_cast<android_dataspace_t>(
+                         aidl::android::hardware::graphics::common::Dataspace::HEIF_ULTRAHDR)) ||
+                    (getDataSpace() ==
+                     static_cast<android_dataspace_t>(
                          aidl::android::hardware::graphics::common::Dataspace::JPEG_R)))) {
             if (mIPCTransport == IPCTransport::HIDL) {
                 fixUpHidlJpegBlobHeader(anwBuffer, anwReleaseFence);
@@ -479,20 +482,22 @@ void Camera3OutputStream::dump(int fd, [[maybe_unused]] const Vector<String16> &
         "      DequeueBuffer latency histogram:");
 }
 
-status_t Camera3OutputStream::setTransform(int transform, bool mayChangeMirror) {
+status_t Camera3OutputStream::setTransform(int transform, bool mayChangeMirror, int surfaceId) {
     ATRACE_CALL();
     Mutex::Autolock l(mLock);
+
     if (mMirrorMode != OutputConfiguration::MIRROR_MODE_AUTO && mayChangeMirror) {
         // If the mirroring mode is not AUTO, do not allow transform update
         // which may change mirror.
         return OK;
     }
 
-    return setTransformLocked(transform);
-}
-
-status_t Camera3OutputStream::setTransformLocked(int transform) {
     status_t res = OK;
+
+    if (surfaceId != 0) {
+        ALOGE("%s: Invalid surfaceId %d", __FUNCTION__, surfaceId);
+        return BAD_VALUE;
+    }
 
     if (transform == -1) return res;
 
@@ -522,6 +527,12 @@ status_t Camera3OutputStream::configureQueueLocked() {
     }
 
     if ((res = configureConsumerQueueLocked(true /*allowPreviewRespace*/)) != OK) {
+        return res;
+    }
+
+    if ((res = native_window_set_buffers_transform(mConsumer.get(), mTransform)) != OK) {
+        ALOGE("%s: Unable to configure stream transform to %x: %s (%d)",
+                __FUNCTION__, mTransform, strerror(-res), res);
         return res;
     }
 
@@ -691,14 +702,6 @@ status_t Camera3OutputStream::configureConsumerQueueLocked(bool allowPreviewResp
     if (res != OK) {
         ALOGE("%s: Unable to set buffer count for stream %d",
                 __FUNCTION__, mId);
-        return res;
-    }
-
-    res = native_window_set_buffers_transform(mConsumer.get(),
-            mTransform);
-    if (res != OK) {
-        ALOGE("%s: Unable to configure stream transform to %x: %s (%d)",
-                __FUNCTION__, mTransform, strerror(-res), res);
         return res;
     }
 
@@ -1069,7 +1072,7 @@ status_t Camera3OutputStream::setBufferManager(sp<Camera3BufferManager> bufferMa
     return OK;
 }
 
-status_t Camera3OutputStream::updateStream(const std::vector<sp<Surface>> &/*outputSurfaces*/,
+status_t Camera3OutputStream::updateStream(const std::vector<SurfaceHolder> &/*outputSurfaces*/,
             const std::vector<OutputStreamInfo> &/*outputInfo*/,
             const std::vector<size_t> &/*removedSurfaceIds*/,
             KeyedVector<sp<Surface>, size_t> * /*outputMapo*/) {
@@ -1206,14 +1209,14 @@ bool Camera3OutputStream::isConsumerConfigurationDeferred(size_t surface_id) con
     return mConsumer == nullptr;
 }
 
-status_t Camera3OutputStream::setConsumers(const std::vector<sp<Surface>>& consumers) {
+status_t Camera3OutputStream::setConsumers(const std::vector<SurfaceHolder>& consumers) {
     Mutex::Autolock l(mLock);
     if (consumers.size() != 1) {
         ALOGE("%s: it's illegal to set %zu consumer surfaces!",
                   __FUNCTION__, consumers.size());
         return INVALID_OPERATION;
     }
-    if (consumers[0] == nullptr) {
+    if (consumers[0].mSurface == nullptr) {
         ALOGE("%s: it's illegal to set null consumer surface!", __FUNCTION__);
         return INVALID_OPERATION;
     }
@@ -1223,7 +1226,8 @@ status_t Camera3OutputStream::setConsumers(const std::vector<sp<Surface>>& consu
         return INVALID_OPERATION;
     }
 
-    mConsumer = consumers[0];
+    mConsumer = consumers[0].mSurface;
+    mMirrorMode = consumers[0].mMirrorMode;
     return OK;
 }
 

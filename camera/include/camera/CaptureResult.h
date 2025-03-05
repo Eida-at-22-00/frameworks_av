@@ -20,7 +20,7 @@
 #include <utils/RefBase.h>
 #include <binder/Parcelable.h>
 #include <camera/CameraMetadata.h>
-
+#include <android/hardware/camera2/CameraMetadataInfo.h>
 
 namespace android {
 
@@ -145,19 +145,26 @@ struct CaptureResultExtras : public android::Parcelable {
 };
 
 struct PhysicalCaptureResultInfo : public android::Parcelable {
-
+    using CameraMetadataInfo = android::hardware::camera2::CameraMetadataInfo;
     PhysicalCaptureResultInfo()
         : mPhysicalCameraId(),
-          mPhysicalCameraMetadata() {
+          mCameraMetadataInfo() {
     }
     PhysicalCaptureResultInfo(const std::string& cameraId,
             const CameraMetadata& cameraMetadata)
-            : mPhysicalCameraId(cameraId),
-              mPhysicalCameraMetadata(cameraMetadata) {
+            : mPhysicalCameraId(cameraId) {
+              mCameraMetadataInfo.set<CameraMetadataInfo::metadata>(cameraMetadata);
+    }
+
+   PhysicalCaptureResultInfo(const std::string& cameraId,
+            uint64_t fmqSize)
+            : mPhysicalCameraId(cameraId) {
+              mCameraMetadataInfo.set<CameraMetadataInfo::fmqSize>(fmqSize);
     }
 
     std::string mPhysicalCameraId;
-    CameraMetadata mPhysicalCameraMetadata;
+
+    CameraMetadataInfo mCameraMetadataInfo;
 
     virtual status_t                readFromParcel(const android::Parcel* parcel) override;
     virtual status_t                writeToParcel(android::Parcel* parcel) const override;

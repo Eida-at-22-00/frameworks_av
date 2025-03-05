@@ -61,30 +61,6 @@ void fieldPrint(std::stringstream& ss, const char * const (& fields)[N], Targs..
 }
 
 /**
- * Return string tokens from iterator, separated by spaces and reserved chars.
- */
-std::string tokenizer(std::string::const_iterator& it,
-        const std::string::const_iterator& end, const char *reserved);
-
-/**
- * Splits flags string based on delimeters (or, whitespace which is removed).
- */
-std::vector<std::string> split(const std::string& flags, const char *delim);
-
-/**
- * Parses a vector of integers using ',' '{' and '}' as delimeters. Leaves
- * vector unmodified if the parsing fails.
- */
-bool parseVector(const std::string &str, std::vector<int32_t> *vector);
-
-/**
- * Parse the devices string and return a vector of device address pairs.
- *
- * A failure to parse returns early with the contents that were able to be parsed.
- */
-std::vector<std::pair<std::string, std::string>> getDeviceAddressPairs(const std::string &devices);
-
-/**
  * Replaces targetChars with replaceChar in string, returns number of chars replaced.
  */
 size_t replace(std::string &str, const char *targetChars, const char replaceChar);

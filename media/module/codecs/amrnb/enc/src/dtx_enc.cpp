@@ -945,6 +945,7 @@ void dtx_buffer(dtx_encState *st,   /* i/o : State struct                    */
 
     Word16 i;
     Word32 L_frame_en;
+    Word32 mul;
     Word32 L_temp;
     Word16 log_en_e;
     Word16 log_en_m;
@@ -967,7 +968,8 @@ void dtx_buffer(dtx_encState *st,   /* i/o : State struct                    */
 
     for (i = L_FRAME; i != 0; i--)
     {
-        L_frame_en += (((Word32) * p_speech) * *(p_speech)) << 1;
+        __builtin_mul_overflow(*p_speech, *p_speech, &mul);
+        __builtin_add_overflow(L_frame_en, mul << 1, &L_frame_en);
         p_speech++;
         if (L_frame_en < 0)
         {

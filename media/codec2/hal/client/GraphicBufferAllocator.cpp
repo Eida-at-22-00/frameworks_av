@@ -96,6 +96,10 @@ void GraphicBufferAllocator::onBufferAttached(uint32_t generation) {
     mGraphicsTracker->onAttached(generation);
 }
 
+void GraphicBufferAllocator::pollForRenderedFrames(FrameEventHistoryDelta* delta) {
+    mGraphicsTracker->pollForRenderedFrames(delta);
+}
+
 c2_status_t GraphicBufferAllocator::allocate(
         uint32_t width, uint32_t height, ::android::PixelFormat format, uint64_t usage,
         AHardwareBuffer **buf, ::android::sp<::android::Fence> *fence) {
@@ -117,6 +121,10 @@ c2_status_t GraphicBufferAllocator::displayBuffer(
         const IGraphicBufferProducer::QueueBufferInput& input,
         IGraphicBufferProducer::QueueBufferOutput *output) {
     return mGraphicsTracker->render(block, input, output);
+}
+
+void GraphicBufferAllocator::onRequestStop() {
+    mGraphicsTracker->onRequestStop();
 }
 
 GraphicBufferAllocator::~GraphicBufferAllocator() {}

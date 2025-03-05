@@ -94,6 +94,11 @@ class EffectsFactoryHalAidl final : public EffectsFactoryHalInterface {
             std::vector<effect_descriptor_t>* descriptors);
 
     bool isProxyEffect(const aidl::android::media::audio::common::AudioUuid& uuid) const;
+
+    static bool isAudioEraser(const aidl::android::media::audio::common::AudioUuid& uuid);
+
+    // filter out descriptors which can not supported by the framework
+    static void filterHalDescriptors(std::vector<Descriptor>& descs);
 };
 
 } // namespace effect

@@ -132,10 +132,10 @@ Return<void> HidlCameraService::connectDevice(const sp<HCameraDeviceCallback>& h
                     kDefaultDeviceId);
     clientAttribution.packageName = "";
     clientAttribution.attributionTag = std::nullopt;
-    binder::Status serviceRet = mAidlICameraService->connectDevice(
+    binder::Status serviceRet = mAidlICameraService->connectDeviceVendor(
             callbacks, cameraId, 0/*oomScoreOffset*/,
             /*targetSdkVersion*/__ANDROID_API_FUTURE__, ROTATION_OVERRIDE_NONE,
-            clientAttribution, /*devicePolicy*/0, /*out*/&deviceRemote);
+            clientAttribution, /*devicePolicy*/0, /*sharedMode*/false, /*out*/&deviceRemote);
     HStatus status = HStatus::NO_ERROR;
     if (!serviceRet.isOk()) {
         ALOGE("%s: Unable to connect to camera device", __FUNCTION__);

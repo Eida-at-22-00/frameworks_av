@@ -372,7 +372,8 @@ void OboeserviceFuzzer::process(const uint8_t *data, size_t size) {
     request.setAttributionSource(attributionSource);
     request.setInService(fdp.ConsumeBool());
 
-    request.getConfiguration().setDeviceId(fdp.ConsumeIntegral<int32_t>());
+    android::DeviceIdVector DeviceIdVector = { fdp.ConsumeIntegral<int32_t>() };
+    request.getConfiguration().setDeviceIds(DeviceIdVector);
     request.getConfiguration().setSampleRate(fdp.ConsumeIntegral<int32_t>());
     request.getConfiguration().setChannelMask((aaudio_channel_mask_t)(
         fdp.ConsumeBool()

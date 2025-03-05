@@ -27,6 +27,8 @@
 #include "ndk_vendor/impl/ACameraManager.h"
 #else
 #include "impl/ACameraManager.h"
+#include <com_android_internal_camera_flags.h>
+namespace flags = com::android::internal::camera::flags;
 #endif
 #include "impl/ACameraMetadata.h"
 
@@ -159,6 +161,23 @@ camera_status_t ACameraManager_unregisterExtendedAvailabilityCallback(
 }
 
 EXPORT
+camera_status_t ACameraManager_isCameraDeviceSharingSupported(ACameraManager *mgr,
+        const char *cameraId, bool *isSharingSupported) {
+    ATRACE_CALL();
+    #ifndef __ANDROID_VNDK__
+    if (!flags::camera_multi_client()) {
+        return ACAMERA_ERROR_UNSUPPORTED_OPERATION;
+    }
+    #endif
+    if (mgr == nullptr || cameraId == nullptr || isSharingSupported == nullptr) {
+        ALOGE("%s: invalid argument! mgr %p cameraId %p isSharingSupported %p",
+                __FUNCTION__, mgr, cameraId, isSharingSupported);
+        return ACAMERA_ERROR_INVALID_PARAMETER;
+    }
+    return mgr->isCameraDeviceSharingSupported(cameraId, isSharingSupported);
+}
+
+EXPORT
 camera_status_t ACameraManager_getCameraCharacteristics(
         ACameraManager* mgr, const char* cameraId, ACameraMetadata** chars){
     ATRACE_CALL();
@@ -188,7 +207,27 @@ camera_status_t ACameraManager_openCamera(
                 __FUNCTION__, mgr, cameraId, callback, device);
         return ACAMERA_ERROR_INVALID_PARAMETER;
     }
-    return mgr->openCamera(cameraId, callback, device);
+    bool primaryClient;
+    return mgr->openCamera(cameraId, /*sharedMode*/false, callback, device, &primaryClient);
+}
+
+EXPORT
+camera_status_t ACameraManager_openSharedCamera(
+        ACameraManager* mgr, const char* cameraId, ACameraDevice_StateCallbacks* callback,
+        /*out*/ACameraDevice** device, /*out*/bool* primaryClient) {
+    ATRACE_CALL();
+    #ifndef __ANDROID_VNDK__
+    if (!flags::camera_multi_client()) {
+        return ACAMERA_ERROR_UNSUPPORTED_OPERATION;
+    }
+    #endif
+    if (mgr == nullptr || cameraId == nullptr || callback == nullptr || device == nullptr ||
+            primaryClient == nullptr) {
+        ALOGE("%s: invalid argument! mgr %p cameraId %p callback %p device %p primary %p",
+                __FUNCTION__, mgr, cameraId, callback, device, primaryClient);
+        return ACAMERA_ERROR_INVALID_PARAMETER;
+    }
+    return mgr->openCamera(cameraId, /*sharedMode*/true, callback, device, primaryClient);
 }
 
 #ifdef __ANDROID_VNDK__

@@ -83,6 +83,7 @@ static const std::unordered_map<Parameter::Id::Tag, int /* version */> kParamIdE
         {Parameter::Id::visualizerTag, 1},
         {Parameter::Id::volumeTag, 1},
         {Parameter::Id::spatializerTag, 2},
+        {Parameter::Id::eraserTag, 3},
 };
 // Tags defined Parameter::Specific union.
 static const std::unordered_map<Parameter::Specific::Tag, int /* version */>
@@ -104,6 +105,7 @@ static const std::unordered_map<Parameter::Specific::Tag, int /* version */>
                 {Parameter::Specific::visualizer, 1},
                 {Parameter::Specific::volume, 1},
                 {Parameter::Specific::spatializer, 2},
+                {Parameter::Specific::eraser, 3},
 };
 
 class MockFactory : public IFactory {
@@ -223,6 +225,7 @@ class MockEffect : public IEffect {
             case Parameter::Id::virtualizerTag:
             case Parameter::Id::visualizerTag:
             case Parameter::Id::volumeTag:
+            case Parameter::Id::eraserTag:
                 FALLTHROUGH_INTENDED;
             case Parameter::Id::spatializerTag: {
                 if (kParamIdEffectVersionMap.find(idTag) != kParamIdEffectVersionMap.end() &&

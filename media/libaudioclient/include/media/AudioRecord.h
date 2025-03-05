@@ -495,19 +495,19 @@ public:
      */
             audio_port_handle_t getInputDevice();
 
-     /* Returns the ID of the audio device actually used by the input to which this AudioRecord
+     /* Returns the IDs of the audio devices actually used by the input to which this AudioRecord
       * is attached.
-      * The device ID is relevant only if the AudioRecord is active.
-      * When the AudioRecord is inactive, the device ID returned can be either:
-      * - AUDIO_PORT_HANDLE_NONE if the AudioRecord is not attached to any output.
-      * - The device ID used before paused or stopped.
+      * The device IDs is relevant only if the AudioRecord is active.
+      * When the AudioRecord is inactive, the device IDs returned can be either:
+      * - An empty vector if the AudioRecord is not attached to any output.
+      * - The device IDs used before paused or stopped.
       * - The device ID selected by audio policy manager of setOutputDevice() if the AudioRecord
       * has not been started yet.
       *
       * Parameters:
       *  none.
       */
-     audio_port_handle_t getRoutedDeviceId();
+     DeviceIdVector getRoutedDeviceIds();
 
     /* Add an AudioDeviceCallback. The caller will be notified when the audio device
      * to which this AudioRecord is routed is updated.
@@ -534,7 +534,7 @@ public:
 
             // AudioSystem::AudioDeviceCallback> virtuals
             virtual void onAudioDeviceUpdate(audio_io_handle_t audioIo,
-                                             audio_port_handle_t deviceId);
+                                             const DeviceIdVector& deviceIds);
 
 private:
     /* If nonContig is non-NULL, it is an output parameter that will be set to the number of
@@ -678,7 +678,7 @@ private:
             // FIXME enum is faster than strcmp() for parameter 'from'
             status_t restoreRecord_l(const char *from);
 
-            void     updateRoutedDeviceId_l();
+            void     updateRoutedDeviceIds_l();
 
     sp<AudioRecordThread>   mAudioRecordThread;
     mutable Mutex           mLock;
@@ -810,7 +810,7 @@ private:
     audio_port_handle_t     mSelectedDeviceId = AUDIO_PORT_HANDLE_NONE;
     // Device actually selected by AudioPolicyManager: This may not match the app
     // selection depending on other activity and connected devices
-    audio_port_handle_t     mRoutedDeviceId = AUDIO_PORT_HANDLE_NONE;
+    DeviceIdVector          mRoutedDeviceIds;
 
     wp<AudioSystem::AudioDeviceCallback> mDeviceCallback;
 

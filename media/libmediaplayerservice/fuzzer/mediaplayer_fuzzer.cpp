@@ -482,8 +482,8 @@ void MediaPlayerServiceFuzzer::invokeMediaPlayer() {
                     mMediaPlayer->setOutputDevice(deviceId);
                 },
                 [&]() {
-                    audio_port_handle_t deviceId;
-                    mMediaPlayer->getRoutedDeviceId(&deviceId);
+                    DeviceIdVector deviceIds;
+                    mMediaPlayer->getRoutedDeviceIds(deviceIds);
                 },
                 [&]() { mMediaPlayer->enableAudioDeviceCallback(mFdp.ConsumeBool()); },
                 [&]() {

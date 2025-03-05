@@ -28,11 +28,13 @@ namespace android::mediadrm {
 DrmRemotelyProvisionedComponent::DrmRemotelyProvisionedComponent(std::shared_ptr<IDrmPlugin> drm,
                                                                  std::string drmVendor,
                                                                  std::string drmDesc,
-                                                                 std::vector<uint8_t> bcc)
+                                                                 std::vector<uint8_t> bcc,
+                                                                 std::vector<uint8_t> bcc_signature)
     : mDrm(std::move(drm)),
       mDrmVendor(std::move(drmVendor)),
       mDrmDesc(std::move(drmDesc)),
-      mBcc(std::move(bcc)) {}
+      mBcc(std::move(bcc)),
+      mBccSignature(std::move(bcc_signature)) {}
 
 ScopedAStatus DrmRemotelyProvisionedComponent::getHardwareInfo(RpcHardwareInfo* info) {
     info->versionNumber = 3;
@@ -107,7 +109,7 @@ ScopedAStatus DrmRemotelyProvisionedComponent::getDeviceInfo(std::vector<uint8_t
     for (auto i : keyToProp) {
         auto key = i.first;
         auto prop = i.second;
-        const auto& val= deviceInfoMap.get(key);
+        const auto& val = deviceInfoMap.get(key);
         if (val == nullptr || val->asTstr()->value().empty()) {
             std::string propValue = android::base::GetProperty(prop, "");
             if (propValue.empty()) {
@@ -161,12 +163,16 @@ ScopedAStatus DrmRemotelyProvisionedComponent::generateCertificateRequestV2(
     }
 
     // assemble AuthenticatedRequest (definition in IRemotelyProvisionedComponent.aidl)
-    *out = cppbor::Array()
-                   .add(1 /* version */)
-                   .add(cppbor::Map() /* UdsCerts */)
-                   .add(cppbor::EncodedItem(mBcc))
-                   .add(cppbor::EncodedItem(std::move(deviceSignedCsrPayload)))
-                   .encode();
+    cppbor::Array request_array = cppbor::Array().add(1 /* version */);
+    if (!mBccSignature.empty()) {
+        request_array.add(cppbor::EncodedItem(mBccSignature) /* UdsCerts */);
+    } else {
+        request_array.add(cppbor::Map() /* empty UdsCerts */);
+    }
+    request_array.add(cppbor::EncodedItem(mBcc))
+            .add(cppbor::EncodedItem(std::move(deviceSignedCsrPayload)));
+    *out = request_array.encode();
+
     return ScopedAStatus::ok();
 }
 }  // namespace android::mediadrm

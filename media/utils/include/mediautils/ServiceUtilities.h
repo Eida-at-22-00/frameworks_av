@@ -102,6 +102,7 @@ bool captureAudioOutputAllowed(const AttributionSourceState& attributionSource);
 bool captureMediaOutputAllowed(const AttributionSourceState& attributionSource);
 bool captureTunerAudioInputAllowed(const AttributionSourceState& attributionSource);
 bool captureVoiceCommunicationOutputAllowed(const AttributionSourceState& attributionSource);
+bool bypassConcurrentPolicyAllowed(const AttributionSourceState& attributionSource) ;
 bool accessUltrasoundAllowed(const AttributionSourceState& attributionSource);
 bool captureHotwordAllowed(const AttributionSourceState& attributionSource);
 bool settingsAllowed();
@@ -109,11 +110,17 @@ bool modifyAudioRoutingAllowed();
 bool modifyAudioRoutingAllowed(const AttributionSourceState& attributionSource);
 bool modifyDefaultAudioEffectsAllowed();
 bool modifyDefaultAudioEffectsAllowed(const AttributionSourceState& attributionSource);
+bool modifyAudioSettingsPrivilegedAllowed(const AttributionSourceState& attributionSource);
 bool dumpAllowed();
 bool modifyPhoneStateAllowed(const AttributionSourceState& attributionSource);
 bool bypassInterruptionPolicyAllowed(const AttributionSourceState& attributionSource);
 bool callAudioInterceptionAllowed(const AttributionSourceState& attributionSource);
 void purgePermissionCache();
+bool mustAnonymizeBluetoothAddressLegacy(
+        const AttributionSourceState& attributionSource, const String16& caller);
+void anonymizeBluetoothAddress(char *address);
+
+bool isRecordOpRequired(audio_source_t source);
 int32_t getOpForSource(audio_source_t source);
 
 AttributionSourceState getCallingAttributionSource();

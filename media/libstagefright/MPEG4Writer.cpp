@@ -53,7 +53,9 @@
 #include <media/esds/ESDS.h>
 #include "include/HevcUtils.h"
 
+#include <com_android_internal_camera_flags.h>
 #include <com_android_media_editing_flags.h>
+namespace editing_flags = com::android::media::editing::flags;
 
 #ifndef __predict_false
 #define __predict_false(exp) __builtin_expect((exp) != 0, 0)
@@ -64,6 +66,8 @@
     ALOGW("Condition %s failed "  message, #condition, ##__VA_ARGS__); \
     true; \
 }))
+
+namespace flags_camera = com::android::internal::camera::flags;
 
 namespace android {
 
@@ -91,6 +95,8 @@ static const char kMetaKey_TemporalLayerCount[] = "com.android.video.temporal_la
 static const int kTimestampDebugCount = 10;
 static const int kItemIdBase = 10000;
 static const char kExifHeader[] = {'E', 'x', 'i', 'f', '\0', '\0'};
+static const char kGainmapMetaHeader[] = {'t', 'm', 'a', 'p', '\0', '\0'};
+static const char kGainmapHeader[] = {'g', 'm', 'a', 'p', '\0', '\0'};
 static const uint8_t kExifApp1Marker[] = {'E', 'x', 'i', 'f', 0xff, 0xe1};
 
 static const uint8_t kMandatoryHevcNalUnitTypes[3] = {
@@ -160,6 +166,7 @@ public:
     bool isAvc() const { return mIsAvc; }
     bool isHevc() const { return mIsHevc; }
     bool isAv1() const { return mIsAv1; }
+    bool isApv() const { return mIsApv; }
     bool isHeic() const { return mIsHeic; }
     bool isAvif() const { return mIsAvif; }
     bool isHeif() const { return mIsHeif; }
@@ -167,8 +174,11 @@ public:
     bool isMPEG4() const { return mIsMPEG4; }
     bool usePrefix() const { return mIsAvc || mIsHevc || mIsHeic || mIsDovi; }
     bool isExifData(MediaBufferBase *buffer, uint32_t *tiffHdrOffset) const;
+    bool isGainmapMetaData(MediaBufferBase* buffer, uint32_t* offset) const;
+    bool isGainmapData(MediaBufferBase* buffer, uint32_t* offset) const;
     void addChunkOffset(off64_t offset);
-    void addItemOffsetAndSize(off64_t offset, size_t size, bool isExif);
+    void addItemOffsetAndSize(off64_t offset, size_t size, bool isExif,
+            bool isGainmapMeta = false, bool isGainmap = false);
     void flushItemRefs();
     TrackId& getTrackId() { return mTrackId; }
     status_t dump(int fd, const Vector<String16>& args) const;
@@ -178,8 +188,11 @@ public:
     void resetInternal();
     int64_t trackMetaDataSize();
     bool isTimestampValid(int64_t timeUs);
+    uint16_t getImageItemId() { return mImageItemId; };
+    uint16_t getGainmapItemId() { return mGainmapItemId; };
+    uint16_t getGainmapMetaItemId() { return mGainmapMetadataItemId; };
 
-private:
+  private:
     // A helper class to handle faster write box with table entries
     template<class TYPE, unsigned ENTRY_SIZE>
     // ENTRY_SIZE: # of values in each entry
@@ -328,6 +341,7 @@ private:
     bool mIsAvc;
     bool mIsHevc;
     bool mIsAv1;
+    bool mIsApv;
     bool mIsDovi;
     bool mIsAudio;
     bool mIsVideo;
@@ -405,6 +419,7 @@ private:
 
     Vector<uint16_t> mProperties;
     ItemRefs mDimgRefs;
+    ItemRefs mGainmapDimgRefs;
     Vector<uint16_t> mExifList;
     uint16_t mImageItemId;
     uint16_t mItemIdBase;
@@ -413,6 +428,10 @@ private:
     int32_t mTileWidth, mTileHeight;
     int32_t mGridRows, mGridCols;
     size_t mNumTiles, mTileIndex;
+    uint16_t mGainmapItemId, mGainmapMetadataItemId;
+    ColorAspects mColorAspects;
+    bool mColorAspectsValid;
+    Vector<uint8_t> mBitsPerChannel;
 
     // Update the audio track's drift information.
     void updateDriftTime(const sp<MetaData>& meta);
@@ -479,6 +498,7 @@ private:
     void writeAvccBox();
     void writeHvccBox();
     void writeAv1cBox();
+    void writeApvcBox();
     void writeDoviConfigBox();
     void writeUrlBox();
     void writeDrefBox();
@@ -560,6 +580,7 @@ void MPEG4Writer::initInternal(int fd, bool isFirstSession) {
     mTimeScale = -1;
     mHasFileLevelMeta = false;
     mIsAvif = false;
+    mHasGainmap = false;
     mFileLevelMetaDataSize = 0;
     mPrimaryItemId = 0;
     mAssociationEntryCount = 0;
@@ -680,6 +701,9 @@ const char *MPEG4Writer::Track::getFourCCForMime(const char *mime) {
             return "hvc1";
         } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_AV1, mime)) {
             return "av01";
+        } else if (editing_flags::muxer_mp4_enable_apv() &&
+                   !strcasecmp(MEDIA_MIMETYPE_VIDEO_APV, mime)) {
+            return "apv1";
         }
     } else if (!strncasecmp(mime, "application/", 12)) {
         return "mett";
@@ -712,6 +736,13 @@ status_t MPEG4Writer::addSource(const sp<MediaSource> &source) {
     int32_t isBackgroundMode;
     if (meta && meta->findInt32(kKeyBackgroundMode, &isBackgroundMode)) {
         mIsBackgroundMode |= isBackgroundMode;
+    }
+
+    if (flags_camera::camera_heif_gainmap()) {
+        int32_t gainmap = 0;
+        if (meta && meta->findInt32(kKeyGainmap, &gainmap)) {
+            mHasGainmap |= gainmap;
+        }
     }
 
     if (!strcmp(mime, MEDIA_MIMETYPE_VIDEO_DOLBY_VISION)) {
@@ -813,6 +844,10 @@ int64_t MPEG4Writer::estimateFileLevelMetaSize(MetaData *params) {
                          + 8   // idat box (when empty)
                          + 12  // iref box (when empty)
                          ;
+
+    if (flags_camera::camera_heif_gainmap()) {
+        metaSize +=  36;  // grpl box (when empty)
+    }
 
     for (List<Track *>::iterator it = mTracks.begin();
          it != mTracks.end(); ++it) {
@@ -1573,6 +1608,9 @@ void MPEG4Writer::writeFtypBox(MetaData *param) {
             } else {
                 writeFourcc("mif1");
                 writeFourcc("heic");
+                if (flags_camera::camera_heif_gainmap() && mHasGainmap) {
+                    writeFourcc("tmap");
+                }
             }
         }
         if (mHasMoovBox) {
@@ -2213,8 +2251,7 @@ size_t MPEG4Writer::numTracks() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-MPEG4Writer::Track::Track(
-        MPEG4Writer *owner, const sp<MediaSource> &source, uint32_t aTrackId)
+MPEG4Writer::Track::Track(MPEG4Writer* owner, const sp<MediaSource>& source, uint32_t aTrackId)
     : mOwner(owner),
       mMeta(source->getFormat()),
       mSource(source),
@@ -2234,7 +2271,7 @@ MPEG4Writer::Track::Track(
       mStssTableEntries(new ListTableEntries<uint32_t, 1>(1000)),
       mSttsTableEntries(new ListTableEntries<uint32_t, 2>(1000)),
       mCttsTableEntries(new ListTableEntries<uint32_t, 2>(1000)),
-      mElstTableEntries(new ListTableEntries<uint32_t, 3>(3)), // Reserve 3 rows, a row has 3 items
+      mElstTableEntries(new ListTableEntries<uint32_t, 3>(3)),  // Reserve 3 rows, a row has 3 items
       mMinCttsOffsetTimeUs(0),
       mMinCttsOffsetTicks(0),
       mMaxCttsOffsetTicks(0),
@@ -2248,6 +2285,7 @@ MPEG4Writer::Track::Track(
       mFirstSampleStartOffsetUs(0),
       mRotation(0),
       mDimgRefs("dimg"),
+      mGainmapDimgRefs("dimg"),
       mImageItemId(0),
       mItemIdBase(0),
       mIsPrimary(0),
@@ -2258,7 +2296,10 @@ MPEG4Writer::Track::Track(
       mGridRows(0),
       mGridCols(0),
       mNumTiles(1),
-      mTileIndex(0) {
+      mTileIndex(0),
+      mGainmapItemId(0),
+      mGainmapMetadataItemId(0),
+      mColorAspectsValid(false) {
     getCodecSpecificDataFromInputFormatIfPossible();
 
     const char *mime;
@@ -2266,6 +2307,7 @@ MPEG4Writer::Track::Track(
     mIsAvc = !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_AVC);
     mIsHevc = !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_HEVC);
     mIsAv1 = !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_AV1);
+    mIsApv = editing_flags::muxer_mp4_enable_apv() && !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_APV);
     mIsDovi = !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_DOLBY_VISION);
     mIsAudio = !strncasecmp(mime, "audio/", 6);
     mIsVideo = !strncasecmp(mime, "video/", 6);
@@ -2446,25 +2488,57 @@ status_t MPEG4Writer::setNextFd(int fd) {
     return OK;
 }
 
-bool MPEG4Writer::Track::isExifData(
-        MediaBufferBase *buffer, uint32_t *tiffHdrOffset) const {
+bool MPEG4Writer::Track::isGainmapMetaData(MediaBufferBase* buffer, uint32_t* offset) const {
+    if (!mIsHeif) {
+        return false;
+    }
+
+    // Gainmap metadata block starting with 'tmap\0\0'
+    size_t length = buffer->range_length();
+    uint8_t *data = (uint8_t *)buffer->data() + buffer->range_offset();
+    if ((length > sizeof(kGainmapMetaHeader)) &&
+        !memcmp(data, kGainmapMetaHeader, sizeof(kGainmapMetaHeader))) {
+        *offset = sizeof(kGainmapMetaHeader);
+        return true;
+    }
+
+    return false;
+}
+
+bool MPEG4Writer::Track::isGainmapData(MediaBufferBase* buffer, uint32_t* offset) const {
+    if (!mIsHeif) {
+        return false;
+    }
+
+    // Gainmap block starting with 'gmap\0\0'
+    size_t length = buffer->range_length();
+    uint8_t* data = (uint8_t*)buffer->data() + buffer->range_offset();
+    if ((length > sizeof(kGainmapHeader)) &&
+        !memcmp(data, kGainmapHeader, sizeof(kGainmapHeader))) {
+        *offset = sizeof(kGainmapHeader);
+        return true;
+    }
+
+    return false;
+}
+
+bool MPEG4Writer::Track::isExifData(MediaBufferBase* buffer, uint32_t* tiffHdrOffset) const {
     if (!mIsHeif) {
         return false;
     }
 
     // Exif block starting with 'Exif\0\0'
     size_t length = buffer->range_length();
-    uint8_t *data = (uint8_t *)buffer->data() + buffer->range_offset();
-    if ((length > sizeof(kExifHeader))
-        && !memcmp(data, kExifHeader, sizeof(kExifHeader))) {
+    uint8_t* data = (uint8_t*)buffer->data() + buffer->range_offset();
+    if ((length > sizeof(kExifHeader)) && !memcmp(data, kExifHeader, sizeof(kExifHeader))) {
         *tiffHdrOffset = sizeof(kExifHeader);
         return true;
     }
 
     // Exif block starting with fourcc 'Exif' followed by APP1 marker
-    if ((length > sizeof(kExifApp1Marker) + 2 + sizeof(kExifHeader))
-            && !memcmp(data, kExifApp1Marker, sizeof(kExifApp1Marker))
-            && !memcmp(data + sizeof(kExifApp1Marker) + 2, kExifHeader, sizeof(kExifHeader))) {
+    if ((length > sizeof(kExifApp1Marker) + 2 + sizeof(kExifHeader)) &&
+        !memcmp(data, kExifApp1Marker, sizeof(kExifApp1Marker)) &&
+        !memcmp(data + sizeof(kExifApp1Marker) + 2, kExifHeader, sizeof(kExifHeader))) {
         // skip 'Exif' fourcc
         buffer->set_range(4, buffer->range_length() - 4);
 
@@ -2481,7 +2555,8 @@ void MPEG4Writer::Track::addChunkOffset(off64_t offset) {
     mCo64TableEntries->add(hton64(offset));
 }
 
-void MPEG4Writer::Track::addItemOffsetAndSize(off64_t offset, size_t size, bool isExif) {
+void MPEG4Writer::Track::addItemOffsetAndSize(off64_t offset, size_t size, bool isExif,
+        bool isGainmapMeta, bool isGainmap) {
     CHECK(mIsHeif);
 
     if (offset > UINT32_MAX || size > UINT32_MAX) {
@@ -2510,6 +2585,46 @@ void MPEG4Writer::Track::addItemOffsetAndSize(off64_t offset, size_t size, bool 
         return;
     }
 
+    bool hasGrid = (mTileWidth > 0);
+
+    if (isGainmapMeta && flags_camera::camera_heif_gainmap()) {
+        uint16_t metaItemId;
+        if (mOwner->reserveItemId_l(1, &metaItemId) != OK) {
+            return;
+        }
+
+        Vector<uint16_t> props;
+        if (mColorAspectsValid) {
+            ItemProperty property;
+            property.type = FOURCC('c', 'o', 'l', 'r');
+            ColorUtils::convertCodecColorAspectsToIsoAspects(
+                    mColorAspects, &property.colorPrimaries, &property.colorTransfer,
+                    &property.colorMatrix, &property.colorRange);
+            props.push_back(mOwner->addProperty_l(property));
+        }
+        if (!mBitsPerChannel.empty()) {
+            ItemProperty property;
+            property.type = FOURCC('p', 'i', 'x', 'i');
+            property.bitsPerChannel.appendVector(mBitsPerChannel);
+            props.push_back(mOwner->addProperty_l(property));
+        }
+        props.push_back(mOwner->addProperty_l({
+            .type = FOURCC('i', 's', 'p', 'e'),
+            .width = hasGrid ? mTileWidth : mWidth,
+            .height = hasGrid ? mTileHeight : mHeight,
+        }));
+        mGainmapMetadataItemId = mOwner->addItem_l({
+                .itemType = "tmap",
+                .itemId = metaItemId,
+                .isPrimary = false,
+                .isHidden = false,
+                .offset = (uint32_t)offset,
+                .size = (uint32_t)size,
+                .properties = props,
+        });
+        return;
+    }
+
     if (mTileIndex >= mNumTiles) {
         ALOGW("Ignoring excess tiles!");
         return;
@@ -2523,8 +2638,6 @@ void MPEG4Writer::Track::addItemOffsetAndSize(off64_t offset, size_t size, bool 
         case 270: heifRotation = 1; break;
         default: break; // don't set if invalid
     }
-
-    bool hasGrid = (mTileWidth > 0);
 
     if (mProperties.empty()) {
         mProperties.push_back(mOwner->addProperty_l({
@@ -2550,7 +2663,7 @@ void MPEG4Writer::Track::addItemOffsetAndSize(off64_t offset, size_t size, bool 
 
     mTileIndex++;
     if (hasGrid) {
-        mDimgRefs.value.push_back(mOwner->addItem_l({
+        uint16_t id = mOwner->addItem_l({
             .itemType = mIsAvif ? "av01" : "hvc1",
             .itemId = mItemIdBase++,
             .isPrimary = false,
@@ -2558,7 +2671,12 @@ void MPEG4Writer::Track::addItemOffsetAndSize(off64_t offset, size_t size, bool 
             .offset = (uint32_t)offset,
             .size = (uint32_t)size,
             .properties = mProperties,
-        }));
+        });
+        if (isGainmap && flags_camera::camera_heif_gainmap()) {
+            mGainmapDimgRefs.value.push_back(id);
+        } else {
+            mDimgRefs.value.push_back(id);
+        }
 
         if (mTileIndex == mNumTiles) {
             mProperties.clear();
@@ -2573,28 +2691,71 @@ void MPEG4Writer::Track::addItemOffsetAndSize(off64_t offset, size_t size, bool 
                     .rotation = heifRotation,
                 }));
             }
-            mImageItemId = mOwner->addItem_l({
-                .itemType = "grid",
-                .itemId = mItemIdBase++,
-                .isPrimary = (mIsPrimary != 0),
-                .isHidden = false,
-                .rows = (uint32_t)mGridRows,
-                .cols = (uint32_t)mGridCols,
-                .width = (uint32_t)mWidth,
-                .height = (uint32_t)mHeight,
-                .properties = mProperties,
+            if (mColorAspectsValid && flags_camera::camera_heif_gainmap()) {
+                ItemProperty property;
+                property.type = FOURCC('c', 'o', 'l', 'r');
+                ColorUtils::convertCodecColorAspectsToIsoAspects(
+                        mColorAspects, &property.colorPrimaries, &property.colorTransfer,
+                        &property.colorMatrix, &property.colorRange);
+                mProperties.push_back(mOwner->addProperty_l(property));
+            }
+            if (!mBitsPerChannel.empty() && flags_camera::camera_heif_gainmap()) {
+                ItemProperty property;
+                property.type = FOURCC('p', 'i', 'x', 'i');
+                property.bitsPerChannel.appendVector(mBitsPerChannel);
+                mProperties.push_back(mOwner->addProperty_l(property));
+            }
+            uint16_t itemId = mOwner->addItem_l({
+                    .itemType = "grid",
+                    .itemId = mItemIdBase++,
+                    .isPrimary = isGainmap && flags_camera::camera_heif_gainmap()
+                                         ? false
+                                         : (mIsPrimary != 0),
+                    .isHidden = false,
+                    .rows = (uint32_t)mGridRows,
+                    .cols = (uint32_t)mGridCols,
+                    .width = (uint32_t)mWidth,
+                    .height = (uint32_t)mHeight,
+                    .properties = mProperties,
             });
+
+            if (isGainmap && flags_camera::camera_heif_gainmap()) {
+                mGainmapItemId = itemId;
+            } else {
+                mImageItemId = itemId;
+            }
         }
     } else {
-        mImageItemId = mOwner->addItem_l({
-            .itemType = mIsAvif ? "av01" : "hvc1",
-            .itemId = mItemIdBase++,
-            .isPrimary = (mIsPrimary != 0),
-            .isHidden = false,
-            .offset = (uint32_t)offset,
-            .size = (uint32_t)size,
-            .properties = mProperties,
+        if (mColorAspectsValid && flags_camera::camera_heif_gainmap()) {
+            ItemProperty property;
+            property.type = FOURCC('c', 'o', 'l', 'r');
+            ColorUtils::convertCodecColorAspectsToIsoAspects(
+                    mColorAspects, &property.colorPrimaries, &property.colorTransfer,
+                    &property.colorMatrix, &property.colorRange);
+            mProperties.push_back(mOwner->addProperty_l(property));
+        }
+        if (!mBitsPerChannel.empty() && flags_camera::camera_heif_gainmap()) {
+            ItemProperty property;
+            property.type = FOURCC('p', 'i', 'x', 'i');
+            property.bitsPerChannel.appendVector(mBitsPerChannel);
+            mProperties.push_back(mOwner->addProperty_l(property));
+        }
+        uint16_t itemId = mOwner->addItem_l({
+                .itemType = mIsAvif ? "av01" : "hvc1",
+                .itemId = mItemIdBase++,
+                .isPrimary = (isGainmap && flags_camera::camera_heif_gainmap()) ? false
+                                                                                : (mIsPrimary != 0),
+                .isHidden = false,
+                .offset = (uint32_t)offset,
+                .size = (uint32_t)size,
+                .properties = mProperties,
         });
+
+        if (isGainmap && flags_camera::camera_heif_gainmap()) {
+            mGainmapItemId = itemId;
+        } else {
+            mImageItemId = itemId;
+        }
     }
 }
 
@@ -2618,6 +2779,10 @@ void MPEG4Writer::Track::flushItemRefs() {
                 mOwner->addRefs_l(exifItem, cdscRefs);
             }
         }
+    }
+
+    if ((mGainmapItemId > 0) && flags_camera::camera_heif_gainmap()) {
+        mOwner->addRefs_l(mGainmapItemId, mGainmapDimgRefs);
     }
 }
 
@@ -2708,6 +2873,9 @@ void MPEG4Writer::Track::getCodecSpecificDataFromInputFormatIfPossible() {
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_AV1) ||
                !strcasecmp(mime, MEDIA_MIMETYPE_IMAGE_AVIF)) {
         mMeta->findData(kKeyAV1C, &type, &data, &size);
+    } else if (editing_flags::muxer_mp4_enable_apv() &&
+               !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_APV)) {
+        mMeta->findData(kKeyAPVC, &type, &data, &size);
     } else if (!strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_DOLBY_VISION)) {
         getDolbyVisionProfile();
         if (!mMeta->findData(kKeyAVCC, &type, &data, &size) &&
@@ -3609,7 +3777,7 @@ status_t MPEG4Writer::Track::threadEntry() {
                             (const uint8_t *)buffer->data()
                                 + buffer->range_offset(),
                             buffer->range_length());
-                } else if (mIsMPEG4 || mIsAv1) {
+                } else if (mIsMPEG4 || mIsAv1 || mIsApv) {
                     err = copyCodecSpecificData((const uint8_t *)buffer->data() + buffer->range_offset(),
                             buffer->range_length());
                 }
@@ -3660,19 +3828,68 @@ status_t MPEG4Writer::Track::threadEntry() {
             break;
         }
 
+        bool isGainmapMeta = false;
+        bool isGainmap = false;
         bool isExif = false;
         uint32_t tiffHdrOffset = 0;
+        uint32_t gainmapOffset = 0;
         int32_t isMuxerData;
         if (buffer->meta_data().findInt32(kKeyIsMuxerData, &isMuxerData) && isMuxerData) {
-            // We only support one type of muxer data, which is Exif data block.
+            if (flags_camera::camera_heif_gainmap()) {
+                isGainmapMeta = isGainmapMetaData(buffer, &gainmapOffset);
+                isGainmap = isGainmapData(buffer, &gainmapOffset);
+                if ((isGainmap || isGainmapMeta) && (gainmapOffset > 0) &&
+                    (gainmapOffset < buffer->range_length())) {
+                    // Don't include the tmap/gmap header
+                    buffer->set_range(gainmapOffset, buffer->range_length() - gainmapOffset);
+                }
+            }
             isExif = isExifData(buffer, &tiffHdrOffset);
-            if (!isExif) {
-                ALOGW("Ignoring bad Exif data block");
+            if (!isExif && !isGainmap && !isGainmapMeta) {
+                ALOGW("Ignoring bad muxer data block");
                 buffer->release();
                 buffer = NULL;
                 continue;
             }
         }
+        if (flags_camera::camera_heif_gainmap()) {
+            int32_t val32;
+            if (buffer->meta_data().findInt32(kKeyColorPrimaries, &val32)) {
+                mColorAspects.mPrimaries = static_cast<ColorAspects::Primaries>(val32);
+                mColorAspectsValid = true;
+            } else {
+                mColorAspectsValid = false;
+            }
+            if (buffer->meta_data().findInt32(kKeyTransferFunction, &val32)) {
+                mColorAspects.mTransfer = static_cast<ColorAspects::Transfer>(val32);
+            } else {
+                mColorAspectsValid = false;
+            }
+            if (buffer->meta_data().findInt32(kKeyColorMatrix, &val32)) {
+                mColorAspects.mMatrixCoeffs = static_cast<ColorAspects::MatrixCoeffs>(val32);
+            } else {
+                mColorAspectsValid = false;
+            }
+            if (buffer->meta_data().findInt32(kKeyColorRange, &val32)) {
+                mColorAspects.mRange = static_cast<ColorAspects::Range>(val32);
+            } else {
+                mColorAspectsValid = false;
+            }
+            if (mBitsPerChannel.empty() && buffer->meta_data().findInt32(kKeyColorFormat, &val32)) {
+                switch (val32) {
+                    case COLOR_FormatYUV420Flexible:
+                    case COLOR_FormatYUV420Planar:
+                    case COLOR_FormatYUV420SemiPlanar: {
+                            uint8_t bitsPerChannel[] = {8, 8, 8};
+                            mBitsPerChannel.appendArray(bitsPerChannel, sizeof(bitsPerChannel));
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+
         if (!buffer->meta_data().findInt64(kKeySampleFileOffset, &sampleFileOffset)) {
             sampleFileOffset = -1;
         }
@@ -3698,7 +3915,7 @@ status_t MPEG4Writer::Track::threadEntry() {
 
         // Make a deep copy of the MediaBuffer and Metadata and release
         // the original as soon as we can
-        MediaBuffer *copy = new MediaBuffer(buffer->range_length());
+        MediaBuffer* copy = new MediaBuffer(buffer->range_length());
         if (sampleFileOffset != -1) {
             copy->meta_data().setInt64(kKeySampleFileOffset, sampleFileOffset);
         } else {
@@ -3713,7 +3930,7 @@ status_t MPEG4Writer::Track::threadEntry() {
         if (isExif) {
             copy->meta_data().setInt32(kKeyExifTiffOffset, tiffHdrOffset);
         }
-        bool usePrefix = this->usePrefix() && !isExif;
+        bool usePrefix = this->usePrefix() && !isExif && !isGainmapMeta;
         if (sampleFileOffset == -1 && usePrefix) {
             StripStartcode(copy);
         }
@@ -3995,11 +4212,21 @@ status_t MPEG4Writer::Track::threadEntry() {
                 trackProgressStatus(timestampUs);
             }
         }
+
+        if (flags_camera::camera_heif_gainmap() && mOwner->mHasGainmap) {
+            Mutex::Autolock lock(mOwner->mLock);
+            size_t bytesWritten;
+            off64_t offset = mOwner->addSample_l(copy, usePrefix, tiffHdrOffset, &bytesWritten);
+            addItemOffsetAndSize(offset, bytesWritten, isExif, isGainmapMeta, isGainmap);
+            copy->release();
+            copy = NULL;
+            continue;
+        }
+
         if (!hasMultipleTracks) {
             size_t bytesWritten;
             off64_t offset = mOwner->addSample_l(
                     copy, usePrefix, tiffHdrOffset, &bytesWritten);
-
             if (mIsHeif) {
                 addItemOffsetAndSize(offset, bytesWritten, isExif);
             } else {
@@ -4304,6 +4531,15 @@ int32_t MPEG4Writer::Track::getMetaSizeIncrease(
         increase += 9;                              // 'irot' property (worst case)
     }
 
+    if (flags_camera::camera_heif_gainmap()) {
+        // assume we have HDR gainmap and associated metadata
+        increase += (8 + mCodecSpecificDataSize)  // 'hvcC' property (HDR gainmap)
+                    + (2 * 20)                    // 'ispe' property
+                    + (2 * 16)                    // 'pixi' property
+                    + (2 * 19)                    // 'colr' property
+                ;
+    }
+
     // increase to iref and idat
     if (grid) {
         increase += (12 + mNumTiles * 2)            // 'dimg' in iref
@@ -4316,6 +4552,12 @@ int32_t MPEG4Writer::Track::getMetaSizeIncrease(
     increase += (16                                 // increase to 'iloc'
               + 21)                                 // increase to 'iinf'
               * (mNumTiles + grid + 1);             // "+1" is for 'Exif'
+
+    if (flags_camera::camera_heif_gainmap()) {
+        increase += (16                                 // increase to 'iloc'
+                  + 21)                                 // increase to 'iinf'
+                  * 2;                                  // "2" is for 'tmap', 'gmap'
+    }
 
     // When total # of properties is > 127, the properties id becomes 2-byte.
     // We write 4 properties at most for each image (2x'ispe', 1x'hvcC', 1x'irot').
@@ -4338,6 +4580,7 @@ status_t MPEG4Writer::Track::checkCodecSpecificData() const {
         !strcasecmp(MEDIA_MIMETYPE_VIDEO_AVC, mime) ||
         !strcasecmp(MEDIA_MIMETYPE_VIDEO_HEVC, mime) ||
         !strcasecmp(MEDIA_MIMETYPE_VIDEO_AV1, mime) ||
+        (editing_flags::muxer_mp4_enable_apv() && !strcasecmp(MEDIA_MIMETYPE_VIDEO_APV, mime)) ||
         !strcasecmp(MEDIA_MIMETYPE_VIDEO_DOLBY_VISION, mime) ||
         !strcasecmp(MEDIA_MIMETYPE_IMAGE_ANDROID_HEIC, mime) ||
         !strcasecmp(MEDIA_MIMETYPE_IMAGE_AVIF, mime)) {
@@ -4512,6 +4755,9 @@ void MPEG4Writer::Track::writeVideoFourCCBox() {
         writeHvccBox();
     } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_AV1, mime)) {
         writeAv1cBox();
+    } else if (editing_flags::muxer_mp4_enable_apv() &&
+               !strcasecmp(MEDIA_MIMETYPE_VIDEO_APV, mime)) {
+        writeApvcBox();
     } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_DOLBY_VISION, mime)) {
         if (mDoviProfile <= DolbyVisionProfileDvheSt) {
             writeHvccBox();
@@ -5103,6 +5349,15 @@ void MPEG4Writer::Track::writeAv1cBox() {
     mOwner->endBox();  // av1C
 }
 
+void MPEG4Writer::Track::writeApvcBox() {
+    CHECK(mCodecSpecificData);
+    CHECK_GE(mCodecSpecificDataSize, 4u);
+
+    mOwner->beginBox("apvC");
+    mOwner->write(mCodecSpecificData, mCodecSpecificDataSize);
+    mOwner->endBox();  // apvC
+}
+
 void MPEG4Writer::Track::writeDoviConfigBox() {
     CHECK_NE(mDoviProfile, 0u);
 
@@ -5475,6 +5730,21 @@ void MPEG4Writer::writePitmBox() {
     endBox();
 }
 
+void MPEG4Writer::writeGrplBox(const Vector<uint16_t> &items) {
+    if (flags_camera::camera_heif_gainmap()) {
+        beginBox("grpl");
+        beginBox("altr");
+        writeInt32(0);           // Version = 0, Flags = 0
+        writeInt32(1);           // Group Id
+        writeInt32(items.size());// Number of entities
+        for (size_t i = 0; i < items.size(); i++) {
+            writeInt32(items[i]);// Item Id
+        }
+        endBox();
+        endBox();
+    }
+}
+
 void MPEG4Writer::writeIpcoBox() {
     beginBox("ipco");
     size_t numProperties = mProperties.size();
@@ -5518,6 +5788,32 @@ void MPEG4Writer::writeIpcoBox() {
                 beginBox("irot");
                 writeInt8(mProperties[propIndex].rotation);
                 endBox();
+                break;
+            }
+            case FOURCC('c', 'o', 'l', 'r'):
+            {
+                if (flags_camera::camera_heif_gainmap()) {
+                    beginBox("colr");
+                    writeFourcc("nclx");
+                    writeInt16(mProperties[propIndex].colorPrimaries);
+                    writeInt16(mProperties[propIndex].colorTransfer);
+                    writeInt16(mProperties[propIndex].colorMatrix);
+                    writeInt8(int8_t(mProperties[propIndex].colorRange ? 0x80 : 0x0));
+                    endBox();
+                }
+                break;
+            }
+            case FOURCC('p', 'i', 'x', 'i'):
+            {
+                if (flags_camera::camera_heif_gainmap()) {
+                    beginBox("pixi");
+                    writeInt32(0); // Version = 0, Flags = 0
+                    writeInt8(mProperties[propIndex].bitsPerChannel.size()); // Number of channels
+                    for (size_t i = 0; i < mProperties[propIndex].bitsPerChannel.size(); i++) {
+                        writeInt8(mProperties[propIndex].bitsPerChannel[i]); // Channel bit depth
+                    }
+                    endBox();
+                }
                 break;
             }
             default:
@@ -5574,6 +5870,12 @@ void MPEG4Writer::writeFileLevelMetaBox() {
     for (auto it = mItems.begin(); it != mItems.end(); it++) {
         ItemInfo &item = it->second;
 
+        if (item.isGainmapMeta() && !item.properties.empty() &&
+            flags_camera::camera_heif_gainmap()) {
+            mAssociationEntryCount++;
+            continue;
+        }
+
         if (!item.isImage()) continue;
 
         if (item.isPrimary) {
@@ -5605,11 +5907,27 @@ void MPEG4Writer::writeFileLevelMetaBox() {
         }
     }
 
+    uint16_t gainmapItemId = 0;
+    uint16_t gainmapMetaItemId = 0;
     for (List<Track *>::iterator it = mTracks.begin();
         it != mTracks.end(); ++it) {
         if ((*it)->isHeif()) {
             (*it)->flushItemRefs();
         }
+        if (flags_camera::camera_heif_gainmap()) {
+            if ((*it)->getGainmapItemId() > 0) {
+                gainmapItemId = (*it)->getGainmapItemId();
+            }
+            if ((*it)->getGainmapMetaItemId() > 0) {
+                gainmapMetaItemId = (*it)->getGainmapMetaItemId();
+            }
+        }
+    }
+    if ((gainmapItemId > 0) && (gainmapMetaItemId > 0) && flags_camera::camera_heif_gainmap()) {
+        ItemRefs gainmapRefs("dimg");
+        gainmapRefs.value.push_back(mPrimaryItemId);
+        gainmapRefs.value.push_back(gainmapItemId);
+        addRefs_l(gainmapMetaItemId, gainmapRefs);
     }
 
     beginBox("meta");
@@ -5624,6 +5942,12 @@ void MPEG4Writer::writeFileLevelMetaBox() {
     }
     if (mHasRefs) {
         writeIrefBox();
+    }
+    if ((gainmapItemId > 0) && (gainmapMetaItemId > 0) && flags_camera::camera_heif_gainmap()) {
+        Vector<uint16_t> itemIds;
+        itemIds.push_back(gainmapMetaItemId);
+        itemIds.push_back(mPrimaryItemId);
+        writeGrplBox(itemIds);
     }
     endBox();
 }

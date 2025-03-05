@@ -37,5 +37,7 @@ enum PermissionEnum {
     CAPTURE_TUNER_AUDIO_INPUT = 11,
     CAPTURE_VOICE_COMMUNICATION_OUTPUT = 12,
     BLUETOOTH_CONNECT = 13,
-    ENUM_SIZE = 14, // Not for actual usage, used by Java
+    BYPASS_CONCURRENT_RECORD_AUDIO_RESTRICTION = 14,
+    MODIFY_AUDIO_SETTINGS_PRIVILEGED = 15,
+    ENUM_SIZE = 16, // Not for actual usage, used by Java
 }

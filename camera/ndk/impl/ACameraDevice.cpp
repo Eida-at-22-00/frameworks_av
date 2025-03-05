@@ -26,6 +26,9 @@
 #include "ACameraMetadata.h"
 #include "ACaptureRequest.h"
 #include "ACameraCaptureSession.h"
+#include <com_android_internal_camera_flags.h>
+
+namespace flags = com::android::internal::camera::flags;
 
 ACameraDevice::~ACameraDevice() {
     mDevice->stopLooperAndDisconnect();
@@ -33,6 +36,8 @@ ACameraDevice::~ACameraDevice() {
 
 namespace android {
 namespace acam {
+
+using android::hardware::common::fmq::MQDescriptor;
 
 // Static member definitions
 const char* CameraDevice::kContextKey        = "Context";
@@ -57,12 +62,13 @@ CameraDevice::CameraDevice(
         const char* id,
         ACameraDevice_StateCallbacks* cb,
         sp<ACameraMetadata> chars,
-        ACameraDevice* wrapper) :
+        ACameraDevice* wrapper, bool sharedMode) :
         mCameraId(id),
         mAppCallbacks(*cb),
         mChars(chars),
         mServiceCallback(new ServiceCallback(this)),
         mWrapper(wrapper),
+        mSharedMode(sharedMode),
         mInError(false),
         mError(ACAMERA_OK),
         mIdle(true),
@@ -227,25 +233,27 @@ camera_status_t CameraDevice::isSessionConfigurationSupported(
     SessionConfiguration sessionConfiguration(0 /*inputWidth*/, 0 /*inputHeight*/,
             -1 /*inputFormat*/, CAMERA3_STREAM_CONFIGURATION_NORMAL_MODE);
     for (const auto& output : sessionOutputContainer->mOutputs) {
-        sp<IGraphicBufferProducer> iGBP(nullptr);
-        ret = getIGBPfromAnw(output.mWindow, iGBP);
+        sp<SurfaceType> surface(nullptr);
+        ret = getSurfacefromAnw(output.mWindow, surface);
         if (ret != ACAMERA_OK) {
             ALOGE("Camera device %s failed to extract graphic producer from native window",
                     getId());
             return ret;
         }
 
-        OutputConfiguration outConfig(iGBP, output.mRotation, output.mPhysicalCameraId,
+        ParcelableSurfaceType pSurface = flagtools::convertSurfaceTypeToParcelable(surface);
+        OutputConfiguration outConfig(pSurface, output.mRotation, output.mPhysicalCameraId,
                 OutputConfiguration::INVALID_SET_ID, true);
 
         for (auto& anw : output.mSharedWindows) {
-            ret = getIGBPfromAnw(anw, iGBP);
+            ret = getSurfacefromAnw(anw, surface);
             if (ret != ACAMERA_OK) {
                 ALOGE("Camera device %s failed to extract graphic producer from native window",
                         getId());
                 return ret;
             }
-            outConfig.addGraphicProducer(iGBP);
+            pSurface = flagtools::convertSurfaceTypeToParcelable(surface);
+            outConfig.addSurface(pSurface);
         }
 
         sessionConfiguration.addOutputConfiguration(outConfig);
@@ -291,25 +299,27 @@ camera_status_t CameraDevice::updateOutputConfigurationLocked(ACaptureSessionOut
         return ACAMERA_ERROR_INVALID_PARAMETER;
     }
 
-    sp<IGraphicBufferProducer> iGBP(nullptr);
-    ret = getIGBPfromAnw(output->mWindow, iGBP);
+    sp<SurfaceType> surface(nullptr);
+    ret = getSurfacefromAnw(output->mWindow, surface);
     if (ret != ACAMERA_OK) {
         ALOGE("Camera device %s failed to extract graphic producer from native window",
                 getId());
         return ret;
     }
 
-    OutputConfiguration outConfig(iGBP, output->mRotation, output->mPhysicalCameraId,
-            OutputConfiguration::INVALID_SET_ID, true);
+    ParcelableSurfaceType pSurface = flagtools::convertSurfaceTypeToParcelable(surface);
+    OutputConfiguration outConfig(pSurface, output->mRotation, output->mPhysicalCameraId,
+                                  OutputConfiguration::INVALID_SET_ID, true);
 
     for (auto& anw : output->mSharedWindows) {
-        ret = getIGBPfromAnw(anw, iGBP);
+        ret = getSurfacefromAnw(anw, surface);
         if (ret != ACAMERA_OK) {
             ALOGE("Camera device %s failed to extract graphic producer from native window",
                     getId());
             return ret;
         }
-        outConfig.addGraphicProducer(iGBP);
+        pSurface = flagtools::convertSurfaceTypeToParcelable(surface);
+        outConfig.addSurface(pSurface);
     }
 
     auto remoteRet = mRemote->updateOutputConfiguration(streamId, outConfig);
@@ -423,9 +433,9 @@ CameraDevice::allocateCaptureRequest(
         for (const auto& kvPair : mConfiguredOutputs) {
             int streamId = kvPair.first;
             const OutputConfiguration& outConfig = kvPair.second.second;
-            const auto& gbps = outConfig.getGraphicBufferProducers();
-            for (int surfaceId = 0; surfaceId < (int) gbps.size(); surfaceId++) {
-                if (gbps[surfaceId] == surface->getIGraphicBufferProducer()) {
+            const auto& surfaces = outConfig.getSurfaces();
+            for (int surfaceId = 0; surfaceId < (int)surfaces.size(); surfaceId++) {
+                if (surfaces[surfaceId] == flagtools::surfaceToSurfaceType(surface)) {
                     found = true;
                     req->mStreamIdxList.push_back(streamId);
                     req->mSurfaceIdxList.push_back(surfaceId);
@@ -630,16 +640,13 @@ CameraDevice::waitUntilIdleLocked() {
     return ACAMERA_OK;
 }
 
-camera_status_t
-CameraDevice::getIGBPfromAnw(
-        ANativeWindow* anw,
-        sp<IGraphicBufferProducer>& out) {
+camera_status_t CameraDevice::getSurfacefromAnw(ANativeWindow* anw, sp<SurfaceType>& out) {
     sp<Surface> surface;
     camera_status_t ret = getSurfaceFromANativeWindow(anw, surface);
     if (ret != ACAMERA_OK) {
         return ret;
     }
-    out = surface->getIGraphicBufferProducer();
+    out = flagtools::surfaceToSurfaceType(surface);
     return ACAMERA_OK;
 }
 
@@ -677,14 +684,16 @@ CameraDevice::configureStreamsLocked(const ACaptureSessionOutputContainer* outpu
     std::set<std::pair<ANativeWindow*, OutputConfiguration>> outputSet;
     for (const auto& outConfig : outputs->mOutputs) {
         ANativeWindow* anw = outConfig.mWindow;
-        sp<IGraphicBufferProducer> iGBP(nullptr);
-        ret = getIGBPfromAnw(anw, iGBP);
+        sp<SurfaceType> surface(nullptr);
+        ret = getSurfacefromAnw(anw, surface);
         if (ret != ACAMERA_OK) {
             return ret;
         }
+        ParcelableSurfaceType pSurface = flagtools::convertSurfaceTypeToParcelable(surface);
         outputSet.insert(std::make_pair(
-                anw, OutputConfiguration(iGBP, outConfig.mRotation, outConfig.mPhysicalCameraId,
-                        OutputConfiguration::INVALID_SET_ID, outConfig.mIsShared)));
+                anw,
+                OutputConfiguration(pSurface, outConfig.mRotation, outConfig.mPhysicalCameraId,
+                                    OutputConfiguration::INVALID_SET_ID, outConfig.mIsShared)));
     }
     auto addSet = outputSet;
     std::vector<int> deleteList;
@@ -784,6 +793,27 @@ CameraDevice::setRemoteDevice(sp<hardware::camera2::ICameraDeviceUser> remote) {
     mRemote = remote;
 }
 
+bool CameraDevice::setDeviceMetadataQueues() {
+    if (mRemote == nullptr) {
+        ALOGE("mRemote must not be null while trying to fetch metadata queues");
+        return false;
+    }
+    MQDescriptor<int8_t, SynchronizedReadWrite> resMqDescriptor;
+    binder::Status ret = mRemote->getCaptureResultMetadataQueue(&resMqDescriptor);
+    if (!ret.isOk()) {
+        ALOGE("Transaction error trying to get capture result metadata queue");
+        return false;
+    }
+    mCaptureResultMetadataQueue = std::make_unique<ResultMetadataQueue>(resMqDescriptor);
+    if (!mCaptureResultMetadataQueue->isValid()) {
+        ALOGE("Empty fmq from cameraserver");
+        mCaptureResultMetadataQueue = nullptr;
+        return false;
+    }
+
+    return true;
+}
+
 camera_status_t
 CameraDevice::checkCameraClosedOrErrorLocked() const {
     if (mRemote == nullptr) {
@@ -881,10 +911,14 @@ CameraDevice::onCaptureErrorLocked(
             return;
         }
 
-        const auto& gbps = outputPairIt->second.second.getGraphicBufferProducers();
-        for (const auto& outGbp : gbps) {
+        const auto& outSurfaces = outputPairIt->second.second.getSurfaces();
+        for (const auto& outSurface : outSurfaces) {
             for (const auto& surface : request->mSurfaceList) {
-                if (surface->getIGraphicBufferProducer() == outGbp) {
+                if ( outSurface == surface
+#if not WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+                                ->getIGraphicBufferProducer()
+#endif
+                                            ) {
                     ANativeWindow* anw = static_cast<ANativeWindow*>(surface.get());
                     ALOGV("Camera %s Lost output buffer for ANW %p frame %" PRId64,
                             getId(), anw, frameNumber);
@@ -970,6 +1004,7 @@ void CameraDevice::CallbackHandler::onMessageReceived(
         case kWhatCaptureSeqAbort:
         case kWhatCaptureBufferLost:
         case kWhatPreparedCb:
+        case kWhatClientSharedAccessPriorityChanged:
             ALOGV("%s: Received msg %d", __FUNCTION__, msg->what());
             break;
         case kWhatCleanUpSessions:
@@ -1007,6 +1042,32 @@ void CameraDevice::CallbackHandler::onMessageReceived(
             (*onDisconnected)(context, dev);
             break;
         }
+
+        case kWhatClientSharedAccessPriorityChanged:
+        {
+            if (!flags::camera_multi_client()) {
+                break;
+            }
+            ACameraDevice* dev;
+            found = msg->findPointer(kDeviceKey, (void**) &dev);
+            if (!found || dev == nullptr) {
+                ALOGE("%s: Cannot find device pointer!", __FUNCTION__);
+                return;
+            }
+            ACameraDevice_ClientSharedAccessPriorityChangedCallback
+                    onClientSharedAccessPriorityChanged;
+            found = msg->findPointer(kCallbackFpKey, (void**) &onClientSharedAccessPriorityChanged);
+            if (!found) {
+                ALOGE("%s: Cannot find onClientSharedAccessPriorityChanged!", __FUNCTION__);
+                return;
+            }
+            if (onClientSharedAccessPriorityChanged == nullptr) {
+                return;
+            }
+            (*onClientSharedAccessPriorityChanged)(context, dev, dev->isPrimaryClient());
+            break;
+        }
+
         case kWhatOnError:
         {
             ACameraDevice* dev;
@@ -1216,7 +1277,9 @@ void CameraDevice::CallbackHandler::onMessageReceived(
                         String8 physicalId8 = toString8(physicalResultInfo[i].mPhysicalCameraId);
                         physicalCameraIds.push_back(physicalId8.c_str());
 
-                        CameraMetadata clone = physicalResultInfo[i].mPhysicalCameraMetadata;
+                        CameraMetadata clone =
+                                physicalResultInfo[i].
+                                        mCameraMetadataInfo.get<CameraMetadataInfo::metadata>();
                         clone.update(ANDROID_SYNC_FRAME_NUMBER,
                                 &physicalResult->mFrameNumber, /*data_count*/1);
                         sp<ACameraMetadata> metadata =
@@ -1624,6 +1687,31 @@ CameraDevice::ServiceCallback::onDeviceError(
 }
 
 binder::Status
+CameraDevice::ServiceCallback::onClientSharedAccessPriorityChanged(bool primaryClient) {
+    ALOGV("onClientSharedAccessPriorityChanged received. primaryClient = %d", primaryClient);
+    binder::Status ret = binder::Status::ok();
+    if (!flags::camera_multi_client()) {
+        return ret;
+    }
+    sp<CameraDevice> dev = mDevice.promote();
+    if (dev == nullptr) {
+        return ret; // device has been closed
+    }
+    Mutex::Autolock _l(dev->mDeviceLock);
+    if (dev->isClosed() || dev->mRemote == nullptr) {
+        return ret;
+    }
+    dev->setPrimaryClient(primaryClient);
+    sp<AMessage> msg = new AMessage(kWhatClientSharedAccessPriorityChanged, dev->mHandler);
+    msg->setPointer(kContextKey, dev->mAppCallbacks.context);
+    msg->setPointer(kDeviceKey, (void*) dev->getWrapper());
+    msg->setPointer(kCallbackFpKey, (void*) dev->mAppCallbacks.onClientSharedAccessPriorityChanged);
+    msg->post();
+
+    return binder::Status::ok();
+}
+
+binder::Status
 CameraDevice::ServiceCallback::onDeviceIdle() {
     ALOGV("Camera is now idle");
     binder::Status ret = binder::Status::ok();
@@ -1721,7 +1809,7 @@ CameraDevice::ServiceCallback::onCaptureStarted(
 
 binder::Status
 CameraDevice::ServiceCallback::onResultReceived(
-        const CameraMetadata& metadata,
+        const CameraMetadataInfo &resultMetadata,
         const CaptureResultExtras& resultExtras,
         const std::vector<PhysicalCaptureResultInfo>& physicalResultInfos) {
     binder::Status ret = binder::Status::ok();
@@ -1730,11 +1818,11 @@ CameraDevice::ServiceCallback::onResultReceived(
     if (dev == nullptr) {
         return ret; // device has been closed
     }
+
     int sequenceId = resultExtras.requestId;
     int64_t frameNumber = resultExtras.frameNumber;
     int32_t burstId = resultExtras.burstId;
     bool    isPartialResult = (resultExtras.partialResultCount < dev->mPartialResultCount);
-
     if (!isPartialResult) {
         ALOGV("SeqId %d frame %" PRId64 " result arrive.", sequenceId, frameNumber);
     }
@@ -1752,7 +1840,13 @@ CameraDevice::ServiceCallback::onResultReceived(
         return ret;
     }
 
-    CameraMetadata metadataCopy = metadata;
+    CameraMetadata metadataCopy;
+    camera_status_t status = readOneResultMetadata(resultMetadata,
+            dev->mCaptureResultMetadataQueue.get(), &metadataCopy);
+    if (status != ACAMERA_OK) {
+        ALOGE("%s: result metadata couldn't be converted", __FUNCTION__);
+        return ret;
+    }
     metadataCopy.update(ANDROID_LENS_INFO_SHADING_MAP_SIZE, dev->mShadingMapSize, /*data_count*/2);
     metadataCopy.update(ANDROID_SYNC_FRAME_NUMBER, &frameNumber, /*data_count*/1);
 
@@ -1768,8 +1862,24 @@ CameraDevice::ServiceCallback::onResultReceived(
         sp<CaptureRequest> request = cbh.mRequests[burstId];
         sp<ACameraMetadata> result(new ACameraMetadata(
                 metadataCopy.release(), ACameraMetadata::ACM_RESULT));
+
+        std::vector<PhysicalCaptureResultInfo> localPhysicalResult;
+        localPhysicalResult.resize(physicalResultInfos.size());
+        for (size_t i = 0; i < physicalResultInfos.size(); i++) {
+            CameraMetadata physicalMetadata;
+            localPhysicalResult[i].mPhysicalCameraId = physicalResultInfos[i].mPhysicalCameraId;
+            status = readOneResultMetadata(physicalResultInfos[i].mCameraMetadataInfo,
+                    dev->mCaptureResultMetadataQueue.get(),
+                    &physicalMetadata);
+            if (status != ACAMERA_OK) {
+                ALOGE("%s: physical camera result metadata couldn't be converted", __FUNCTION__);
+                return ret;
+            }
+            localPhysicalResult[i].mCameraMetadataInfo.set<CameraMetadataInfo::metadata>(
+                    std::move(physicalMetadata));
+        }
         sp<ACameraPhysicalCaptureResultInfo> physicalResult(
-                new ACameraPhysicalCaptureResultInfo(physicalResultInfos, frameNumber));
+                new ACameraPhysicalCaptureResultInfo(localPhysicalResult, frameNumber));
 
         sp<AMessage> msg = new AMessage(
                 cbh.mIsLogicalCameraCallback ? kWhatLogicalCaptureResult : kWhatCaptureResult,
@@ -1888,6 +1998,29 @@ CameraDevice::sendCaptureSequenceCompletedLocked(int sequenceId, int64_t lastFra
         // This should not happen because we always register callback (with nullptr inside)
         ALOGW("No callback found for sequenceId %d", sequenceId);
     }
+}
+
+camera_status_t CameraDevice::ServiceCallback::readOneResultMetadata(
+        const CameraMetadataInfo& resultInfo, ResultMetadataQueue* metadataQueue,
+        CameraMetadata* metadata) {
+    if (metadataQueue == nullptr || metadata == nullptr) {
+        return ACAMERA_ERROR_INVALID_PARAMETER;
+    }
+    if (resultInfo.getTag() == CameraMetadataInfo::fmqSize) {
+        int64_t metadataSize = resultInfo.get<CameraMetadataInfo::fmqSize>();
+        auto metadataVec = std::make_unique<int8_t []>(metadataSize);
+        bool read = metadataQueue->read(reinterpret_cast<int8_t*>(metadataVec.get()), metadataSize);
+        if (!read) {
+            ALOGE("%s capture request settings could't be read from fmq", __FUNCTION__);
+            return ACAMERA_ERROR_UNKNOWN;
+        }
+        *metadata = CameraMetadata(reinterpret_cast<camera_metadata_t *>(metadataVec.release()));
+    } else {
+        *metadata =
+                resultInfo.get<CameraMetadataInfo::metadata>();
+    }
+
+    return ACAMERA_OK;
 }
 
 } // namespace acam

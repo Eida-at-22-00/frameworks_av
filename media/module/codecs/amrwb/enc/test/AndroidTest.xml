@@ -23,17 +23,17 @@
     <target_preparer class="com.android.compatibility.common.tradefed.targetprep.DynamicConfigPusher">
         <option name="target" value="host" />
         <option name="config-filename" value="AmrwbEncoderTest" />
-        <option name="version" value="1.0"/>
+        <option name="version" value="2.0"/>
     </target_preparer>
     <target_preparer class="com.android.compatibility.common.tradefed.targetprep.MediaPreparer">
         <option name="push-all" value="true" />
-        <option name="media-folder-name" value="AmrwbEncoderTest-1.0" />
+        <option name="media-folder-name" value="AmrwbEncoderTest-2.0" />
         <option name="dynamic-config-module" value="AmrwbEncoderTest" />
     </target_preparer>
 
     <test class="com.android.tradefed.testtype.GTest" >
         <option name="native-test-device-path" value="/data/local/tmp" />
         <option name="module-name" value="AmrwbEncoderTest" />
-        <option name="native-test-flag" value="-P /sdcard/test/AmrwbEncoderTest-1.0/" />
+        <option name="native-test-flag" value="-P /sdcard/test/AmrwbEncoderTest-2.0/" />
     </test>
 </configuration>

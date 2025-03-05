@@ -918,12 +918,6 @@ status_t AidlCamera3Device::AidlHalInterface::configureStreams(
         camera3::camera_stream_t *src = config->streams[i];
 
         Camera3Stream* cam3stream = Camera3Stream::cast(src);
-        // For stream configurations with multi res streams, hal buffer manager has to be used.
-        if (!flags::session_hal_buf_manager() && cam3stream->getHalStreamGroupId() != -1 &&
-                src->stream_type != CAMERA_STREAM_INPUT) {
-            mUseHalBufManager = true;
-            config->use_hal_buf_manager = true;
-        }
         cam3stream->setBufferFreedListener(this);
         int streamId = cam3stream->getId();
         StreamType streamType;
@@ -1002,8 +996,7 @@ status_t AidlCamera3Device::AidlHalInterface::configureStreams(
               err.getMessage());
         return AidlProviderInfo::mapToStatusT(err);
     }
-    if (flags::session_hal_buf_manager() && interfaceVersion >= AIDL_DEVICE_SESSION_V3
-            && mSupportSessionHalBufManager) {
+    if (interfaceVersion >= AIDL_DEVICE_SESSION_V3 && mSupportSessionHalBufManager) {
         err = mAidlSession->configureStreamsV2(requestedConfiguration, &configureStreamsRet);
         finalConfiguration = std::move(configureStreamsRet.halStreams);
     } else {
@@ -1015,18 +1008,16 @@ status_t AidlCamera3Device::AidlHalInterface::configureStreams(
         return AidlProviderInfo::mapToStatusT(err);
     }
 
-    if (flags::session_hal_buf_manager()) {
-        std::set<int32_t> halBufferManagedStreamIds;
-        for (const auto &halStream: finalConfiguration) {
-            if ((interfaceVersion >= AIDL_DEVICE_SESSION_V3 &&
-                    mSupportSessionHalBufManager && halStream.enableHalBufferManager)
-                    || mUseHalBufManager) {
-                halBufferManagedStreamIds.insert(halStream.id);
-            }
+    std::set<int32_t> halBufferManagedStreamIds;
+    for (const auto &halStream: finalConfiguration) {
+        if ((interfaceVersion >= AIDL_DEVICE_SESSION_V3 &&
+                mSupportSessionHalBufManager && halStream.enableHalBufferManager)
+                || mUseHalBufManager) {
+            halBufferManagedStreamIds.insert(halStream.id);
         }
-        mHalBufManagedStreamIds = std::move(halBufferManagedStreamIds);
-        config->hal_buffer_managed_streams = mHalBufManagedStreamIds;
     }
+    mHalBufManagedStreamIds = std::move(halBufferManagedStreamIds);
+    config->hal_buffer_managed_streams = mHalBufManagedStreamIds;
     // And convert output stream configuration from AIDL
     for (size_t i = 0; i < config->num_streams; i++) {
         camera3::camera_stream_t *dst = config->streams[i];
@@ -1096,10 +1087,8 @@ status_t AidlCamera3Device::AidlHalInterface::configureStreams(
             }
             dstStream->setUsage(
                     mapProducerToFrameworkUsage(src.producerUsage));
-            if (flags::session_hal_buf_manager()) {
-                dstStream->setHalBufferManager(
-                        contains(config->hal_buffer_managed_streams, streamId));
-            }
+            dstStream->setHalBufferManager(
+                    contains(config->hal_buffer_managed_streams, streamId));
         }
         dst->max_buffers = src.maxBuffers;
     }

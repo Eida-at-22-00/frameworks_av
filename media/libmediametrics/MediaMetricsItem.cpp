@@ -334,21 +334,21 @@ bool BaseItem::isEnabled() {
 
     // This is checked only once in the lifetime of the process.
     const uid_t uid = getuid();
-    switch (uid) {
-    case AID_RADIO:     // telephony subsystem, RIL
+    const uid_t appid = multiuser_get_app_id(uid);
+
+    if (appid == AID_RADIO) {
+        // telephony subsystem, RIL
         return false;
-    default:
+    }
+
+    if (appid >= AID_ISOLATED_START && appid <= AID_ISOLATED_END) {
         // Some isolated processes can access the audio system; see
         // AudioSystem::setAudioFlingerBinder (currently only the HotwordDetectionService). Instead
         // of also allowing access to the MediaMetrics service, it's simpler to just disable it for
         // now.
         // TODO(b/190151205): Either allow the HotwordDetectionService to access MediaMetrics or
         // make this disabling specific to that process.
-        uid_t appid = multiuser_get_app_id(uid);
-        if (appid >= AID_ISOLATED_START && appid <= AID_ISOLATED_END) {
-            return false;
-        }
-        break;
+        return false;
     }
 
     int enabled = property_get_int32(Item::EnabledProperty, -1);

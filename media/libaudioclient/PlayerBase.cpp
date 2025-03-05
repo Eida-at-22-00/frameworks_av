@@ -30,8 +30,7 @@ using media::VolumeShaperOperation;
 PlayerBase::PlayerBase() : BnPlayer(),
         mPanMultiplierL(1.0f), mPanMultiplierR(1.0f),
         mVolumeMultiplierL(1.0f), mVolumeMultiplierR(1.0f),
-        mPIId(PLAYER_PIID_INVALID), mLastReportedEvent(PLAYER_STATE_UNKNOWN),
-        mLastReportedDeviceId(AUDIO_PORT_HANDLE_NONE)
+        mPIId(PLAYER_PIID_INVALID), mLastReportedEvent(PLAYER_STATE_UNKNOWN)
 {
     ALOGD("PlayerBase::PlayerBase()");
     // use checkService() to avoid blocking if audio service is not up yet
@@ -68,7 +67,7 @@ void PlayerBase::triggerPortIdUpdate(audio_port_handle_t portId) const {
     }
 
     if (mPIId != PLAYER_PIID_INVALID && portId != AUDIO_PORT_HANDLE_NONE) {
-        mAudioManager->playerEvent(mPIId, android::PLAYER_UPDATE_PORT_ID, portId);
+        mAudioManager->playerEvent(mPIId, android::PLAYER_UPDATE_PORT_ID, { portId });
     }
 }
 
@@ -80,13 +79,13 @@ void PlayerBase::baseDestroy() {
 }
 
 //------------------------------------------------------------------------------
-void PlayerBase::servicePlayerEvent(player_state_t event, audio_port_handle_t deviceId) {
+void PlayerBase::servicePlayerEvent(player_state_t event, const DeviceIdVector& deviceIds) {
     if (mAudioManager != 0) {
         bool changed = false;
         {
             Mutex::Autolock _l(mDeviceIdLock);
-            changed = mLastReportedDeviceId != deviceId;
-            mLastReportedDeviceId = deviceId;
+            changed = !areDeviceIdsEqual(deviceIds, mLastReportedDeviceIds);
+            mLastReportedDeviceIds = deviceIds;
         }
 
         {
@@ -99,7 +98,7 @@ void PlayerBase::servicePlayerEvent(player_state_t event, audio_port_handle_t de
             }
         }
         if (changed && (mPIId != PLAYER_PIID_INVALID)) {
-            mAudioManager->playerEvent(mPIId, event, deviceId);
+            mAudioManager->playerEvent(mPIId, event, deviceIds);
         }
     }
 }
@@ -112,18 +111,18 @@ void PlayerBase::serviceReleasePlayer() {
 }
 
 //FIXME temporary method while some player state is outside of this class
-void PlayerBase::reportEvent(player_state_t event, audio_port_handle_t deviceId) {
-    servicePlayerEvent(event, deviceId);
+void PlayerBase::reportEvent(player_state_t event, const DeviceIdVector& deviceIds) {
+    servicePlayerEvent(event, deviceIds);
 }
 
-void PlayerBase::baseUpdateDeviceId(audio_port_handle_t deviceId) {
-    servicePlayerEvent(PLAYER_UPDATE_DEVICE_ID, deviceId);
+void PlayerBase::baseUpdateDeviceIds(const DeviceIdVector& deviceIds) {
+    servicePlayerEvent(PLAYER_UPDATE_DEVICE_ID, deviceIds);
 }
 
-status_t PlayerBase::startWithStatus(audio_port_handle_t deviceId) {
+status_t PlayerBase::startWithStatus(const DeviceIdVector& deviceIds) {
     status_t status = playerStart();
     if (status == NO_ERROR) {
-        servicePlayerEvent(PLAYER_STATE_STARTED, deviceId);
+        servicePlayerEvent(PLAYER_STATE_STARTED, deviceIds);
     } else {
         ALOGW("PlayerBase::start() error %d", status);
     }
@@ -133,7 +132,7 @@ status_t PlayerBase::startWithStatus(audio_port_handle_t deviceId) {
 status_t PlayerBase::pauseWithStatus() {
     status_t status = playerPause();
     if (status == NO_ERROR) {
-        servicePlayerEvent(PLAYER_STATE_PAUSED, AUDIO_PORT_HANDLE_NONE);
+        servicePlayerEvent(PLAYER_STATE_PAUSED, {});
     } else {
         ALOGW("PlayerBase::pause() error %d", status);
     }
@@ -144,7 +143,7 @@ status_t PlayerBase::stopWithStatus() {
     status_t status = playerStop();
 
     if (status == NO_ERROR) {
-        servicePlayerEvent(PLAYER_STATE_STOPPED, AUDIO_PORT_HANDLE_NONE);
+        servicePlayerEvent(PLAYER_STATE_STOPPED, {});
     } else {
         ALOGW("PlayerBase::stop() error %d", status);
     }
@@ -155,12 +154,12 @@ status_t PlayerBase::stopWithStatus() {
 // Implementation of IPlayer
 binder::Status PlayerBase::start() {
     ALOGD("PlayerBase::start() from IPlayer");
-    audio_port_handle_t deviceId;
+    DeviceIdVector deviceIds;
     {
         Mutex::Autolock _l(mDeviceIdLock);
-        deviceId = mLastReportedDeviceId;
+        deviceIds = mLastReportedDeviceIds;
     }
-    (void)startWithStatus(deviceId);
+    (void)startWithStatus(deviceIds);
     return binder::Status::ok();
 }
 

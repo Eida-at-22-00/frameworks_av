@@ -184,7 +184,7 @@ status_t EffectHalAidl::setOutBuffer(const sp<EffectBufferHalInterface>& buffer)
 status_t EffectHalAidl::process() {
     State state = State::INIT;
     if (mConversion->isBypassing() || !mEffect->getState(&state).isOk() ||
-        state != State::PROCESSING) {
+        (state != State::PROCESSING && state != State::DRAINING)) {
         ALOGI("%s skipping process because it's %s", mEffectName.c_str(),
               mConversion->isBypassing()
                       ? "bypassing"

@@ -11,8 +11,8 @@ cc_library_static {
     name: "libstagefright_webm",
 
     cflags: [
-        "-Werror",
         "-Wall",
+        "-Werror",
     ],
 
     sanitize: {
@@ -38,11 +38,12 @@ cc_library_static {
     export_include_dirs: ["include"],
 
     shared_libs: [
+        "framework-permission-aidl-cpp",
+        "libaudiofoundation",
         "libdatasource",
+        "liblog",
         "libstagefright_foundation",
         "libutils",
-        "liblog",
-        "framework-permission-aidl-cpp",
     ],
 
     header_libs: [
@@ -50,7 +51,6 @@ cc_library_static {
         "libmedia_headers",
     ],
 }
-
 
 cc_library_headers {
     name: "libstagefright_webm_headers",

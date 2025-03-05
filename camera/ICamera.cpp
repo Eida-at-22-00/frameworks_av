@@ -17,16 +17,16 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "ICamera"
-#include <utils/Log.h>
-#include <stdint.h>
-#include <sys/types.h>
-#include <binder/Parcel.h>
-#include <camera/CameraUtils.h>
 #include <android/hardware/ICamera.h>
 #include <android/hardware/ICameraClient.h>
-#include <gui/IGraphicBufferProducer.h>
+#include <binder/Parcel.h>
+#include <camera/CameraUtils.h>
 #include <gui/Surface.h>
+#include <gui/view/Surface.h>
 #include <media/hardware/HardwareAPI.h>
+#include <stdint.h>
+#include <sys/types.h>
+#include <utils/Log.h>
 
 namespace android {
 namespace hardware {
@@ -34,8 +34,14 @@ namespace hardware {
 enum {
     DISCONNECT = IBinder::FIRST_CALL_TRANSACTION,
     SET_PREVIEW_TARGET,
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+    SET_PREVIEW_TARGET_SURFACE,
+#endif
     SET_PREVIEW_CALLBACK_FLAG,
     SET_PREVIEW_CALLBACK_TARGET,
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+    SET_PREVIEW_CALLBACK_TARGET_SURFACE,
+#endif
     START_PREVIEW,
     STOP_PREVIEW,
     AUTO_FOCUS,
@@ -54,6 +60,9 @@ enum {
     RELEASE_RECORDING_FRAME,
     SET_VIDEO_BUFFER_MODE,
     SET_VIDEO_BUFFER_TARGET,
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+    SET_VIDEO_BUFFER_TARGET_SURFACE,
+#endif
     RELEASE_RECORDING_FRAME_HANDLE,
     RELEASE_RECORDING_FRAME_HANDLE_BATCH,
     SET_AUDIO_RESTRICTION,
@@ -79,15 +88,20 @@ public:
         return binder::Status::ok();
     }
 
-    // pass the buffered IGraphicBufferProducer to the camera service
-    status_t setPreviewTarget(const sp<IGraphicBufferProducer>& bufferProducer)
-    {
+    // pass the Surface to the camera service
+    status_t setPreviewTarget(const sp<SurfaceType>& target) {
         ALOGV("setPreviewTarget");
         Parcel data, reply;
         data.writeInterfaceToken(ICamera::getInterfaceDescriptor());
-        sp<IBinder> b(IInterface::asBinder(bufferProducer));
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+        view::Surface viewSurfaceProducer = view::Surface::fromSurface(target);
+        data.writeParcelable(viewSurfaceProducer);
+        remote()->transact(SET_PREVIEW_TARGET_SURFACE, data, &reply);
+#else
+        sp<IBinder> b(IInterface::asBinder(target));
         data.writeStrongBinder(b);
         remote()->transact(SET_PREVIEW_TARGET, data, &reply);
+#endif
         return reply.readInt32();
     }
 
@@ -102,15 +116,19 @@ public:
         remote()->transact(SET_PREVIEW_CALLBACK_FLAG, data, &reply);
     }
 
-    status_t setPreviewCallbackTarget(
-            const sp<IGraphicBufferProducer>& callbackProducer)
-    {
+    status_t setPreviewCallbackTarget(const sp<SurfaceType>& target) {
         ALOGV("setPreviewCallbackTarget");
         Parcel data, reply;
         data.writeInterfaceToken(ICamera::getInterfaceDescriptor());
-        sp<IBinder> b(IInterface::asBinder(callbackProducer));
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+        view::Surface viewCallbackProducer = view::Surface::fromSurface(target);
+        data.writeParcelable(viewCallbackProducer);
+        remote()->transact(SET_PREVIEW_CALLBACK_TARGET_SURFACE, data, &reply);
+#else
+        sp<IBinder> b(IInterface::asBinder(target));
         data.writeStrongBinder(b);
         remote()->transact(SET_PREVIEW_CALLBACK_TARGET, data, &reply);
+#endif
         return reply.readInt32();
     }
 
@@ -326,14 +344,19 @@ public:
         return reply.readInt32();
     }
 
-    status_t setVideoTarget(const sp<IGraphicBufferProducer>& bufferProducer)
-    {
+    status_t setVideoTarget(const sp<SurfaceType>& target) {
         ALOGV("setVideoTarget");
         Parcel data, reply;
         data.writeInterfaceToken(ICamera::getInterfaceDescriptor());
-        sp<IBinder> b(IInterface::asBinder(bufferProducer));
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+        view::Surface viewSurfaceProducer = view::Surface::fromSurface(target);
+        data.writeParcelable(viewSurfaceProducer);
+        remote()->transact(SET_VIDEO_BUFFER_TARGET_SURFACE, data, &reply);
+#else
+        sp<IBinder> b(IInterface::asBinder(target));
         data.writeStrongBinder(b);
         remote()->transact(SET_VIDEO_BUFFER_TARGET, data, &reply);
+#endif
         return reply.readInt32();
     }
 };
@@ -358,9 +381,25 @@ status_t BnCamera::onTransact(
             CHECK_INTERFACE(ICamera, data, reply);
             sp<IGraphicBufferProducer> st =
                 interface_cast<IGraphicBufferProducer>(data.readStrongBinder());
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+            sp<Surface> sp = new Surface(st);
+            reply->writeInt32(setPreviewTarget(sp));
+#else
+            reply->writeInt32(setPreviewTarget(st));
+#endif
+            return NO_ERROR;
+        } break;
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+        case SET_PREVIEW_TARGET_SURFACE: {
+            ALOGV("SET_PREVIEW_TARGET_SURFACE");
+            CHECK_INTERFACE(ICamera, data, reply);
+            view::Surface viewSurface;
+            data.readParcelable(&viewSurface);
+            sp<Surface> st = viewSurface.toSurface();
             reply->writeInt32(setPreviewTarget(st));
             return NO_ERROR;
         } break;
+#endif
         case SET_PREVIEW_CALLBACK_FLAG: {
             ALOGV("SET_PREVIEW_CALLBACK_TYPE");
             CHECK_INTERFACE(ICamera, data, reply);
@@ -373,9 +412,25 @@ status_t BnCamera::onTransact(
             CHECK_INTERFACE(ICamera, data, reply);
             sp<IGraphicBufferProducer> cp =
                 interface_cast<IGraphicBufferProducer>(data.readStrongBinder());
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+            sp<Surface> sp = new Surface(cp);
+            reply->writeInt32(setPreviewCallbackTarget(sp));
+#else
+            reply->writeInt32(setPreviewCallbackTarget(cp));
+#endif
+            return NO_ERROR;
+        }
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+        case SET_PREVIEW_CALLBACK_TARGET_SURFACE: {
+            ALOGV("SET_PREVIEW_CALLBACK_TARGET_SURFACE");
+            CHECK_INTERFACE(ICamera, data, reply);
+            view::Surface viewSurface;
+            data.readParcelable(&viewSurface);
+            sp<Surface> cp = viewSurface.toSurface();
             reply->writeInt32(setPreviewCallbackTarget(cp));
             return NO_ERROR;
         }
+#endif
         case START_PREVIEW: {
             ALOGV("START_PREVIEW");
             CHECK_INTERFACE(ICamera, data, reply);
@@ -508,9 +563,25 @@ status_t BnCamera::onTransact(
             CHECK_INTERFACE(ICamera, data, reply);
             sp<IGraphicBufferProducer> st =
                 interface_cast<IGraphicBufferProducer>(data.readStrongBinder());
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+            sp<Surface> sp = new Surface(st);
+            reply->writeInt32(setVideoTarget(sp));
+#else
             reply->writeInt32(setVideoTarget(st));
+#endif
             return NO_ERROR;
         } break;
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+        case SET_VIDEO_BUFFER_TARGET_SURFACE: {
+            ALOGV("SET_VIDEO_BUFFER_TARGET_SURFACE");
+            CHECK_INTERFACE(ICamera, data, reply);
+            view::Surface viewSurface;
+            data.readParcelable(&viewSurface);
+            sp<Surface> cp = viewSurface.toSurface();
+            reply->writeInt32(setVideoTarget(cp));
+            return NO_ERROR;
+        } break;
+#endif
         case SET_AUDIO_RESTRICTION: {
             CHECK_INTERFACE(ICamera, data, reply);
             int32_t mode = data.readInt32();

@@ -112,9 +112,7 @@ aaudio_result_t AudioStreamRecord::open(const AudioStreamBuilder& builder)
     mCallbackBufferSize = builder.getFramesPerDataCallback();
 
     // Don't call mAudioRecord->setInputDevice() because it will be overwritten by set()!
-    audio_port_handle_t selectedDeviceId = (getDeviceId() == AAUDIO_UNSPECIFIED)
-                                           ? AUDIO_PORT_HANDLE_NONE
-                                           : getDeviceId();
+    audio_port_handle_t selectedDeviceId = getFirstDeviceId(getDeviceIds());
 
     const audio_content_type_t contentType =
             AAudioConvert_contentTypeToInternal(builder.getContentType());
@@ -198,7 +196,8 @@ aaudio_result_t AudioStreamRecord::open(const AudioStreamBuilder& builder)
                  AudioGlobal_convertPerformanceModeToText(builder.getPerformanceMode()))
             .set(AMEDIAMETRICS_PROP_SHARINGMODE,
                  AudioGlobal_convertSharingModeToText(builder.getSharingMode()))
-            .set(AMEDIAMETRICS_PROP_ENCODINGCLIENT, toString(requestedFormat).c_str()).record();
+            .set(AMEDIAMETRICS_PROP_ENCODINGCLIENT,
+                 android::toString(requestedFormat).c_str()).record();
 
     // Get the actual values from the AudioRecord.
     setChannelMask(AAudioConvert_androidToAAudioChannelMask(
@@ -275,7 +274,7 @@ aaudio_result_t AudioStreamRecord::open(const AudioStreamBuilder& builder)
              perfMode, actualPerformanceMode);
 
     setState(AAUDIO_STREAM_STATE_OPEN);
-    setDeviceId(mAudioRecord->getRoutedDeviceId());
+    setDeviceIds(mAudioRecord->getRoutedDeviceIds());
 
     aaudio_session_id_t actualSessionId =
             (requestedSessionId == AAUDIO_SESSION_ID_NONE)

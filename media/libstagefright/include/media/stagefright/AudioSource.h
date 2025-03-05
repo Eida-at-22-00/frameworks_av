@@ -78,7 +78,7 @@ struct AudioSource : public MediaSource,
     virtual void signalBufferReturned(MediaBufferBase *buffer);
 
     status_t setInputDevice(audio_port_handle_t deviceId);
-    status_t getRoutedDeviceId(audio_port_handle_t* deviceId);
+    status_t getRoutedDeviceIds(DeviceIdVector& deviceIds);
     status_t addAudioDeviceCallback(const sp<AudioSystem::AudioDeviceCallback>& callback);
     status_t removeAudioDeviceCallback(const sp<AudioSystem::AudioDeviceCallback>& callback);
 

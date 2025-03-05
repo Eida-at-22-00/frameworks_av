@@ -1907,7 +1907,7 @@ ReflectedParamUpdater::Dict CCodecConfig::getReflectedFormat(
                         bottom = c2_min(bottom, height);
                         if (right > left && bottom > top) {
                             C2Rect rect(right - left, bottom - top);
-                            rect.at(left, top);
+                            rect = rect.at(left, top);
                             c2QpOffsetRects.push_back(C2QpOffsetRectStruct(rect, offset));
                         } else {
                             ALOGE("Rects configuration %s is not valid.", box);

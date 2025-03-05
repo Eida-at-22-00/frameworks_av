@@ -89,7 +89,9 @@ private:
 class VolumeActivity : public ActivityTracking
 {
 public:
-    bool isMuted() const { return mMuteCount > 0; }
+    bool isMutedInternally() const { return mMuteCount > 0; }
+    bool isMutedByGroup() const { return mMutedByGroup > 0; }
+    void setMutedByGroup(bool mutedByGroup) { mMutedByGroup = mutedByGroup; }
     int getMuteCount() const { return mMuteCount; }
     int incMuteCount() { return ++mMuteCount; }
     int decMuteCount() { return mMuteCount > 0 ? --mMuteCount : -1; }
@@ -107,6 +109,7 @@ public:
 
 private:
     int mMuteCount = 0; /**< mute request counter */
+    bool mMutedByGroup = false; /**< mute from AudioService, does not add to counter */
     float mCurVolumeDb = NAN; /**< current volume in dB. */
     bool mIsVoice = false; /** true if this volume source is used for voice call volume */
 };
@@ -209,15 +212,24 @@ public:
         return mVolumeActivities.find(vs) != std::end(mVolumeActivities)?
                     mVolumeActivities.at(vs).getActivityCount() : 0;
     }
-    bool isMuted(VolumeSource vs) const
+    bool isMutedInternally(VolumeSource vs) const
     {
         return mVolumeActivities.find(vs) != std::end(mVolumeActivities)?
-                    mVolumeActivities.at(vs).isMuted() : false;
+                    mVolumeActivities.at(vs).isMutedInternally() : false;
     }
     int getMuteCount(VolumeSource vs) const
     {
         return mVolumeActivities.find(vs) != std::end(mVolumeActivities)?
                     mVolumeActivities.at(vs).getMuteCount() : 0;
+    }
+    bool isMutedByGroup(VolumeSource vs)
+    {
+        return mVolumeActivities.find(vs) != std::end(mVolumeActivities)?
+               mVolumeActivities.at(vs).isMutedByGroup() : false;
+    }
+    bool hasVolumeSource(VolumeSource vs)
+    {
+        return mVolumeActivities.find(vs) != std::end(mVolumeActivities);
     }
     int incMuteCount(VolumeSource vs)
     {
@@ -227,10 +239,11 @@ public:
     {
         return mVolumeActivities[vs].decMuteCount();
     }
-    void setCurVolume(VolumeSource vs, float volumeDb, bool isVoiceVolSrc)
+    void setCurVolume(VolumeSource vs, float volumeDb, bool mutedByGroup, bool isVoiceVolSrc)
     {
         // Even if not activity for this source registered, need to create anyway
         mVolumeActivities[vs].setVolume(volumeDb);
+        mVolumeActivities[vs].setMutedByGroup(mutedByGroup);
         mVolumeActivities[vs].setIsVoice(isVoiceVolSrc);
     }
     float getCurVolume(VolumeSource vs) const
@@ -412,7 +425,7 @@ public:
                       const audio_config_base_t *mixerConfig,
                       const DeviceVector &devices,
                       audio_stream_type_t stream,
-                      audio_output_flags_t flags,
+                      audio_output_flags_t *flags,
                       audio_io_handle_t *output,
                       audio_attributes_t attributes);
 

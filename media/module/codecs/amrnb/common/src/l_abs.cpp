@@ -186,8 +186,12 @@ Word32 L_abs(Word32 L_var1)
     ; Function body here
     ----------------------------------------------------------------------------*/
 
-    Word32 y = L_var1 - (L_var1 < 0);
-    y = y ^(y >> 31);
-    return (y);
+    if (L_var1 >= 0) return L_var1;
+    if (L_var1 != 0x80000000) return -L_var1;
+    // abs(0x80000000) can not be represented in Word32.
+    // we choose to return the closest value we can -- 0x7fffffff
+    // This is acceptable because it keeps the result within the valid 32-bit signed integer range,
+    // consistent with other overflow handling in the code. such as amrnb/enc/src/l_negate.cpp.
+    return 0x7FFFFFFF;
 
 }

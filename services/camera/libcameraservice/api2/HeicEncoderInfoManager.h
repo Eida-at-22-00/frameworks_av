@@ -30,8 +30,8 @@ namespace camera3 {
 
 class HeicEncoderInfoManager {
 public:
-    static HeicEncoderInfoManager& getInstance() {
-        static HeicEncoderInfoManager instance;
+    static HeicEncoderInfoManager& getInstance(bool useSWCodec) {
+        static HeicEncoderInfoManager instance(useSWCodec);
         return instance;
     }
 
@@ -51,10 +51,10 @@ private:
     typedef std::unordered_map<std::pair<int32_t, int32_t>,
             std::pair<int32_t, int32_t>, SizePairHash> FrameRateMaps;
 
-    HeicEncoderInfoManager();
+    HeicEncoderInfoManager(bool useSWCodec);
     virtual ~HeicEncoderInfoManager();
 
-    status_t initialize();
+    status_t initialize(bool allowSWCodec);
     status_t getFrameRateMaps(sp<AMessage> details, FrameRateMaps* maps);
     status_t getCodecSizeRange(const char* codecName, sp<AMessage> details,
             std::pair<int32_t, int32_t>* minSize, std::pair<int32_t, int32_t>* maxSize,
@@ -62,7 +62,8 @@ private:
     FrameRateMaps::const_iterator findClosestSize(const FrameRateMaps& maps,
             int32_t width, int32_t height) const;
     sp<AMessage> getCodecDetails(sp<IMediaCodecList> codecsList, const char* name);
-    bool getHevcCodecDetails(sp<IMediaCodecList> codecsList, const char* mime);
+    bool getHevcCodecDetails(sp<IMediaCodecList> codecsList, const char* mime,
+            bool allowSWCodec = false);
 
     bool mIsInited;
     std::pair<int32_t, int32_t> mMinSizeHeic, mMaxSizeHeic;

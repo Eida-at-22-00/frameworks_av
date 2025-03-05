@@ -567,23 +567,24 @@ public:
         return reply.readInt32();
     }
 
-    status_t getRoutedDeviceId(audio_port_handle_t* deviceId)
+    status_t getRoutedDeviceIds(DeviceIdVector& deviceIds)
     {
         Parcel data, reply;
         data.writeInterfaceToken(IMediaPlayer::getInterfaceDescriptor());
+        deviceIds.clear();
 
-        status_t status = remote()->transact(GET_ROUTED_DEVICE_ID, data, &reply);
+        status_t status = remote()->transact(GET_ROUTED_DEVICE_IDS, data, &reply);
         if (status != OK) {
-            ALOGE("getRoutedDeviceid: binder call failed: %d", status);
-            *deviceId = AUDIO_PORT_HANDLE_NONE;
+            ALOGE("getRoutedDeviceIds: binder call failed: %d", status);
             return status;
         }
 
         status = reply.readInt32();
-        if (status != NO_ERROR) {
-            *deviceId = AUDIO_PORT_HANDLE_NONE;
-        } else {
-            *deviceId = reply.readInt32();
+        if (status == NO_ERROR) {
+            int size = reply.readInt32();
+            for (int i = 0; i < size; i++) {
+                deviceIds.push_back(reply.readInt32());
+            }
         }
         return status;
     }
@@ -983,13 +984,16 @@ status_t BnMediaPlayer::onTransact(
             }
             return NO_ERROR;
         }
-        case GET_ROUTED_DEVICE_ID: {
+        case GET_ROUTED_DEVICE_IDS: {
             CHECK_INTERFACE(IMediaPlayer, data, reply);
-            audio_port_handle_t deviceId;
-            status_t ret = getRoutedDeviceId(&deviceId);
+            DeviceIdVector deviceIds;
+            status_t ret = getRoutedDeviceIds(deviceIds);
             reply->writeInt32(ret);
             if (ret == NO_ERROR) {
-                reply->writeInt32(deviceId);
+                reply->writeInt32(deviceIds.size());
+                for (auto deviceId : deviceIds) {
+                    reply->writeInt32(deviceId);
+                }
             }
             return NO_ERROR;
         } break;

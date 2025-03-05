@@ -21,12 +21,13 @@ import android.media.audio.common.AudioFormatDescription;
 parcelable StreamParameters {
     int                                       channelMask;  //          = AAUDIO_UNSPECIFIED;
     int                                       sampleRate;  //           = AAUDIO_UNSPECIFIED;
-    int                                       deviceId;  //             = AAUDIO_UNSPECIFIED;
+    int[]                                     deviceIds;  //            = null;
     int /* aaudio_sharing_mode_t */           sharingMode;  //          = AAUDIO_SHARING_MODE_SHARED;
     AudioFormatDescription                    audioFormat;  //          = AUDIO_FORMAT_DEFAULT;
     int /* aaudio_direction_t */              direction;  //            = AAUDIO_DIRECTION_OUTPUT;
     int /* aaudio_usage_t */                  usage;  //                = AAUDIO_UNSPECIFIED;
     int /* aaudio_content_type_t */           contentType;  //          = AAUDIO_UNSPECIFIED;
+    @utf8InCpp String[]                       tags;                     /* UTF8 */
     int /* aaudio_spatialization_behavior_t */spatializationBehavior; //= AAUDIO_UNSPECIFIED;
     boolean                                   isContentSpatialized;  // = false;
     int /* aaudio_input_preset_t */           inputPreset;  //          = AAUDIO_UNSPECIFIED;

@@ -361,7 +361,7 @@ status_t AudioPolicyMixCollection::getOutputForAttr(
             continue; // Primary output already found
         }
 
-        if(!mixMatch(policyMix.get(), i, attributes, config, uid, session)) {
+        if(!mixMatch(policyMix.get(), i, attributes, flags, config, uid, session)) {
             ALOGV("%s: Mix %zu: does not match", __func__, i);
             continue; // skip the mix
         }
@@ -422,8 +422,8 @@ bool AudioPolicyMixCollection::mixDisallowsRequestedDevice(const AudioMix* mix,
 }
 
 bool AudioPolicyMixCollection::mixMatch(const AudioMix* mix, size_t mixIndex,
-    const audio_attributes_t& attributes, const audio_config_base_t& config,
-    uid_t uid, audio_session_t session) {
+    const audio_attributes_t& attributes, const audio_output_flags_t outputFlags,
+    const audio_config_base_t& config, uid_t uid, audio_session_t session) {
 
     if (mix->mMixType == MIX_TYPE_PLAYERS) {
         // Loopback render mixes are created from a public API and thus restricted
@@ -451,12 +451,17 @@ bool AudioPolicyMixCollection::mixMatch(const AudioMix* mix, size_t mixIndex,
         }
 
         // Permit match only if requested format and mix format are PCM and can be format
-        // adapted by the mixer, or are the same (compressed) format.
+        // adapted by the mixer, or are the same format on direct output.
         if (!is_mix_loopback(mix->mRouteFlags) &&
-            !((audio_is_linear_pcm(config.format) && audio_is_linear_pcm(mix->mFormat.format)) ||
-              (config.format == mix->mFormat.format)) &&
-              config.format != AUDIO_CONFIG_BASE_INITIALIZER.format) {
-            return false;
+                config.format != AUDIO_CONFIG_BASE_INITIALIZER.format) {
+            if (!audio_output_is_mixed_output_flags(outputFlags)) {
+                // Direct output must match format exactly.
+                if (config.format != mix->mFormat.format) return false;
+            } else {
+                // If mixable, both requested and mix format must be linear pcm.
+                if (!audio_is_linear_pcm(config.format) ||
+                          !audio_is_linear_pcm(mix->mFormat.format)) return false;
+            }
         }
 
         // if there is an address match, prioritize that match

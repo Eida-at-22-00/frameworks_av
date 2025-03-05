@@ -24,6 +24,7 @@
 #include <camera/StringUtils.h>
 
 #include <binder/Parcel.h>
+#include <gui/Flags.h>  // remove with WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
 #include <gui/Surface.h>
 #include <gui/view/Surface.h>
 
@@ -112,11 +113,14 @@ status_t CaptureRequest::readFromParcel(const android::Parcel* parcel) {
             return err;
         }
 
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+        sp<Surface> surface = surfaceShim.toSurface();
+#else
         sp<Surface> surface;
         if (surfaceShim.graphicBufferProducer != NULL) {
             surface = new Surface(surfaceShim.graphicBufferProducer);
         }
-
+#endif
         mSurfaceList.push_back(surface);
     }
 
@@ -206,9 +210,13 @@ status_t CaptureRequest::writeToParcel(android::Parcel* parcel) const {
             parcel->writeString16(String16("android.view.Surface"));
 
             // Surface.writeToParcel
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+            view::Surface surfaceShim = view::Surface::fromSurface(mSurfaceList[i]);
+#else
             view::Surface surfaceShim;
             surfaceShim.name = String16("unknown_name");
             surfaceShim.graphicBufferProducer = mSurfaceList[i]->getIGraphicBufferProducer();
+#endif
             if ((err = surfaceShim.writeToParcel(parcel)) != OK) {
                 ALOGE("%s: Failed to write output target Surface %d to parcel: %s (%d)",
                         __FUNCTION__, i, strerror(-err), err);

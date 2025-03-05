@@ -44,7 +44,7 @@ cc_library {
 
     shared_libs: [
         "libbase",
-        "libcgrouprc#29",
+        "libutils",
     ],
 
     header_libs: [
@@ -71,7 +71,6 @@ cc_library {
         "libstagefright_foundation_without_imemory",
         "libstagefright_mpeg2extractor",
         "libstagefright_mpeg2support_nocrypto",
-        "libutils",
     ],
 
     apex_available: [

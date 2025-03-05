@@ -6,6 +6,13 @@ package: "com.android.media.aaudio"
 container: "system"
 
 flag {
+    name: "offload_support"
+    namespace: "media_audio"
+    description: "Enable offload support in AAudio."
+    bug: "372041799"
+}
+
+flag {
     name: "sample_rate_conversion"
     namespace: "media_audio"
     description: "Enable the AAudio sample rate converter."

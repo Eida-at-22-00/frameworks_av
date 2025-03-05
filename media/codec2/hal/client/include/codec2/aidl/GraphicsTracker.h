@@ -35,6 +35,7 @@ namespace aidl::android::hardware::media::c2::implementation {
 
 using ::android::IGraphicBufferProducer;
 using ::android::GraphicBuffer;
+using ::android::FrameEventHistoryDelta;
 using ::android::Fence;
 using ::android::PixelFormat;
 using ::android::sp;
@@ -133,6 +134,11 @@ public:
                        IGraphicBufferProducer::QueueBufferOutput *output);
 
     /**
+     * Retrieve frame event history from the crurrent surface if any.
+     */
+    void pollForRenderedFrames(FrameEventHistoryDelta* delta);
+
+    /**
      * Notifies when a Buffer is ready to allocate from Graphics.
      * If generation does not match to the current, notifications via the interface
      * will be ignored. (In the case, the notifications are from one of the old surfaces
@@ -174,6 +180,14 @@ public:
      *  Ends to use the class. after the call, allocate will fail.
      */
     void stop();
+
+    /**
+     * stop()/release() request to HAL is in process from the client.
+     * The class will never be active again after the request.
+     * Still, allocation requests from HAL should be served until stop()
+     * is being called.
+     */
+    void onRequestStop();
 
 private:
     struct BufferCache;
@@ -290,6 +304,10 @@ private:
 
     std::atomic<bool> mStopped;
 
+    bool mStopRequested;
+    std::atomic<int> mAllocAfterStopRequested;
+
+
 private:
     explicit GraphicsTracker(int maxDequeueCount);
 
@@ -304,7 +322,7 @@ private:
             const std::shared_ptr<BufferCache> &cache,
             int maxDequeueCommitted);
 
-    c2_status_t requestAllocate(std::shared_ptr<BufferCache> *cache);
+    c2_status_t requestAllocateLocked(std::shared_ptr<BufferCache> *cache);
     c2_status_t requestDeallocate(uint64_t bid, const sp<Fence> &fence,
                                   bool *completed, bool *updateDequeue,
                                   std::shared_ptr<BufferCache> *cache, int *slotId,
@@ -333,6 +351,10 @@ private:
             uint32_t width, uint32_t height, PixelFormat format, uint64_t usage,
             bool *cached, int *rSlotId, sp<Fence> *rFence,
             std::shared_ptr<BufferItem> *buffer);
+
+    c2_status_t _allocateDirect(
+            uint32_t width, uint32_t height, PixelFormat format, uint64_t usage,
+            AHardwareBuffer **buf, sp<Fence> *fence);
 
     void writeIncDequeueableLocked(int inc);
     void drainDequeueableLocked(int dec);

@@ -335,26 +335,40 @@ shared_ptr<IFilter> TunerFilter::getHalFilter() {
 
 /////////////// FilterCallback ///////////////////////
 ::ndk::ScopedAStatus TunerFilter::FilterCallback::onFilterStatus(DemuxFilterStatus status) {
-    Mutex::Autolock _l(mCallbackLock);
-    if (mTunerFilterCallback != nullptr) {
-        mTunerFilterCallback->onFilterStatus(status);
+    shared_ptr<ITunerFilterCallback> cb(nullptr);
+    {
+        Mutex::Autolock _l(mCallbackLock);
+        cb = mTunerFilterCallback;
+    }
+    if (cb != nullptr) {
+        cb->onFilterStatus(status);
     }
     return ::ndk::ScopedAStatus::ok();
 }
 
 ::ndk::ScopedAStatus TunerFilter::FilterCallback::onFilterEvent(
         const vector<DemuxFilterEvent>& events) {
-    Mutex::Autolock _l(mCallbackLock);
-    if (mTunerFilterCallback != nullptr) {
-        mTunerFilterCallback->onFilterEvent(events);
+    shared_ptr<ITunerFilterCallback> cb(nullptr);
+    {
+        Mutex::Autolock _l(mCallbackLock);
+        cb = mTunerFilterCallback;
+    }
+    if (cb != nullptr) {
+        cb->onFilterEvent(events);
     }
     return ::ndk::ScopedAStatus::ok();
 }
 
 void TunerFilter::FilterCallback::sendSharedFilterStatus(int32_t status) {
-    Mutex::Autolock _l(mCallbackLock);
-    if (mTunerFilterCallback != nullptr && mOriginalCallback != nullptr) {
-        mTunerFilterCallback->onFilterStatus(static_cast<DemuxFilterStatus>(status));
+    shared_ptr<ITunerFilterCallback> cb(nullptr);
+    shared_ptr<ITunerFilterCallback> orig_cb(nullptr);
+    {
+        Mutex::Autolock _l(mCallbackLock);
+        cb = mTunerFilterCallback;
+        orig_cb = mOriginalCallback;
+    }
+    if (cb != nullptr && orig_cb != nullptr) {
+        cb->onFilterStatus(static_cast<DemuxFilterStatus>(status));
     }
 }
 

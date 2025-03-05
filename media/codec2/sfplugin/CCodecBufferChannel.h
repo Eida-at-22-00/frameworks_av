@@ -194,12 +194,15 @@ public:
     /**
      * Notify input client about work done.
      *
-     * @param workItems   finished work item.
+     * @param workItems    finished work item.
+     * @param inputFormat  input format
      * @param outputFormat new output format if it has changed, otherwise nullptr
-     * @param initData    new init data (CSD) if it has changed, otherwise nullptr
+     * @param initData     new init data (CSD) if it has changed, otherwise nullptr
      */
     void onWorkDone(
-            std::unique_ptr<C2Work> work, const sp<AMessage> &outputFormat,
+            std::unique_ptr<C2Work> work,
+            const sp<AMessage> &inputFormat,
+            const sp<AMessage> &outputFormat,
             const C2StreamInitDataInfo::output *initData);
 
     /**
@@ -313,7 +316,9 @@ private:
                                       std::shared_ptr<C2LinearBlock> encryptedBlock = nullptr,
                                       size_t blockSize = 0);
     bool handleWork(
-            std::unique_ptr<C2Work> work, const sp<AMessage> &outputFormat,
+            std::unique_ptr<C2Work> work,
+            const sp<AMessage> &inputFormat,
+            const sp<AMessage> &outputFormat,
             const C2StreamInitDataInfo::output *initData);
     void sendOutputBuffers();
     void ensureDecryptDestination(size_t size);

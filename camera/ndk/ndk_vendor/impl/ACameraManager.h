@@ -188,7 +188,7 @@ class CameraManagerGlobal final: public std::enable_shared_from_this<CameraManag
                          const std::string &physicalCameraId);
     void onStatusChangedLocked(const CameraDeviceStatus &status, const std::string &cameraId,
                                const std::string &physicalCameraId);
-    bool setupVendorTags();
+    bool setupVendorTags(std::shared_ptr<ICameraService> &cameraService);
 
     // Utils for status
     static bool validStatus(CameraDeviceStatus status);
@@ -261,9 +261,9 @@ struct ACameraManager {
     camera_status_t getCameraCharacteristics(
             const char* cameraId, android::sp<ACameraMetadata>* characteristics);
 
-    camera_status_t openCamera(const char* cameraId,
-                               ACameraDevice_StateCallbacks* callback,
-                               /*out*/ACameraDevice** device);
+    camera_status_t openCamera(const char* cameraId, bool sharedMode,
+            ACameraDevice_StateCallbacks* callback, /*out*/ACameraDevice** device,
+            /*out*/bool* primaryClient);
     camera_status_t getTagFromName(const char *cameraId, const char *name, uint32_t *tag);
     void registerAvailabilityCallback(const ACameraManager_AvailabilityCallbacks* callback);
     void unregisterAvailabilityCallback(const ACameraManager_AvailabilityCallbacks* callback);
@@ -271,6 +271,8 @@ struct ACameraManager {
             const ACameraManager_ExtendedAvailabilityCallbacks* callback);
     void unregisterExtendedAvailabilityCallback(
             const ACameraManager_ExtendedAvailabilityCallbacks* callback);
+    camera_status_t isCameraDeviceSharingSupported(const char *cameraId,
+            bool *isSharingSupported);
 
   private:
     enum {

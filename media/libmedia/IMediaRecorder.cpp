@@ -62,7 +62,7 @@ enum {
     RESUME,
     GET_METRICS,
     SET_INPUT_DEVICE,
-    GET_ROUTED_DEVICE_ID,
+    GET_ROUTED_DEVICE_IDS,
     ENABLE_AUDIO_DEVICE_CALLBACK,
     GET_ACTIVE_MICROPHONES,
     GET_PORT_ID,
@@ -392,24 +392,24 @@ public:
         return reply.readInt32();;
     }
 
-    audio_port_handle_t getRoutedDeviceId(audio_port_handle_t *deviceId)
+    status_t getRoutedDeviceIds(DeviceIdVector& deviceIds)
     {
-        ALOGV("getRoutedDeviceId");
         Parcel data, reply;
         data.writeInterfaceToken(IMediaRecorder::getInterfaceDescriptor());
+        deviceIds.clear();
 
-        status_t status = remote()->transact(GET_ROUTED_DEVICE_ID, data, &reply);
+        status_t status = remote()->transact(GET_ROUTED_DEVICE_IDS, data, &reply);
         if (status != OK) {
-            ALOGE("getRoutedDeviceid binder call failed: %d", status);
-            *deviceId = AUDIO_PORT_HANDLE_NONE;
+            ALOGE("getRoutedDeviceIds: binder call failed: %d", status);
             return status;
         }
 
         status = reply.readInt32();
-        if (status != NO_ERROR) {
-            *deviceId = AUDIO_PORT_HANDLE_NONE;
-        } else {
-            *deviceId = reply.readInt32();
+        if (status == NO_ERROR) {
+            int size = reply.readInt32();
+            for (int i = 0; i < size; i++) {
+                deviceIds.push_back(reply.readInt32());
+            }
         }
         return status;
     }
@@ -730,14 +730,17 @@ status_t BnMediaRecorder::onTransact(
             }
             return NO_ERROR;
         } break;
-        case GET_ROUTED_DEVICE_ID: {
-            ALOGV("GET_ROUTED_DEVICE_ID");
+        case GET_ROUTED_DEVICE_IDS: {
+            ALOGV("GET_ROUTED_DEVICE_IDS");
             CHECK_INTERFACE(IMediaRecorder, data, reply);
-            audio_port_handle_t deviceId;
-            status_t status = getRoutedDeviceId(&deviceId);
-            reply->writeInt32(status);
-            if (status == NO_ERROR) {
-                reply->writeInt32(deviceId);
+            DeviceIdVector deviceIds;
+            status_t ret = getRoutedDeviceIds(deviceIds);
+            reply->writeInt32(ret);
+            if (ret == NO_ERROR) {
+                reply->writeInt32(deviceIds.size());
+                for (auto deviceId : deviceIds) {
+                    reply->writeInt32(deviceId);
+                }
             }
             return NO_ERROR;
         } break;

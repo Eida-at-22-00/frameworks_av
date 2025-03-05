@@ -242,8 +242,7 @@ status_t FrameCaptureLayer::releaseBuffer(const BufferItem &bi) {
     ALOGV("releaseBuffer");
     Mutex::Autolock _lock(mLock);
 
-    return mConsumer->releaseBuffer(bi.mSlot, bi.mFrameNumber,
-            EGL_NO_DISPLAY, EGL_NO_SYNC_KHR, bi.mFence);
+    return mConsumer->releaseBuffer(bi.mSlot, bi.mFrameNumber, bi.mFence);
 }
 
 }  // namespace android

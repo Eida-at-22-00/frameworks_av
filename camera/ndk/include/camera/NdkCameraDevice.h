@@ -125,6 +125,18 @@ typedef void (*ACameraDevice_StateCallback)(void* context, ACameraDevice* device
 typedef void (*ACameraDevice_ErrorStateCallback)(void* context, ACameraDevice* device, int error);
 
 /**
+ * Client access priorities changed callbacks to be used in {@link ACameraDevice_StateCallbacks}
+ * when camera is opened in shared mode.
+ *
+ * @param context The optional context in {@link ACameraDevice_StateCallbacks} will be passed to
+ *                this callback.
+ * @param device The {@link ACameraDevice} whose access priorities has been changed.
+ * @param isPrimaryClient whether the client is primary client.
+ */
+typedef void (*ACameraDevice_ClientSharedAccessPriorityChangedCallback)(void* context,
+        ACameraDevice* device, bool isPrimaryClient);
+
+/**
  * Applications' callbacks for camera device state changes, register with
  * {@link ACameraManager_openCamera}.
  */
@@ -163,6 +175,17 @@ typedef struct ACameraDevice_StateCallbacks {
      *
      */
     ACameraDevice_ErrorStateCallback  onError;
+
+    /**
+     * Notify registered clients about client shared access priority changes when the camera device
+     * has been opened in shared mode.
+     *
+     * If the client priority changes from secondary to primary, then it can now
+     * create capture request and change the capture request parameters. If client priority
+     * changes from primary to secondary, that implies that another higher priority client is also
+     * accessing the camera in shared mode and is now the primary client.
+     */
+    ACameraDevice_ClientSharedAccessPriorityChangedCallback onClientSharedAccessPriorityChanged;
 } ACameraDevice_StateCallbacks;
 
 /**
@@ -671,7 +694,9 @@ camera_status_t ACaptureSessionOutputContainer_remove(
  *         <li>{@link ACAMERA_OK} if the method call succeeds. The created capture session will be
  *                                filled in session argument.</li>
  *         <li>{@link ACAMERA_ERROR_INVALID_PARAMETER} if any of device, outputs, callbacks or
- *                                session is NULL.</li>
+ *                                session is NULL or if the outputs does not match the predefined
+ *                                shared session configuration when camera is opened in shared mode.
+ *                                </li>
  *         <li>{@link ACAMERA_ERROR_CAMERA_DISCONNECTED} if the camera device is closed.</li>
  *         <li>{@link ACAMERA_ERROR_CAMERA_DEVICE} if the camera device encounters fatal error.</li>
  *         <li>{@link ACAMERA_ERROR_CAMERA_SERVICE} if the camera service encounters fatal error.</li>

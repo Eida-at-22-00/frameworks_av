@@ -359,6 +359,8 @@ aidl_interface {
         "aidl/android/media/AudioMixerBehavior.aidl",
         "aidl/android/media/AudioOffloadMode.aidl",
         "aidl/android/media/AudioPolicyDeviceState.aidl",
+        "aidl/android/media/AudioPolicyForceUse.aidl",
+        "aidl/android/media/AudioPolicyForcedConfig.aidl",
         "aidl/android/media/AudioProductStrategy.aidl",
         "aidl/android/media/AudioVolumeGroup.aidl",
         "aidl/android/media/DeviceRole.aidl",

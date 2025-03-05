@@ -41,6 +41,8 @@ public:
     virtual status_t initVolume(int indexMin, int indexMax) = 0;
     virtual std::vector<audio_attributes_t> getAttributes() const = 0;
     virtual std::vector<audio_stream_type_t> getStreamTypes() const = 0;
+    virtual void setIsMuted(bool isMuted) = 0;
+    virtual bool isMuted() const = 0;
     virtual void dump(String8 *dst, int spaces = 0, bool curvePoints = false) const = 0;
 };
 

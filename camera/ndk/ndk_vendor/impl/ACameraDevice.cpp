@@ -85,11 +85,12 @@ CameraDevice::CameraDevice(
         const char* id,
         ACameraDevice_StateCallbacks* cb,
         sp<ACameraMetadata> chars,
-        ACameraDevice* wrapper) :
+        ACameraDevice* wrapper, bool sharedMode) :
         mCameraId(id),
         mAppCallbacks(*cb),
         mChars(std::move(chars)),
         mWrapper(wrapper),
+        mSharedMode(sharedMode),
         mInError(false),
         mError(ACAMERA_OK),
         mIdle(true),
@@ -960,6 +961,7 @@ void CameraDevice::CallbackHandler::onMessageReceived(
         case kWhatCaptureSeqAbort:
         case kWhatCaptureBufferLost:
         case kWhatPreparedCb:
+        case kWhatClientSharedAccessPriorityChanged:
             ALOGV("%s: Received msg %d", __FUNCTION__, msg->what());
             break;
         case kWhatCleanUpSessions:
@@ -997,6 +999,28 @@ void CameraDevice::CallbackHandler::onMessageReceived(
             (*onDisconnected)(context, dev);
             break;
         }
+        case kWhatClientSharedAccessPriorityChanged:
+        {
+            ACameraDevice* dev;
+            found = msg->findPointer(kDeviceKey, (void**) &dev);
+            if (!found || dev == nullptr) {
+                ALOGE("%s: Cannot find device pointer!", __FUNCTION__);
+                return;
+            }
+            ACameraDevice_ClientSharedAccessPriorityChangedCallback
+                    onClientSharedAccessPriorityChanged;
+            found = msg->findPointer(kCallbackFpKey, (void**) &onClientSharedAccessPriorityChanged);
+            if (!found) {
+                ALOGE("%s: Cannot find onClientSharedAccessPriorityChanged!", __FUNCTION__);
+                return;
+            }
+            if (onClientSharedAccessPriorityChanged == nullptr) {
+                return;
+            }
+            (*onClientSharedAccessPriorityChanged)(context, dev, dev->isPrimaryClient());
+            break;
+        }
+
         case kWhatOnError:
         {
             ACameraDevice* dev;
@@ -1614,6 +1638,28 @@ ScopedAStatus CameraDevice::ServiceCallback::onDeviceError(
     return ScopedAStatus::ok();
 }
 
+ScopedAStatus CameraDevice::ServiceCallback::onClientSharedAccessPriorityChanged(
+        bool primaryClient) {
+    ALOGV("onClientSharedAccessPriorityChanged received. primaryClient = %d", primaryClient);
+    ScopedAStatus ret = ScopedAStatus::ok();
+    std::shared_ptr<CameraDevice> dev = mDevice.lock();
+    if (dev == nullptr) {
+        return ret; // device has been closed
+    }
+    Mutex::Autolock _l(dev->mDeviceLock);
+    if (dev->isClosed() || dev->mRemote == nullptr) {
+        return ret;
+    }
+    dev->setPrimaryClient(primaryClient);
+    sp<AMessage> msg = new AMessage(kWhatClientSharedAccessPriorityChanged, dev->mHandler);
+    msg->setPointer(kContextKey, dev->mAppCallbacks.context);
+    msg->setPointer(kDeviceKey, (void*) dev->getWrapper());
+    msg->setPointer(kCallbackFpKey, (void*) dev->mAppCallbacks.onClientSharedAccessPriorityChanged);
+    msg->post();
+
+    return ScopedAStatus::ok();
+}
+
 ScopedAStatus CameraDevice::ServiceCallback::onDeviceIdle() {
     ALOGV("Camera is now idle");
 
@@ -1684,8 +1730,9 @@ ndk::ScopedAStatus CameraDevice::ServiceCallback::onCaptureStarted(
                     __FUNCTION__, burstId, cbh.mRequests.size());
             dev->setCameraDeviceErrorLocked(ACAMERA_ERROR_CAMERA_SERVICE);
         }
+
         sp<CaptureRequest> request = cbh.mRequests[burstId];
-        ALOGE("%s: request = %p", __FUNCTION__, request.get());
+        ALOGV("%s: request = %p", __FUNCTION__, request.get());
         sp<AMessage> msg = nullptr;
         if (v2Callback) {
             msg = new AMessage(kWhatCaptureStart2, dev->mHandler);

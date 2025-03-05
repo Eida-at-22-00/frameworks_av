@@ -211,8 +211,7 @@ Word16 norm_l(Word32 L_var1)
     if (L_var1)
     {
 
-        Word32 y = L_var1 - (L_var1 < 0);
-        L_var1 = y ^(y >> 31);
+        L_var1 = L_abs(L_var1);
 
 
         while (!(0x40000000L & L_var1))

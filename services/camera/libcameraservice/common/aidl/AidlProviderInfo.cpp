@@ -30,6 +30,7 @@
 
 #include "device3/DistortionMapper.h"
 #include "device3/ZoomRatioMapper.h"
+#include <utils/AttributionAndPermissionUtils.h>
 #include <utils/SessionConfigurationUtils.h>
 #include <utils/Trace.h>
 
@@ -202,7 +203,7 @@ status_t AidlProviderInfo::initializeAidlProvider(
 void AidlProviderInfo::binderDied(void *cookie) {
     AidlProviderInfo *provider = reinterpret_cast<AidlProviderInfo *>(cookie);
     ALOGI("Camera provider '%s' has died; removing it", provider->mProviderInstance.c_str());
-    provider->mManager->removeProvider(provider->mProviderInstance);
+    provider->mManager->removeProvider(std::string(provider->mProviderInstance));
 }
 
 status_t AidlProviderInfo::setUpVendorTags() {
@@ -320,7 +321,7 @@ const std::shared_ptr<ICameraProvider> AidlProviderInfo::startProviderInterface(
     if (link != STATUS_OK) {
         ALOGW("%s: Unable to link to provider '%s' death notifications",
                 __FUNCTION__, mProviderName.c_str());
-        mManager->removeProvider(mProviderInstance);
+        mManager->removeProvider(std::string(mProviderInstance));
         return nullptr;
     }
 
@@ -517,6 +518,8 @@ AidlProviderInfo::AidlDeviceInfo3::AidlDeviceInfo3(
 
     mCompositeJpegRDisabled = mCameraCharacteristics.exists(
             ANDROID_JPEGR_AVAILABLE_JPEG_R_STREAM_CONFIGURATIONS);
+    mCompositeHeicUltraHDRDisabled = mCameraCharacteristics.exists(
+            ANDROID_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STREAM_CONFIGURATIONS);
 
     mSystemCameraKind = getSystemCameraKind();
 
@@ -548,6 +551,12 @@ AidlProviderInfo::AidlDeviceInfo3::AidlDeviceInfo3(
         ALOGE("%s: Unable to derive Jpeg/R tags based on camera and media capabilities: %s (%d)",
                 __FUNCTION__, strerror(-res), res);
     }
+    res = deriveHeicUltraHDRTags();
+    if (OK != res) {
+        ALOGE("%s: Unable to derive Heic UltraHDR tags based on camera and "
+                "media capabilities: %s (%d)",
+                __FUNCTION__, strerror(-res), res);
+    }
     using camera3::SessionConfigurationUtils::supportsUltraHighResolutionCapture;
     if (supportsUltraHighResolutionCapture(mCameraCharacteristics)) {
         status_t status = addDynamicDepthTags(/*maxResolution*/true);
@@ -566,6 +575,12 @@ AidlProviderInfo::AidlDeviceInfo3::AidlDeviceInfo3(
         if (OK != status) {
             ALOGE("%s: Unable to derive Jpeg/R tags based on camera and media capabilities for"
                     "maximum resolution mode: %s (%d)", __FUNCTION__, strerror(-status), status);
+        }
+        status = deriveHeicUltraHDRTags(/*maxResolution*/true);
+        if (OK != status) {
+            ALOGE("%s: Unable to derive Heic UltraHDR tags based on camera and "
+                    "media capabilities: %s (%d)",
+                    __FUNCTION__, strerror(-status), status);
         }
     }
 
@@ -594,6 +609,22 @@ AidlProviderInfo::AidlDeviceInfo3::AidlDeviceInfo3(
     if (OK != res) {
         ALOGE("%s: Unable to add sensorReadoutTimestamp tag: %s (%d)",
                 __FUNCTION__, strerror(-res), res);
+    }
+
+    if (flags::color_temperature()) {
+        res = addColorCorrectionAvailableModesTag(mCameraCharacteristics);
+        if (OK != res) {
+            ALOGE("%s: Unable to add COLOR_CORRECTION_AVAILABLE_MODES tag: %s (%d)",
+                    __FUNCTION__, strerror(-res), res);
+        }
+    }
+
+    if (flags::ae_priority()) {
+        res = addAePriorityModeTags();
+        if (OK != res) {
+            ALOGE("%s: Unable to add CONTROL_AE_AVAILABLE_PRIORITY_MODES tag: %s (%d)",
+                    __FUNCTION__, strerror(-res), res);
+        }
     }
 
     camera_metadata_entry flashAvailable =
@@ -683,6 +714,14 @@ AidlProviderInfo::AidlDeviceInfo3::AidlDeviceInfo3(
                         __FUNCTION__, strerror(-res), res);
                 return;
             }
+
+            if (flags::color_temperature()) {
+                res = addColorCorrectionAvailableModesTag(mPhysicalCameraCharacteristics[id]);
+                if (OK != res) {
+                    ALOGE("%s: Unable to add COLOR_CORRECTION_AVAILABLE_MODES tag: %s (%d)",
+                            __FUNCTION__, strerror(-res), res);
+                }
+            }
         }
     }
 
@@ -692,6 +731,10 @@ AidlProviderInfo::AidlDeviceInfo3::AidlDeviceInfo3(
         // in ICameraDevice.isSessionConfigurationWithSettingsSupported.
         mAdditionalKeysForFeatureQuery.insert(mAdditionalKeysForFeatureQuery.end(),
                 {ANDROID_CONTROL_VIDEO_STABILIZATION_MODE, ANDROID_CONTROL_AE_TARGET_FPS_RANGE});
+    }
+
+    if (flags::camera_multi_client() && isAutomotiveDevice()) {
+        addSharedSessionConfigurationTags();
     }
 
     if (!kEnableLazyHal) {

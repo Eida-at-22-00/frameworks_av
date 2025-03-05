@@ -78,9 +78,6 @@ drmserver_cc_binary {
         "libselinux",
         "libstagefright_foundation",
     ],
-    whole_static_libs: [
-        "libc++fs",
-    ],
 
     cflags: [
         "-Wall",
@@ -127,7 +124,6 @@ cc_fuzz {
     ],
 
     static_libs: [
-        "libc++fs",
         "libmediautils",
         "liblog",
         "libdrmframeworkcommon",

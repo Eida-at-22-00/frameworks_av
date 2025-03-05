@@ -18,7 +18,7 @@
 #include <aidl/android/hardware/health/IHealth.h>
 #include <android-base/logging.h>
 #include <android/binder_manager.h>
-#include <psh_utils/ServiceSingleton.h>
+#include <mediautils/ServiceSingleton.h>
 
 using ::aidl::android::hardware::health::HealthInfo;
 using ::aidl::android::hardware::health::IHealth;
@@ -26,7 +26,7 @@ using ::aidl::android::hardware::health::IHealth;
 namespace android::media::psh_utils {
 
 static auto getHealthService() {
-    return getServiceSingleton<IHealth>();
+    return mediautils::getService<IHealth>();
 }
 
 status_t HealthStatsDataProvider::fill(PowerStats* stat) const {

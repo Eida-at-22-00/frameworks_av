@@ -248,10 +248,10 @@ static __inline Word16 Chebps2(Word16 x, Word16 f[], Word32 n)
         b1_h = b0_h;
     }
 
-    t0 = ((b1_h * x)<<1) + (((b1_l * x)>>15)<<1);
-    t0 += (b2_h * (-32768))<<1;             /* t0 = x*b1 - b2          */
-    t0 -= (b2_l << 1);
-    t0 += (f[n] << 12);                     /* t0 = x*b1 - b2 + f[i]/2 */
+    __builtin_add_overflow(((b1_h * x)<<1), (((b1_l * x)>>15)<<1), &t0);
+    __builtin_add_overflow(t0, (b2_h * (-32768))<<1, &t0);   /* t0 = x*b1 - b2          */
+    __builtin_sub_overflow(t0, (b2_l << 1), &t0);
+    __builtin_add_overflow(t0, (f[n] << 12), &t0);     /* t0 = x*b1 - b2 + f[i]/2 */
 
     t0 = L_shl2(t0, 6);                     /* Q24 to Q30 with saturation */
 

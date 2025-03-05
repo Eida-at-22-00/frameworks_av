@@ -33,6 +33,7 @@ cc_defaults {
         "liblog",
     ],
     shared_libs: [
+        "camera_platform_flags_c_lib",
         "framework-permission-aidl-cpp",
         "libbinder",
         "libbinder_ndk",
@@ -81,6 +82,7 @@ cc_fuzz {
         "libactivitymanager_aidl",
         "libandroid_net",
         "libaudioflinger",
+        "libaudiofoundation",
         "libcamera_client",
         "libcodec2_client",
         "libcrypto",
@@ -159,6 +161,7 @@ cc_fuzz {
         "libactivitymanager_aidl",
         "libandroid_net",
         "libaudioclient",
+        "libaudiofoundation",
         "libcamera_client",
         "libcodec2_client",
         "libcrypto",

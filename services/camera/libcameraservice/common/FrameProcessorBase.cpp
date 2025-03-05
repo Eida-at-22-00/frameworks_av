@@ -29,6 +29,8 @@
 namespace android {
 namespace camera2 {
 
+using CameraMetadataInfo = android::hardware::camera2::CameraMetadataInfo;
+
 FrameProcessorBase::FrameProcessorBase(wp<FrameProducer> device) :
     Thread(/*canCallJava*/false),
     mDevice(device),
@@ -99,7 +101,7 @@ void FrameProcessorBase::dump(int fd, const Vector<String16>& /*args*/) {
 
         for (const auto& physicalFrame : mLastPhysicalFrames) {
             lastPhysicalFrames.emplace(physicalFrame.mPhysicalCameraId,
-                    physicalFrame.mPhysicalCameraMetadata);
+                    physicalFrame.mCameraMetadataInfo.get<CameraMetadataInfo::metadata>());
         }
     }
     lastFrame.dump(fd, /*verbosity*/2, /*indentation*/6);

@@ -173,6 +173,7 @@ apex_defaults {
         "mediaswcodec",
     ],
     native_shared_libs: [
+        "libapexcodecs",
         "libcodec2_hidl@1.0",
         "libcodec2_hidl@1.1",
         "libcodec2_hidl@1.2",

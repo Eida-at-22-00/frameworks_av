@@ -1105,19 +1105,14 @@ status_t MediaPlayer::setOutputDevice(audio_port_handle_t deviceId)
     return mPlayer->setOutputDevice(deviceId);
 }
 
-audio_port_handle_t MediaPlayer::getRoutedDeviceId()
+status_t MediaPlayer::getRoutedDeviceIds(DeviceIdVector& deviceIds)
 {
     Mutex::Autolock _l(mLock);
     if (mPlayer == NULL) {
-        ALOGV("getRoutedDeviceId: player not init");
-        return AUDIO_PORT_HANDLE_NONE;
+        ALOGV("getRoutedDeviceIds: player not init");
+        return NO_INIT;
     }
-    audio_port_handle_t deviceId;
-    status_t status = mPlayer->getRoutedDeviceId(&deviceId);
-    if (status != NO_ERROR) {
-        return AUDIO_PORT_HANDLE_NONE;
-    }
-    return deviceId;
+    return mPlayer->getRoutedDeviceIds(deviceIds);
 }
 
 status_t MediaPlayer::enableAudioDeviceCallback(bool enabled)

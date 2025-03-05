@@ -45,4 +45,7 @@ cc_library_shared {
         "libparameter",
         "libutils",
     ],
+    defaults: [
+        "aconfig_lib_cc_shared_link.defaults",
+    ],
 }

@@ -413,6 +413,31 @@ status_t Spatializer::loadEngineConfiguration(sp<EffectHalInterface> effect) {
         return BAD_VALUE;
     }
 
+    std::vector<audio_channel_mask_t> spatializedChannelMasks;
+    status = getHalParameter<true>(effect, SPATIALIZER_PARAM_SPATIALIZED_CHANNEL_MASKS,
+                                   &spatializedChannelMasks);
+    if (status != NO_ERROR) {
+        ALOGW("%s: cannot get SPATIALIZER_PARAM_SPATIALIZED_CHANNEL_MASKS", __func__);
+        // do not return an error yet as spatializer implementations may not have been
+        // updated yet to support this parameter
+    }
+    if (spatializedChannelMasks.empty()) {
+        ALOGW("%s: SPATIALIZER_PARAM_SPATIALIZED_CHANNEL_MASKS reports empty", __func__);
+        // do not return an error yet as spatializer implementations may not have been
+        // updated yet to support this parameter
+    }
+    for (const audio_channel_mask_t spatializedMask : spatializedChannelMasks) {
+        // spatialized masks must be contained in the supported input masks
+        if (std::find(mChannelMasks.begin(), mChannelMasks.end(), spatializedMask)
+                != mChannelMasks.end()) {
+            mSpatializedChannelMasks.emplace_back(spatializedMask);
+        } else {
+            ALOGE("%s: spatialized mask %#x not in list reported by PARAM_SUPPORTED_CHANNEL_MASKS",
+                  __func__, spatializedMask);
+            return BAD_VALUE;
+        }
+    }
+
     if (com::android::media::audio::dsa_over_bt_le_audio()
             && mSupportsHeadTracking) {
         mHeadtrackingConnectionMode = HeadTracking::ConnectionMode::FRAMEWORK_PROCESSED;
@@ -473,6 +498,17 @@ audio_config_base_t Spatializer::getAudioInConfig() const {
     config.channel_mask = getMaxChannelMask(mChannelMasks, FCC_LIMIT);
     return config;
 }
+
+Status Spatializer::getSpatializedChannelMasks(std::vector<int>* masks) {
+        audio_utils::lock_guard lock(mMutex);
+        ALOGV("%s", __func__);
+        if (masks == nullptr) {
+            return binderStatusFromStatusT(BAD_VALUE);
+        }
+        masks->insert(masks->end(), mSpatializedChannelMasks.begin(),
+                      mSpatializedChannelMasks.end());
+        return Status::ok();
+    }
 
 status_t Spatializer::registerCallback(
         const sp<media::INativeSpatializerCallback>& callback) {
@@ -1252,6 +1288,10 @@ std::string Spatializer::toString(unsigned level) const {
 
     base::StringAppendF(&ss, "%smChannelMasks: ", prefixSpace.c_str());
     for (auto& mask : mChannelMasks) {
+        base::StringAppendF(&ss, "%s", audio_channel_out_mask_to_string(mask));
+    }
+    base::StringAppendF(&ss, "%smSpatializedChannelMasks: ", prefixSpace.c_str());
+    for (auto& mask : mSpatializedChannelMasks) {
         base::StringAppendF(&ss, "%s", audio_channel_out_mask_to_string(mask));
     }
     base::StringAppendF(&ss, "\n%smSupportsHeadTracking: %s\n", prefixSpace.c_str(),

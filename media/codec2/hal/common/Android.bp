@@ -56,13 +56,17 @@ cc_library_static {
         "libaconfig_storage_read_api_cc",
     ],
 
-    static_libs: ["aconfig_mediacodec_flags_c_lib"],
+    static_libs: [
+        "aconfig_mediacodec_flags_c_lib",
+        "android.media.codec-aconfig-cc",
+    ],
 }
 
 cc_defaults {
     name: "libcodec2_hal_selection",
     static_libs: [
         "aconfig_mediacodec_flags_c_lib",
+        "android.media.codec-aconfig-cc",
         "libcodec2_hal_selection_static",
     ],
     shared_libs: [

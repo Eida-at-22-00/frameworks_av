@@ -96,8 +96,6 @@ cc_library_static {
                 "-DARM",
                 "-DARMV7",
                 "-DASM_OPT",
-                // don't actually generate neon instructions, see bug 26932980
-                "-mfpu=vfpv3",
             ],
             local_include_dirs: [
                 "src/asm/ARMV7",

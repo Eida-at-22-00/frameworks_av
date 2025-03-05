@@ -18,11 +18,12 @@
 
 #define MPEG2_PS_EXTRACTOR_H_
 
+#include <mutex>
+
 #include <media/stagefright/foundation/ABase.h>
 #include <media/MediaExtractorPluginApi.h>
 #include <media/MediaExtractorPluginHelper.h>
 #include <media/stagefright/MetaDataBase.h>
-#include <utils/threads.h>
 #include <utils/KeyedVector.h>
 
 namespace android {
@@ -51,7 +52,7 @@ private:
     struct Track;
     struct WrappedTrack;
 
-    mutable Mutex mLock;
+    std::mutex mLock;
     DataSourceHelper *mDataSource;
 
     off64_t mOffset;

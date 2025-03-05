@@ -281,7 +281,7 @@ public:
             status_t        releaseDrm();
             // AudioRouting
             status_t        setOutputDevice(audio_port_handle_t deviceId);
-            audio_port_handle_t getRoutedDeviceId();
+            status_t        getRoutedDeviceIds(DeviceIdVector& deviceIds);
             status_t        enableAudioDeviceCallback(bool enabled);
 
 private:

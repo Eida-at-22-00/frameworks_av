@@ -72,7 +72,8 @@ class AidlCamera3Device :
     virtual status_t switchToOffline(const std::vector<int32_t>& /*streamsToKeep*/,
             /*out*/ sp<CameraOfflineSessionBase>* /*session*/) override;
 
-    status_t initialize(sp<CameraProviderManager> manager, const std::string& monitorTags) override;
+    virtual status_t initialize(sp<CameraProviderManager> manager, const std::string& monitorTags)
+            override;
 
     class AidlHalInterface : public Camera3Device::HalInterface {
      public:

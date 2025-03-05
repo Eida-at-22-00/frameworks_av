@@ -167,11 +167,19 @@ void H2BCameraDeviceCallbacks::CallbackHandler::processResultMessage(
 }
 
 binder::Status H2BCameraDeviceCallbacks::onResultReceived(
-    const CameraMetadataNative& result,
+    const CameraMetadataInfo &resultInfo,
     const CaptureResultExtras& resultExtras,
     const ::std::vector<PhysicalCaptureResultInfo>& physicalCaptureResultInfos) {
     // Wrap CameraMetadata, resultExtras and physicalCaptureResultInfos in on
     // sp<RefBase>-able structure and post it.
+    // We modify metadata - since we want to filter out tags based on the vndk
+    // version, and also this communication is an in process function call.
+    // So we don't use FMQ for the shim layer. FMQ is still used for VNDK IPC.
+    if (resultInfo.getTag() != CameraMetadataInfo::metadata) {
+        ALOGE("Vendor callbacks got metadata in fmq ? ");
+        return binder::Status::ok();
+    }
+    const CameraMetadataNative &result = resultInfo.get<CameraMetadataInfo::metadata>();
     sp<ResultWrapper> resultWrapper = new ResultWrapper(const_cast<CameraMetadataNative &>(result),
                                                         resultExtras, physicalCaptureResultInfos);
     sp<AMessage> msg = new AMessage(kWhatResultReceived, mHandler);

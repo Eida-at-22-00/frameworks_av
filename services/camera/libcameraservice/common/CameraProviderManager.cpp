@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include "system/camera_metadata.h"
 #include "system/graphics-base-v1.0.h"
 #include "system/graphics-base-v1.1.h"
 #define LOG_TAG "CameraProviderManager"
@@ -64,6 +65,7 @@ using android::hardware::camera::common::V1_0::Status;
 using namespace camera3::SessionConfigurationUtils;
 using std::literals::chrono_literals::operator""s;
 using hardware::camera2::utils::CameraIdAndSessionConfiguration;
+using hardware::camera2::params::OutputConfiguration;
 
 namespace flags = com::android::internal::camera::flags;
 namespace vd_flags = android::companion::virtualdevice::flags;
@@ -78,6 +80,10 @@ const std::string kVirtualProviderName = "virtual/0";
 const float CameraProviderManager::kDepthARTolerance = .1f;
 const bool CameraProviderManager::kFrameworkJpegRDisabled =
         property_get_bool("ro.camera.disableJpegR", false);
+const bool CameraProviderManager::kFrameworkHeicUltraHDRDisabled =
+    property_get_bool("ro.camera.disableHeicUltraHDR", false);
+const bool CameraProviderManager::kFrameworkHeicAllowSWCodecs =
+    property_get_bool("ro.camera.enableSWHEVC", false);
 
 CameraProviderManager::HidlServiceInteractionProxyImpl
 CameraProviderManager::sHidlServiceInteractionProxy{};
@@ -1285,6 +1291,169 @@ bool CameraProviderManager::isConcurrentDynamicRangeCaptureSupported(
     return false;
 }
 
+status_t CameraProviderManager::ProviderInfo::DeviceInfo3::deriveHeicUltraHDRTags(
+        bool maxResolution) {
+    if (!flags::camera_heif_gainmap() || kFrameworkHeicUltraHDRDisabled ||
+            mCompositeHeicUltraHDRDisabled ||
+            !camera3::HeicCompositeStream::isInMemoryTempFileSupported()) {
+        return OK;
+    }
+
+    const int32_t scalerSizesTag =
+              SessionConfigurationUtils::getAppropriateModeTag(
+                      ANDROID_SCALER_AVAILABLE_STREAM_CONFIGURATIONS, maxResolution);
+    const int32_t scalerMinFrameDurationsTag = SessionConfigurationUtils::getAppropriateModeTag(
+            ANDROID_SCALER_AVAILABLE_MIN_FRAME_DURATIONS, maxResolution);
+    const int32_t scalerStallDurationsTag =
+                 SessionConfigurationUtils::getAppropriateModeTag(
+                        ANDROID_SCALER_AVAILABLE_STALL_DURATIONS, maxResolution);
+
+    const int32_t heicUltraHDRSizesTag =
+            SessionConfigurationUtils::getAppropriateModeTag(
+                    ANDROID_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STREAM_CONFIGURATIONS, maxResolution);
+    const int32_t heicUltraHDRStallDurationsTag =
+            SessionConfigurationUtils::getAppropriateModeTag(
+                    ANDROID_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STALL_DURATIONS, maxResolution);
+    const int32_t heicUltraHDRFrameDurationsTag =
+            SessionConfigurationUtils::getAppropriateModeTag(
+                 ANDROID_HEIC_AVAILABLE_HEIC_ULTRA_HDR_MIN_FRAME_DURATIONS, maxResolution);
+
+    auto& c = mCameraCharacteristics;
+    std::vector<std::tuple<size_t, size_t>> supportedP010Sizes, filteredSizes;
+    auto capabilities = c.find(ANDROID_REQUEST_AVAILABLE_CAPABILITIES);
+    if (capabilities.count == 0) {
+        ALOGE("%s: Supported camera capabilities is empty!", __FUNCTION__);
+        return BAD_VALUE;
+    }
+
+    auto end = capabilities.data.u8 + capabilities.count;
+    bool isTenBitOutputSupported = std::find(capabilities.data.u8, end,
+            ANDROID_REQUEST_AVAILABLE_CAPABILITIES_DYNAMIC_RANGE_TEN_BIT) != end;
+    if (!isTenBitOutputSupported) {
+        // No 10-bit support, nothing more to do.
+        return OK;
+    }
+
+    getSupportedSizes(c, scalerSizesTag,
+            static_cast<android_pixel_format_t>(HAL_PIXEL_FORMAT_YCBCR_P010), &supportedP010Sizes);
+    auto it = supportedP010Sizes.begin();
+    if (supportedP010Sizes.empty()) {
+        // Nothing to do in this case.
+        return OK;
+    }
+
+    std::vector<int32_t> heicUltraHDREntries;
+    int64_t stall = 0;
+    bool useHeic = false;
+    bool useGrid = false;
+    for (const auto& it : supportedP010Sizes) {
+        int32_t width = std::get<0>(it);
+        int32_t height = std::get<1>(it);
+        int32_t gainmapWidth = std::get<0>(it) / HeicCompositeStream::kGainmapScale;
+        int32_t gainmapHeight = std::get<1>(it) / HeicCompositeStream::kGainmapScale;
+        // Support gainmap sizes that are sufficiently aligned so CPU specific copy
+        // optimizations can be utilized without side effects.
+        if (((gainmapWidth % 64) == 0) && ((gainmapHeight % 2) == 0) &&
+                camera3::HeicCompositeStream::isSizeSupportedByHeifEncoder(width, height,
+                    &useHeic, &useGrid, &stall, nullptr /*hevcName*/,
+                    kFrameworkHeicAllowSWCodecs) &&
+                camera3::HeicCompositeStream::isSizeSupportedByHeifEncoder(gainmapWidth,
+                    gainmapHeight, &useHeic, &useGrid, &stall, nullptr /*hevcName*/,
+                    kFrameworkHeicAllowSWCodecs)) {
+            int32_t entry[4] = {HAL_PIXEL_FORMAT_BLOB, static_cast<int32_t> (std::get<0>(it)),
+                    static_cast<int32_t> (std::get<1>(it)),
+                    ANDROID_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STREAM_CONFIGURATIONS_OUTPUT };
+            heicUltraHDREntries.insert(heicUltraHDREntries.end(), entry, entry + 4);
+            filteredSizes.push_back(it);
+        }
+    }
+
+    std::vector<int64_t> heicUltraHDRMinDurations, heicUltraHDRStallDurations;
+    auto ret = deriveBlobDurationEntries(c, maxResolution, filteredSizes,
+                                         &heicUltraHDRStallDurations, &heicUltraHDRMinDurations);
+    if (ret != OK) {
+        return ret;
+    }
+
+    return insertStreamConfigTags(heicUltraHDRSizesTag, heicUltraHDRFrameDurationsTag,
+                                  heicUltraHDRStallDurationsTag, heicUltraHDREntries,
+                                  heicUltraHDRMinDurations, heicUltraHDRStallDurations, &c);
+}
+
+status_t CameraProviderManager::ProviderInfo::DeviceInfo3::insertStreamConfigTags(
+        int32_t sizeTag, int32_t minFrameDurationTag, int32_t stallDurationTag,
+        const std::vector<int32_t>& sizeEntries,
+        const std::vector<int64_t>& minFrameDurationEntries,
+        const std::vector<int64_t>& stallDurationEntries, CameraMetadata* c /*out*/) {
+    std::vector<int32_t> supportedChTags;
+    auto chTags = c->find(ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS);
+    if (chTags.count == 0) {
+        ALOGE("%s: No supported camera characteristics keys!", __FUNCTION__);
+        return BAD_VALUE;
+    }
+    supportedChTags.reserve(chTags.count + 3);
+    supportedChTags.insert(supportedChTags.end(), chTags.data.i32, chTags.data.i32 + chTags.count);
+    supportedChTags.push_back(sizeTag);
+    supportedChTags.push_back(minFrameDurationTag);
+    supportedChTags.push_back(stallDurationTag);
+    c->update(sizeTag, sizeEntries.data(), sizeEntries.size());
+    c->update(minFrameDurationTag, minFrameDurationEntries.data(), minFrameDurationEntries.size());
+    c->update(stallDurationTag, stallDurationEntries.data(), stallDurationEntries.size());
+    c->update(ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS, supportedChTags.data(),
+              supportedChTags.size());
+
+    return OK;
+}
+
+status_t CameraProviderManager::ProviderInfo::DeviceInfo3::deriveBlobDurationEntries(
+        const CameraMetadata& c, bool maxResolution,
+        const std::vector<std::tuple<size_t, size_t>>& filteredSizes,
+        std::vector<int64_t>* filteredStallDurations /*out*/,
+        std::vector<int64_t>* filteredMinDurations /*out*/) {
+    std::vector<int64_t> blobMinDurations, blobStallDurations;
+    const int32_t scalerMinFrameDurationsTag = SessionConfigurationUtils::getAppropriateModeTag(
+            ANDROID_SCALER_AVAILABLE_MIN_FRAME_DURATIONS, maxResolution);
+    const int32_t scalerStallDurationsTag = SessionConfigurationUtils::getAppropriateModeTag(
+            ANDROID_SCALER_AVAILABLE_STALL_DURATIONS, maxResolution);
+    // We use the jpeg stall and min frame durations to approximate the respective Heic UltraHDR
+    // durations.
+    getSupportedDurations(c, scalerMinFrameDurationsTag, HAL_PIXEL_FORMAT_BLOB, filteredSizes,
+                          &blobMinDurations);
+    getSupportedDurations(c, scalerStallDurationsTag, HAL_PIXEL_FORMAT_BLOB, filteredSizes,
+                          &blobStallDurations);
+    if (blobStallDurations.empty() || blobMinDurations.empty() ||
+        filteredSizes.size() != blobMinDurations.size() ||
+        blobMinDurations.size() != blobStallDurations.size()) {
+        ALOGE("%s: Unexpected number of available blob durations! %zu vs. %zu with "
+              "filteredSizes size: %zu",
+              __FUNCTION__, blobMinDurations.size(), blobStallDurations.size(),
+              filteredSizes.size());
+        return BAD_VALUE;
+    }
+
+    auto itDuration = blobMinDurations.begin();
+    auto itSize = filteredSizes.begin();
+    while (itDuration != blobMinDurations.end()) {
+        int64_t entry[4] = {HAL_PIXEL_FORMAT_BLOB, static_cast<int32_t>(std::get<0>(*itSize)),
+                            static_cast<int32_t>(std::get<1>(*itSize)), *itDuration};
+        filteredMinDurations->insert(filteredMinDurations->end(), entry, entry + 4);
+        itDuration++;
+        itSize++;
+    }
+
+    itDuration = blobStallDurations.begin();
+    itSize = filteredSizes.begin();
+    while (itDuration != blobStallDurations.end()) {
+        int64_t entry[4] = {HAL_PIXEL_FORMAT_BLOB, static_cast<int32_t>(std::get<0>(*itSize)),
+                            static_cast<int32_t>(std::get<1>(*itSize)), *itDuration};
+        filteredStallDurations->insert(filteredStallDurations->end(), entry, entry + 4);
+        itDuration++;
+        itSize++;
+    }
+
+    return OK;
+}
+
 status_t CameraProviderManager::ProviderInfo::DeviceInfo3::deriveJpegRTags(bool maxResolution) {
     if (kFrameworkJpegRDisabled || mCompositeJpegRDisabled) {
         return OK;
@@ -1310,13 +1479,6 @@ status_t CameraProviderManager::ProviderInfo::DeviceInfo3::deriveJpegRTags(bool 
                  ANDROID_JPEGR_AVAILABLE_JPEG_R_MIN_FRAME_DURATIONS, maxResolution);
 
     auto& c = mCameraCharacteristics;
-    std::vector<int32_t> supportedChTags;
-    auto chTags = c.find(ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS);
-    if (chTags.count == 0) {
-        ALOGE("%s: No supported camera characteristics keys!", __FUNCTION__);
-        return BAD_VALUE;
-    }
-
     std::vector<std::tuple<size_t, size_t>> supportedP010Sizes, supportedBlobSizes;
     auto capabilities = c.find(ANDROID_REQUEST_AVAILABLE_CAPABILITIES);
     if (capabilities.count == 0) {
@@ -1370,53 +1532,18 @@ status_t CameraProviderManager::ProviderInfo::DeviceInfo3::deriveJpegRTags(bool 
         jpegREntries.insert(jpegREntries.end(), entry, entry + 4);
     }
 
-    std::vector<int64_t> blobMinDurations, blobStallDurations;
     std::vector<int64_t> jpegRMinDurations, jpegRStallDurations;
-
-    // We use the jpeg stall and min frame durations to approximate the respective jpeg/r
-    // durations.
-    getSupportedDurations(c, scalerMinFrameDurationsTag, HAL_PIXEL_FORMAT_BLOB,
-            supportedP010Sizes, &blobMinDurations);
-    getSupportedDurations(c, scalerStallDurationsTag, HAL_PIXEL_FORMAT_BLOB,
-            supportedP010Sizes, &blobStallDurations);
-    if (blobStallDurations.empty() || blobMinDurations.empty() ||
-            supportedP010Sizes.size() != blobMinDurations.size() ||
-            blobMinDurations.size() != blobStallDurations.size()) {
-        ALOGE("%s: Unexpected number of available blob durations! %zu vs. %zu with "
-                "supportedP010Sizes size: %zu", __FUNCTION__, blobMinDurations.size(),
-                blobStallDurations.size(), supportedP010Sizes.size());
-        return BAD_VALUE;
+    auto ret = deriveBlobDurationEntries(c, maxResolution, supportedP010Sizes, &jpegRStallDurations,
+                                         &jpegRMinDurations);
+    if (ret != OK) {
+        return ret;
     }
 
-    auto itDuration = blobMinDurations.begin();
-    auto itSize = supportedP010Sizes.begin();
-    while (itDuration != blobMinDurations.end()) {
-        int64_t entry[4] = {HAL_PIXEL_FORMAT_BLOB, static_cast<int32_t> (std::get<0>(*itSize)),
-                static_cast<int32_t> (std::get<1>(*itSize)), *itDuration};
-        jpegRMinDurations.insert(jpegRMinDurations.end(), entry, entry + 4);
-        itDuration++; itSize++;
+    ret = insertStreamConfigTags(jpegRSizesTag, jpegRMinFrameDurationsTag, jpegRStallDurationsTag,
+                                 jpegREntries, jpegRMinDurations, jpegRStallDurations, &c);
+    if (ret != OK) {
+        return ret;
     }
-
-    itDuration = blobStallDurations.begin();
-    itSize = supportedP010Sizes.begin();
-    while (itDuration != blobStallDurations.end()) {
-        int64_t entry[4] = {HAL_PIXEL_FORMAT_BLOB, static_cast<int32_t> (std::get<0>(*itSize)),
-                static_cast<int32_t> (std::get<1>(*itSize)), *itDuration};
-        jpegRStallDurations.insert(jpegRStallDurations.end(), entry, entry + 4);
-        itDuration++; itSize++;
-    }
-
-    supportedChTags.reserve(chTags.count + 3);
-    supportedChTags.insert(supportedChTags.end(), chTags.data.i32,
-            chTags.data.i32 + chTags.count);
-    supportedChTags.push_back(jpegRSizesTag);
-    supportedChTags.push_back(jpegRMinFrameDurationsTag);
-    supportedChTags.push_back(jpegRStallDurationsTag);
-    c.update(jpegRSizesTag, jpegREntries.data(), jpegREntries.size());
-    c.update(jpegRMinFrameDurationsTag, jpegRMinDurations.data(), jpegRMinDurations.size());
-    c.update(jpegRStallDurationsTag, jpegRStallDurations.data(), jpegRStallDurations.size());
-    c.update(ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS, supportedChTags.data(),
-            supportedChTags.size());
 
     auto colorSpaces = c.find(ANDROID_REQUEST_AVAILABLE_COLOR_SPACE_PROFILES_MAP);
     if (colorSpaces.count > 0 && !maxResolution) {
@@ -1811,6 +1938,36 @@ status_t CameraProviderManager::ProviderInfo::DeviceInfo3::addAutoframingTags() 
     return res;
 }
 
+status_t CameraProviderManager::ProviderInfo::DeviceInfo3::addAePriorityModeTags() {
+    status_t res = OK;
+    auto& c = mCameraCharacteristics;
+
+    auto entry = c.find(ANDROID_CONTROL_AE_AVAILABLE_PRIORITY_MODES);
+    if (entry.count != 0) {
+        return res;
+    }
+
+    std::vector<int32_t> supportedChTags;
+    auto chTags = c.find(ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS);
+    if (chTags.count == 0) {
+        ALOGE("%s: No supported camera characteristics keys!", __FUNCTION__);
+        return BAD_VALUE;
+    }
+
+    std::vector<uint8_t> aePriorityAvailableModes = {
+            ANDROID_CONTROL_AE_PRIORITY_MODE_OFF };
+    supportedChTags.reserve(chTags.count + 1);
+    supportedChTags.insert(supportedChTags.end(), chTags.data.i32,
+            chTags.data.i32 + chTags.count);
+    supportedChTags.push_back(ANDROID_CONTROL_AE_AVAILABLE_PRIORITY_MODES);
+    c.update(ANDROID_CONTROL_AE_AVAILABLE_PRIORITY_MODES,
+            aePriorityAvailableModes.data(), aePriorityAvailableModes.size());
+    c.update(ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS, supportedChTags.data(),
+             supportedChTags.size());
+
+    return res;
+}
+
 status_t CameraProviderManager::ProviderInfo::DeviceInfo3::addPreCorrectionActiveArraySize() {
     status_t res = OK;
     auto& c = mCameraCharacteristics;
@@ -1872,6 +2029,67 @@ status_t CameraProviderManager::ProviderInfo::DeviceInfo3::addReadoutTimestampTa
     return res;
 }
 
+status_t CameraProviderManager::ProviderInfo::DeviceInfo3::addColorCorrectionAvailableModesTag(
+            CameraMetadata& c) {
+    status_t res = OK;
+
+    // The COLOR_CORRECTION_AVAILABLE_MODES key advertises the
+    // supported color correction modes. Previously, if color correction was
+    // supported (COLOR_CORRECTION_MODE was not null), it was assumed
+    // that all existing options, TRANSFORM_MATRIX, FAST, and HIGH_QUALITY, were supported.
+    // However, a new optional mode, CCT, has been introduced. To indicate
+    // whether CCT is supported, the camera device must now explicitly list all
+    // available modes using the COLOR_CORRECTION_AVAILABLE_MODES key.
+    // If the camera device doesn't set COLOR_CORRECTION_AVAILABLE_MODES,
+    // this code falls back to checking for the COLOR_CORRECTION_MODE key.
+    // If present, this adds the required supported modes TRANSFORM_MATRIX,
+    // FAST, HIGH_QUALITY.
+    auto entry = c.find(ANDROID_COLOR_CORRECTION_AVAILABLE_MODES);
+    if (entry.count != 0) {
+        return res;
+    }
+
+    auto reqKeys = c.find(ANDROID_REQUEST_AVAILABLE_REQUEST_KEYS);
+    if (reqKeys.count == 0) {
+        ALOGE("%s: No supported camera request keys!", __FUNCTION__);
+        return BAD_VALUE;
+    }
+
+    bool colorCorrectionModeAvailable = false;
+    for (size_t i = 0; i < reqKeys.count; i++) {
+        if (reqKeys.data.i32[i] == ANDROID_COLOR_CORRECTION_MODE) {
+            colorCorrectionModeAvailable = true;
+            break;
+        }
+    }
+
+    if (!colorCorrectionModeAvailable) {
+        return res;
+    }
+
+    std::vector<int32_t> supportedChTags;
+    auto chTags = c.find(ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS);
+    if (chTags.count == 0) {
+        ALOGE("%s: No supported camera characteristics keys!", __FUNCTION__);
+        return BAD_VALUE;
+    }
+
+    std::vector<uint8_t> colorCorrectionAvailableModes = {
+            ANDROID_COLOR_CORRECTION_MODE_TRANSFORM_MATRIX,
+            ANDROID_COLOR_CORRECTION_MODE_FAST,
+            ANDROID_COLOR_CORRECTION_MODE_HIGH_QUALITY };
+    supportedChTags.reserve(chTags.count + 1);
+    supportedChTags.insert(supportedChTags.end(), chTags.data.i32,
+            chTags.data.i32 + chTags.count);
+    supportedChTags.push_back(ANDROID_COLOR_CORRECTION_AVAILABLE_MODES);
+    c.update(ANDROID_COLOR_CORRECTION_AVAILABLE_MODES,
+            colorCorrectionAvailableModes.data(), colorCorrectionAvailableModes.size());
+    c.update(ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS, supportedChTags.data(),
+             supportedChTags.size());
+
+    return res;
+}
+
 status_t CameraProviderManager::ProviderInfo::DeviceInfo3::addSessionConfigQueryVersionTag() {
     sp<ProviderInfo> parentProvider = mParentProvider.promote();
     if (parentProvider == nullptr) {
@@ -1880,15 +2098,95 @@ status_t CameraProviderManager::ProviderInfo::DeviceInfo3::addSessionConfigQuery
 
     int versionCode = ANDROID_INFO_SESSION_CONFIGURATION_QUERY_VERSION_UPSIDE_DOWN_CAKE;
     IPCTransport ipcTransport = parentProvider->getIPCTransport();
-    int deviceVersion = HARDWARE_DEVICE_API_VERSION(mVersion.get_major(), mVersion.get_minor());
-    if (ipcTransport == IPCTransport::AIDL
-            && deviceVersion >= CAMERA_DEVICE_API_VERSION_1_3) {
-        versionCode = ANDROID_INFO_SESSION_CONFIGURATION_QUERY_VERSION_VANILLA_ICE_CREAM;
+    auto& c = mCameraCharacteristics;
+    status_t res = OK;
+    if (ipcTransport != IPCTransport::AIDL) {
+        res = c.update(ANDROID_INFO_SESSION_CONFIGURATION_QUERY_VERSION, &versionCode, 1);
+        mSessionConfigQueryVersion = versionCode;
+        return res;
     }
 
-    auto& c = mCameraCharacteristics;
-    status_t res = c.update(ANDROID_INFO_SESSION_CONFIGURATION_QUERY_VERSION, &versionCode, 1);
+    int deviceVersion = HARDWARE_DEVICE_API_VERSION(mVersion.get_major(), mVersion.get_minor());
+    if (deviceVersion == CAMERA_DEVICE_API_VERSION_1_3) {
+        versionCode = ANDROID_INFO_SESSION_CONFIGURATION_QUERY_VERSION_VANILLA_ICE_CREAM;
+    } else if (deviceVersion >= CAMERA_DEVICE_API_VERSION_1_4) {
+        if (flags::feature_combination_baklava()) {
+            versionCode = ANDROID_INFO_SESSION_CONFIGURATION_QUERY_VERSION_BAKLAVA;
+        } else {
+            versionCode = ANDROID_INFO_SESSION_CONFIGURATION_QUERY_VERSION_VANILLA_ICE_CREAM;
+        }
+    }
+    res = c.update(ANDROID_INFO_SESSION_CONFIGURATION_QUERY_VERSION, &versionCode, 1);
     mSessionConfigQueryVersion = versionCode;
+    return res;
+}
+
+bool CameraProviderManager::ProviderInfo::DeviceInfo3::isAutomotiveDevice() {
+    // Checks the property ro.hardware.type and returns true if it is
+    // automotive.
+    char value[PROPERTY_VALUE_MAX] = {0};
+    property_get("ro.hardware.type", value, "");
+    return strncmp(value, "automotive", PROPERTY_VALUE_MAX) == 0;
+}
+
+status_t CameraProviderManager::ProviderInfo::DeviceInfo3::addSharedSessionConfigurationTags() {
+    status_t res = OK;
+    if (flags::camera_multi_client()) {
+        const int32_t sharedColorSpaceTag = ANDROID_SHARED_SESSION_COLOR_SPACE;
+        const int32_t sharedOutputConfigurationsTag = ANDROID_SHARED_SESSION_OUTPUT_CONFIGURATIONS;
+        auto& c = mCameraCharacteristics;
+        uint8_t colorSpace = 0;
+
+        res = c.update(sharedColorSpaceTag, &colorSpace, 1);
+
+        // ToDo: b/372321187 Hardcoding the shared session configuration. Update the code to
+        // take these values from XML instead.
+        std::vector<int64_t> sharedOutputConfigEntries;
+        int64_t surfaceType1 =  OutputConfiguration::SURFACE_TYPE_IMAGE_READER;
+        int64_t width = 1280;
+        int64_t height = 800;
+        int64_t format1 = HAL_PIXEL_FORMAT_RGBA_8888;
+        int64_t mirrorMode = OutputConfiguration::MIRROR_MODE_AUTO;
+        int64_t timestampBase = OutputConfiguration::TIMESTAMP_BASE_DEFAULT;
+        int64_t usage1 = 3;
+        int64_t dataspace = 0;
+        int64_t useReadoutTimestamp = 0;
+        int64_t streamUseCase = ANDROID_SCALER_AVAILABLE_STREAM_USE_CASES_DEFAULT;
+        int64_t physicalCamIdLen = 0;
+
+        // Stream 1 configuration hardcoded
+        sharedOutputConfigEntries.push_back(surfaceType1);
+        sharedOutputConfigEntries.push_back(width);
+        sharedOutputConfigEntries.push_back(height);
+        sharedOutputConfigEntries.push_back(format1);
+        sharedOutputConfigEntries.push_back(mirrorMode);
+        sharedOutputConfigEntries.push_back(useReadoutTimestamp);
+        sharedOutputConfigEntries.push_back(timestampBase);
+        sharedOutputConfigEntries.push_back(dataspace);
+        sharedOutputConfigEntries.push_back(usage1);
+        sharedOutputConfigEntries.push_back(streamUseCase);
+        sharedOutputConfigEntries.push_back(physicalCamIdLen);
+
+        // Stream 2 configuration hardcoded
+        int64_t surfaceType2 =  OutputConfiguration::SURFACE_TYPE_SURFACE_VIEW;
+        int64_t format2 = HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED;
+        int64_t usage2 = 0;
+
+        sharedOutputConfigEntries.push_back(surfaceType2);
+        sharedOutputConfigEntries.push_back(width);
+        sharedOutputConfigEntries.push_back(height);
+        sharedOutputConfigEntries.push_back(format2);
+        sharedOutputConfigEntries.push_back(mirrorMode);
+        sharedOutputConfigEntries.push_back(useReadoutTimestamp);
+        sharedOutputConfigEntries.push_back(timestampBase);
+        sharedOutputConfigEntries.push_back(dataspace);
+        sharedOutputConfigEntries.push_back(usage2);
+        sharedOutputConfigEntries.push_back(streamUseCase);
+        sharedOutputConfigEntries.push_back(physicalCamIdLen);
+
+        res = c.update(sharedOutputConfigurationsTag, sharedOutputConfigEntries.data(),
+                sharedOutputConfigEntries.size());
+    }
     return res;
 }
 
@@ -1954,7 +2252,7 @@ status_t CameraProviderManager::ProviderInfo::DeviceInfo3::fillHeicStreamCombina
         bool useGrid = false;
         if (camera3::HeicCompositeStream::isSizeSupportedByHeifEncoder(
                 halStreamConfigs.data.i32[i+1], halStreamConfigs.data.i32[i+2],
-                &useHeic, &useGrid, &stall)) {
+                &useHeic, &useGrid, &stall, nullptr /*hevcName*/, kFrameworkHeicAllowSWCodecs)) {
             if (useGrid != (format == HAL_PIXEL_FORMAT_YCBCR_420_888)) {
                 continue;
             }
@@ -2151,14 +2449,8 @@ status_t CameraProviderManager::tryToInitializeAidlProviderLocked(
         const std::string& providerName, const sp<ProviderInfo>& providerInfo) {
     using aidl::android::hardware::camera::provider::ICameraProvider;
 
-    std::shared_ptr<ICameraProvider> interface;
-    if (flags::delay_lazy_hal_instantiation()) {
-        // Only get remote instance if already running. Lazy Providers will be
-        // woken up later.
-        interface = mAidlServiceProxy->tryGetService(providerName);
-    } else {
-        interface = mAidlServiceProxy->getService(providerName);
-    }
+    // Only get remote instance if already running. Lazy Providers will be woken up later.
+    std::shared_ptr<ICameraProvider> interface = mAidlServiceProxy->tryGetService(providerName);
 
     if (interface == nullptr) {
         ALOGW("%s: AIDL Camera provider HAL '%s' is not actually available", __FUNCTION__,
@@ -2845,7 +3137,7 @@ status_t CameraProviderManager::ProviderInfo::DeviceInfo3::getCameraInfo(
         hardware::CameraInfo *info) const {
     if (info == nullptr) return BAD_VALUE;
 
-    bool freeform_compat_enabled = wm_flags::camera_compat_for_freeform();
+    bool freeform_compat_enabled = wm_flags::enable_camera_compat_for_desktop_windowing();
     if (!freeform_compat_enabled &&
             rotationOverride > hardware::ICameraService::ROTATION_OVERRIDE_OVERRIDE_TO_PORTRAIT) {
         ALOGW("Camera compat freeform flag disabled but rotation override is %d", rotationOverride);

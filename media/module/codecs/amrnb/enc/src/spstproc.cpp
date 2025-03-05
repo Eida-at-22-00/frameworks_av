@@ -192,6 +192,7 @@ void subframePostProc(
     Word16 i;
     Word16 j;
     Word16 temp;
+    Word32 mul;
     Word32 L_temp;
     Word32 L_temp2;
     Word16 tempShift;
@@ -262,8 +263,10 @@ void subframePostProc(
          */
         L_temp     = ((Word32) * (p_exc++) * pitch_fac) << 1;
         L_temp2    = ((Word32) * (p_exc--) * pitch_fac) << 1;
-        L_temp    += ((Word32) * (p_code++) * gain_code) << 1;
-        L_temp2   += ((Word32) * (p_code++) * gain_code) << 1;
+        __builtin_mul_overflow(*(p_code++), gain_code, &mul);
+        __builtin_add_overflow(L_temp, mul << 1, &L_temp);
+        __builtin_mul_overflow(*(p_code++), gain_code, &mul);
+        __builtin_add_overflow(L_temp2, mul << 1, &L_temp2);
         L_temp   <<=  tempShift;
         L_temp2  <<=  tempShift;
         *(p_exc++) = (Word16)((L_temp  + 0x08000L) >> 16);

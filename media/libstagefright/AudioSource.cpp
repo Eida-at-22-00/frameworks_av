@@ -497,9 +497,9 @@ status_t AudioSource::setInputDevice(audio_port_handle_t deviceId) {
     return NO_INIT;
 }
 
-status_t AudioSource::getRoutedDeviceId(audio_port_handle_t* deviceId) {
+status_t AudioSource::getRoutedDeviceIds(DeviceIdVector& deviceIds) {
     if (mRecord != 0) {
-        *deviceId = mRecord->getRoutedDeviceId();
+        deviceIds = mRecord->getRoutedDeviceIds();
         return NO_ERROR;
     }
     return NO_INIT;

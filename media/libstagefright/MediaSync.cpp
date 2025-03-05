@@ -752,8 +752,7 @@ void MediaSync::returnBufferToInput_l(
     status_t status = mInput->attachBuffer(&consumerSlot, oldBuffer);
     ALOGE_IF(status != NO_ERROR, "attaching buffer to input failed (%d)", status);
     if (status == NO_ERROR) {
-        status = mInput->releaseBuffer(consumerSlot, 0 /* frameNumber */,
-                EGL_NO_DISPLAY, EGL_NO_SYNC_KHR, fence);
+        status = mInput->releaseBuffer(consumerSlot, 0 /* frameNumber */, fence);
         ALOGE_IF(status != NO_ERROR, "releasing buffer to input failed (%d)", status);
     }
 

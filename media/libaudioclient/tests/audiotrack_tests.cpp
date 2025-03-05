@@ -157,20 +157,21 @@ TEST(AudioTrackTest, TestAudioCbNotifier) {
     EXPECT_EQ(OK, ap->start()) << "audio track start failed";
     EXPECT_EQ(OK, ap->onProcess());
     EXPECT_EQ(OK, cb->waitForAudioDeviceCb());
-    const auto [oldAudioIo, oldDeviceId] = cbOld->getLastPortAndDevice();
+    const auto [oldAudioIo, oldDeviceIds] = cbOld->getLastPortAndDevices();
     EXPECT_EQ(AUDIO_IO_HANDLE_NONE, oldAudioIo);
-    EXPECT_EQ(AUDIO_PORT_HANDLE_NONE, oldDeviceId);
-    const auto [audioIo, deviceId] = cb->getLastPortAndDevice();
+    EXPECT_TRUE(oldDeviceIds.empty());
+    const auto [audioIo, deviceIds] = cb->getLastPortAndDevices();
     EXPECT_NE(AUDIO_IO_HANDLE_NONE, audioIo);
-    EXPECT_NE(AUDIO_PORT_HANDLE_NONE, deviceId);
+    EXPECT_FALSE(deviceIds.empty());
     EXPECT_EQ(audioIo, ap->getAudioTrackHandle()->getOutput());
-    EXPECT_EQ(deviceId, ap->getAudioTrackHandle()->getRoutedDeviceId());
+    DeviceIdVector routedDeviceIds = ap->getAudioTrackHandle()->getRoutedDeviceIds();
+    EXPECT_TRUE(areDeviceIdsEqual(routedDeviceIds, deviceIds));
     String8 keys;
     keys = ap->getAudioTrackHandle()->getParameters(keys);
     if (!keys.empty()) {
         std::cerr << "track parameters :: " << keys << std::endl;
     }
-    EXPECT_TRUE(checkPatchPlayback(audioIo, deviceId));
+    EXPECT_TRUE(checkPatchPlayback(audioIo, deviceIds));
     EXPECT_EQ(BAD_VALUE, ap->getAudioTrackHandle()->removeAudioDeviceCallback(nullptr));
     EXPECT_EQ(INVALID_OPERATION, ap->getAudioTrackHandle()->removeAudioDeviceCallback(cbOld));
     EXPECT_EQ(OK, ap->getAudioTrackHandle()->removeAudioDeviceCallback(cb));

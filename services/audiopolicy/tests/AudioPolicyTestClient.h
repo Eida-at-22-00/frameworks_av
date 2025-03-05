@@ -37,7 +37,7 @@ public:
                         audio_config_base_t* /*mixerConfig*/,
                         const sp<DeviceDescriptorBase>& /*device*/,
                         uint32_t* /*latencyMs*/,
-                        audio_output_flags_t /*flags*/,
+                        audio_output_flags_t* /*flags*/,
                         audio_attributes_t /*attributes*/) override { return NO_INIT; }
     audio_io_handle_t openDuplicateOutput(audio_io_handle_t /*output1*/,
                                           audio_io_handle_t /*output2*/) override {
@@ -56,11 +56,13 @@ public:
     status_t closeInput(audio_io_handle_t /*input*/) override { return NO_INIT; }
     status_t setStreamVolume(audio_stream_type_t /*stream*/,
                              float /*volume*/,
+                             bool /*muted*/,
                              audio_io_handle_t /*output*/,
                              int /*delayMs*/) override { return NO_INIT; }
 
-    status_t setPortsVolume(const std::vector<audio_port_handle_t>& /*ports*/, float /*volume*/,
-            audio_io_handle_t /*output*/, int /*delayMs*/) override { return NO_INIT; }
+    status_t setPortsVolume(const std::vector<audio_port_handle_t> & /*ports*/, float /*volume*/,
+                            bool /*muted*/, audio_io_handle_t /*output*/,
+                            int /*delayMs*/) override { return NO_INIT; }
 
     void setParameters(audio_io_handle_t /*ioHandle*/,
                        const String8& /*keyValuePairs*/,
@@ -119,6 +121,16 @@ public:
     status_t setTracksInternalMute(
             const std::vector<media::TrackInternalMuteInfo>& /*tracksInternalMute*/) override {
         return INVALID_OPERATION;
+    }
+
+    status_t getMmapPolicyInfos(
+            media::audio::common::AudioMMapPolicyType /*policyType*/,
+            std::vector<media::audio::common::AudioMMapPolicyInfo>* /*policyInfos*/) override {
+        return INVALID_OPERATION;
+    }
+    error::BinderResult<bool> checkPermissionForInput(const AttributionSourceState& /* attr */,
+                                                              const PermissionReqs& /* req */) {
+        return true;
     }
 };
 

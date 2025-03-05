@@ -72,6 +72,10 @@ struct H2BCameraServiceListener :
         // empty implementation
         return binder::Status::ok();
     }
+    virtual binder::Status onCameraOpenedInSharedMode(const std::string& /*cameraId*/,
+            const std::string& /*clientPackageId*/, int32_t /*deviceId*/, bool /*primaryClient*/) {
+        return binder::Status::ok();
+    }
 };
 
 } // implementation

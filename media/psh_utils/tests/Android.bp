@@ -15,9 +15,11 @@ cc_test {
     ],
     shared_libs: [
         "libbase",
+        "libbinder",
         "libbinder_ndk",
         "libcutils",
         "liblog",
+        "libmediautils",
         "libutils",
     ],
     static_libs: [

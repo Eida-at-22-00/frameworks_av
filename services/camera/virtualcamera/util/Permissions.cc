@@ -20,7 +20,7 @@
 #include "Permissions.h"
 
 #include "binder/PermissionCache.h"
-#include "log/log.h"
+#include "log/log_main.h"
 
 namespace android {
 namespace companion {
@@ -39,8 +39,14 @@ bool PermissionsProxyImpl::checkCallingPermission(
   const bool hasPermission = PermissionCache::checkCallingPermission(
       String16(permission.c_str()), &pid, &uid);
 
-  ALOGV("%s: Checking %s permission for pid %d uid %d: %s", __func__,
-        permission.c_str(), pid, uid, hasPermission ? "granted" : "denied");
+  if (hasPermission) {
+    ALOGV("%s: Checking %s permission for pid %d uid %d: granted", __func__,
+          permission.c_str(), pid, uid);
+  } else {
+    ALOGW("%s: Checking %s permission for pid %d uid %d: denied", __func__,
+          permission.c_str(), pid, uid);
+  }
+
   return hasPermission;
 }
 }  // namespace

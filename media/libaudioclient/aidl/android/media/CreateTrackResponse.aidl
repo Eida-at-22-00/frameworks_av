@@ -33,8 +33,8 @@ parcelable CreateTrackResponse {
     int flags;
     long frameCount;
     long notificationFrameCount;
-    /** Interpreted as audio_port_handle_t. */
-    int selectedDeviceId;
+    /** Interpreted as audio_port_handle_t[]. */
+    int[] selectedDeviceIds;
     int sessionId;
     int sampleRate;
     AudioStreamType streamType;

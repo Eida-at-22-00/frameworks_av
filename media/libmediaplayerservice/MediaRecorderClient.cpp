@@ -409,10 +409,13 @@ MediaRecorderClient::AudioDeviceUpdatedNotifier::~AudioDeviceUpdatedNotifier() {
 
 void MediaRecorderClient::AudioDeviceUpdatedNotifier::onAudioDeviceUpdate(
         audio_io_handle_t audioIo,
-        audio_port_handle_t deviceId) {
+        const DeviceIdVector& deviceIds) {
+    ALOGD("onAudioDeviceUpdate deviceIds: %s", toString(deviceIds).c_str());
     sp<IMediaRecorderClient> listener = mListener.promote();
     if (listener != NULL) {
-        listener->notify(MEDIA_RECORDER_AUDIO_ROUTING_CHANGED, audioIo, deviceId);
+        // Java should query the new device ids once it gets the event.
+        // TODO(b/378505346): Pass the deviceIds to Java to avoid race conditions.
+        listener->notify(MEDIA_RECORDER_AUDIO_ROUTING_CHANGED, audioIo, 0 /*ext2*/);
     } else {
         ALOGW("listener for process %d death is gone", MEDIA_RECORDER_AUDIO_ROUTING_CHANGED);
     }
@@ -550,11 +553,11 @@ status_t MediaRecorderClient::setInputDevice(audio_port_handle_t deviceId) {
     return NO_INIT;
 }
 
-status_t MediaRecorderClient::getRoutedDeviceId(audio_port_handle_t* deviceId) {
-    ALOGV("getRoutedDeviceId");
+status_t MediaRecorderClient::getRoutedDeviceIds(DeviceIdVector& deviceIds) {
+    ALOGV("getRoutedDeviceIds");
     Mutex::Autolock lock(mLock);
     if (mRecorder != NULL) {
-        return mRecorder->getRoutedDeviceId(deviceId);
+        return mRecorder->getRoutedDeviceIds(deviceIds);
     }
     return NO_INIT;
 }

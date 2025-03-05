@@ -69,7 +69,7 @@ struct MediaRecorderBase {
     virtual status_t setInputSurface(const sp<PersistentSurface>& surface) = 0;
     virtual sp<IGraphicBufferProducer> querySurfaceMediaSource() const = 0;
     virtual status_t setInputDevice(audio_port_handle_t deviceId) = 0;
-    virtual status_t getRoutedDeviceId(audio_port_handle_t* deviceId) = 0;
+    virtual status_t getRoutedDeviceIds(DeviceIdVector& deviceIds) = 0;
     virtual void setAudioDeviceCallback(const sp<AudioSystem::AudioDeviceCallback>& callback) = 0;
     virtual status_t enableAudioDeviceCallback(bool enabled) = 0;
     virtual status_t getActiveMicrophones(

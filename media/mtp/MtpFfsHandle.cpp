@@ -20,7 +20,6 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <memory>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -298,9 +297,11 @@ int MtpFfsHandle::start(bool ptp) {
 
 void MtpFfsHandle::close() {
     // Join all child threads before destruction
-    for (auto& thread : mChildThreads) {
-        thread.join();
+    int count = mChildThreads.size();
+    for (int i = 0; i < count; i++) {
+        mChildThreads[i].join();
     }
+    mChildThreads.clear();
 
     io_destroy(mCtx);
     closeEndpoints();

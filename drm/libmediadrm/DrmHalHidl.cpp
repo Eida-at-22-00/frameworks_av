@@ -339,7 +339,7 @@ std::vector<sp<IDrmFactory>> DrmHalHidl::makeDrmFactories() {
             DrmUtils::LOG2BI("makeDrmFactories: using default passthrough drm instance");
             factories.push_back(passthrough);
         } else {
-            DrmUtils::LOG2BE("Failed to find passthrough drm factories");
+            DrmUtils::LOG2BW("Failed to find passthrough drm factories");
         }
     }
     return factories;

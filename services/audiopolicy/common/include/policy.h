@@ -22,30 +22,76 @@
 
 #include <media/AudioContainers.h>
 
+#include <string.h>
+
 namespace android {
 
 using StreamTypeVector = std::vector<audio_stream_type_t>;
+
+#define AUDIO_ENUM_QUOTE(x) #x
+#define AUDIO_ENUM_STRINGIFY(x) AUDIO_ENUM_QUOTE(x)
+#define AUDIO_DEFINE_ENUM_SYMBOL_V(symbol, value) symbol = value,
+#define AUDIO_DEFINE_STRINGIFY_CASE_V(symbol, _) case symbol: return AUDIO_ENUM_STRINGIFY(symbol);
+#define AUDIO_DEFINE_PARSE_CASE_V(symbol, _) \
+    if (strcmp(s, AUDIO_ENUM_STRINGIFY(symbol)) == 0) { *t = symbol; return true; } else
+#define AUDIO_DEFINE_MAP_ENTRY_V(symbol, _) { AUDIO_ENUM_STRINGIFY(symbol), symbol },
 
 /**
  * Legacy audio policy product strategies IDs. These strategies are supported by the default
  * policy engine.
  * IMPORTANT NOTE: the order of this enum is important as it determines the priority
- * between active strategies for routing decisions: lower enum value => higher prioriy
+ * between active strategies for routing decisions: lower enum value => higher priority
  */
+#define AUDIO_LEGACY_STRATEGY_LIST_DEF(V)      \
+    V(STRATEGY_NONE, -1)                       \
+    V(STRATEGY_PHONE, 0)                       \
+    V(STRATEGY_SONIFICATION, 1)                \
+    V(STRATEGY_ENFORCED_AUDIBLE, 2)            \
+    V(STRATEGY_ACCESSIBILITY, 3)               \
+    V(STRATEGY_SONIFICATION_RESPECTFUL, 4)     \
+    V(STRATEGY_MEDIA, 5)                       \
+    V(STRATEGY_DTMF, 6)                        \
+    V(STRATEGY_CALL_ASSISTANT, 7)              \
+    V(STRATEGY_TRANSMITTED_THROUGH_SPEAKER, 8) \
+    V(STRATEGY_REROUTING, 9)                   \
+    V(STRATEGY_PATCH, 10)
+
 enum legacy_strategy {
-    STRATEGY_NONE = -1,
-    STRATEGY_PHONE,
-    STRATEGY_SONIFICATION,
-    STRATEGY_ENFORCED_AUDIBLE,
-    STRATEGY_ACCESSIBILITY,
-    STRATEGY_SONIFICATION_RESPECTFUL,
-    STRATEGY_MEDIA,
-    STRATEGY_DTMF,
-    STRATEGY_CALL_ASSISTANT,
-    STRATEGY_TRANSMITTED_THROUGH_SPEAKER,
-    STRATEGY_REROUTING,
-    STRATEGY_PATCH,
+    AUDIO_LEGACY_STRATEGY_LIST_DEF(AUDIO_DEFINE_ENUM_SYMBOL_V)
 };
+
+inline const char* legacy_strategy_to_string(legacy_strategy t) {
+    switch (t) {
+    AUDIO_LEGACY_STRATEGY_LIST_DEF(AUDIO_DEFINE_STRINGIFY_CASE_V)
+    }
+    return "";
+}
+
+inline bool legacy_strategy_from_string(const char* s, legacy_strategy* t) {
+    AUDIO_LEGACY_STRATEGY_LIST_DEF(AUDIO_DEFINE_PARSE_CASE_V)
+    return false;
+}
+
+namespace audio_policy {
+
+struct legacy_strategy_map { const char *name; legacy_strategy id; };
+
+inline std::vector<legacy_strategy_map> getLegacyStrategyMap() {
+    return std::vector<legacy_strategy_map> {
+    AUDIO_LEGACY_STRATEGY_LIST_DEF(AUDIO_DEFINE_MAP_ENTRY_V)
+    };
+}
+
+}  // namespace audio_policy
+
+#undef AUDIO_LEGACY_STRATEGY_LIST_DEF
+
+#undef AUDIO_DEFINE_MAP_ENTRY_V
+#undef AUDIO_DEFINE_PARSE_CASE_V
+#undef AUDIO_DEFINE_STRINGIFY_CASE_V
+#undef AUDIO_DEFINE_ENUM_SYMBOL_V
+#undef AUDIO_ENUM_STRINGIFY
+#undef AUDIO_ENUM_QUOTE
 
 static const audio_attributes_t defaultAttr = AUDIO_ATTRIBUTES_INITIALIZER;
 

@@ -368,16 +368,21 @@ status_t Hal2AidlMapper::findOrCreateMixPortConfig(
         const AudioConfig& config, const std::optional<AudioIoFlags>& flags, int32_t ioHandle,
         AudioSource source, const std::set<int32_t>& destinationPortIds,
         AudioPortConfig* portConfig, bool* created) {
-    // These flags get removed one by one in this order when retrying port finding.
-    static const std::vector<AudioInputFlags> kOptionalInputFlags{
-        AudioInputFlags::FAST, AudioInputFlags::RAW, AudioInputFlags::VOIP_TX };
     if (auto portConfigIt = findPortConfig(config, flags, ioHandle);
             portConfigIt == mPortConfigs.end() && flags.has_value()) {
-        auto optionalInputFlagsIt = kOptionalInputFlags.begin();
+        // These input flags get removed one by one in this order when retrying port finding.
+        std::vector<AudioInputFlags> optionalInputFlags {
+            AudioInputFlags::FAST, AudioInputFlags::RAW, AudioInputFlags::VOIP_TX };
+        // For remote submix input, retry with direct input flag removed as the remote submix
+        // input is not expected to manipulate the contents of the audio stream.
+        if (mRemoteSubmixIn.has_value()) {
+            optionalInputFlags.push_back(AudioInputFlags::DIRECT);
+        }
+        auto optionalInputFlagsIt = optionalInputFlags.begin();
         AudioIoFlags matchFlags = flags.value();
         auto portsIt = findPort(config, matchFlags, destinationPortIds);
         while (portsIt == mPorts.end() && matchFlags.getTag() == AudioIoFlags::Tag::input
-                && optionalInputFlagsIt != kOptionalInputFlags.end()) {
+                && optionalInputFlagsIt != optionalInputFlags.end()) {
             if (!isBitPositionFlagSet(
                             matchFlags.get<AudioIoFlags::Tag::input>(), *optionalInputFlagsIt)) {
                 ++optionalInputFlagsIt;
@@ -392,6 +397,36 @@ status_t Hal2AidlMapper::findOrCreateMixPortConfig(
                         config.toString().c_str(), flags.value().toString().c_str(),
                         matchFlags.toString().c_str());
         }
+        // These output flags get removed one by one in this order when retrying port finding.
+        std::vector<AudioOutputFlags> optionalOutputFlags { };
+        // For remote submix output, retry with these output flags removed one by one:
+        // 1. DIRECT: remote submix outputs are expected not to manipulate the contents of the
+        //            audio stream.
+        // 2. IEC958_NONAUDIO: remote submix outputs are not connected to ALSA and do not require
+        //                     non audio signalling.
+        if (mRemoteSubmixOut.has_value()) {
+            optionalOutputFlags.push_back(AudioOutputFlags::DIRECT);
+            optionalOutputFlags.push_back(AudioOutputFlags::IEC958_NONAUDIO);
+        }
+        auto optionalOutputFlagsIt = optionalOutputFlags.begin();
+        matchFlags = flags.value();
+        while (portsIt == mPorts.end() && matchFlags.getTag() == AudioIoFlags::Tag::output
+                && optionalOutputFlagsIt != optionalOutputFlags.end()) {
+            if (!isBitPositionFlagSet(
+                            matchFlags.get<AudioIoFlags::Tag::output>(),*optionalOutputFlagsIt)) {
+                ++optionalOutputFlagsIt;
+                continue;
+            }
+            matchFlags.set<AudioIoFlags::Tag::output>(matchFlags.get<AudioIoFlags::Tag::output>() &
+                    ~makeBitPositionFlagMask(*optionalOutputFlagsIt++));
+            portsIt = findPort(config, matchFlags, destinationPortIds);
+            AUGMENT_LOG(I,
+                        "mix port for config %s, flags %s was not found"
+                        "retried with flags %s",
+                        config.toString().c_str(), flags.value().toString().c_str(),
+                        matchFlags.toString().c_str());
+        }
+
         if (portsIt == mPorts.end()) {
             AUGMENT_LOG(E, "mix port for config %s, flags %s is not found",
                         config.toString().c_str(), matchFlags.toString().c_str());
@@ -792,7 +827,8 @@ status_t Hal2AidlMapper::prepareToOpenStream(
     status_t status = prepareToOpenStreamHelper(ioHandle, devicePortConfig.portId,
             devicePortConfig.id, flags, source, initialConfig, cleanups, config,
             mixPortConfig, patch);
-    if (status != OK) {
+    if (status != OK && !(mRemoteSubmixOut.has_value() &&
+                initialConfig.base.format.type != AudioFormatType::PCM)) {
         // If using the client-provided config did not work out for establishing a mix port config
         // or patching, try with the device port config. Note that in general device port config and
         // mix port config are not required to be the same, however they must match if the HAL

@@ -35,7 +35,8 @@ using ::ndk::ScopedAStatus;
 class DrmRemotelyProvisionedComponent : public BnRemotelyProvisionedComponent {
   public:
     DrmRemotelyProvisionedComponent(std::shared_ptr<IDrmPlugin> drm, std::string drmVendor,
-                                    std::string drmDesc, std::vector<uint8_t> bcc);
+                                    std::string drmDesc, std::vector<uint8_t> bcc,
+                                    std::vector<uint8_t> bcc_signature);
     ScopedAStatus getHardwareInfo(RpcHardwareInfo* info) override;
 
     ScopedAStatus generateEcdsaP256KeyPair(bool testMode, MacedPublicKey* macedPublicKey,
@@ -60,6 +61,7 @@ class DrmRemotelyProvisionedComponent : public BnRemotelyProvisionedComponent {
     std::string mDrmVendor;
     std::string mDrmDesc;
     std::vector<uint8_t> mBcc;
+    std::vector<uint8_t> mBccSignature;
 };
 }  // namespace android::mediadrm
 

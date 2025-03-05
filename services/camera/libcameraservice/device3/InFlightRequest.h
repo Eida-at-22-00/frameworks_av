@@ -198,6 +198,9 @@ struct InFlightRequest {
     // Current output transformation
     int32_t transform;
 
+    // Whether the app explicitly uses ZOOM_RATIO
+    bool useZoomRatio;
+
     static const nsecs_t kDefaultMinExpectedDuration = 33333333; // 33 ms
     static const nsecs_t kDefaultMaxExpectedDuration = 100000000; // 100 ms
 
@@ -220,14 +223,15 @@ struct InFlightRequest {
             rotateAndCropAuto(false),
             autoframingAuto(false),
             requestTimeNs(0),
-            transform(-1) {
+            transform(-1),
+            useZoomRatio(false) {
     }
 
     InFlightRequest(int numBuffers, CaptureResultExtras extras, bool hasInput,
             bool hasAppCallback, nsecs_t minDuration, nsecs_t maxDuration, bool fixedFps,
             const std::set<std::set<std::string>>& physicalCameraIdSet, bool isStillCapture,
             bool isZslCapture, bool rotateAndCropAuto, bool autoframingAuto,
-            const std::set<std::string>& idsWithZoom, nsecs_t requestNs,
+            const std::set<std::string>& idsWithZoom, nsecs_t requestNs, bool useZoomRatio,
             const SurfaceMap& outSurfaces = SurfaceMap{}) :
             shutterTimestamp(0),
             sensorTimestamp(0),
@@ -250,7 +254,8 @@ struct InFlightRequest {
             cameraIdsWithZoom(idsWithZoom),
             requestTimeNs(requestNs),
             outputSurfaces(outSurfaces),
-            transform(-1) {
+            transform(-1),
+            useZoomRatio(useZoomRatio) {
     }
 };
 

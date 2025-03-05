@@ -183,6 +183,7 @@
 #define AMEDIAMETRICS_PROP_PLAYBACK_SPEED "playback.speed" // double value (AudioTrack)
 #define AMEDIAMETRICS_PROP_PLAYERIID      "playerIId"      // int32 (-1 invalid/unset IID)
 #define AMEDIAMETRICS_PROP_ROUTEDDEVICEID "routedDeviceId" // int32
+#define AMEDIAMETRICS_PROP_ROUTEDDEVICEIDS "routedDeviceIds" // string value
 #define AMEDIAMETRICS_PROP_SAMPLERATE     "sampleRate"     // int32
 #define AMEDIAMETRICS_PROP_SAMPLERATECLIENT "sampleRateClient" // int32
 #define AMEDIAMETRICS_PROP_SAMPLERATEHARDWARE "sampleRateHardware" // int32

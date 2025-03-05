@@ -68,10 +68,19 @@ void convertP010ToYUV420Planar16(uint16_t *dstY, uint16_t *dstU, uint16_t *dstV,
                                  size_t dstUStride, size_t dstVStride, size_t width,
                                  size_t height, bool isMonochrome = false);
 
+void convertP010ToP210(uint16_t *dstY, uint16_t *dstUV, const uint16_t *srcY,
+                       const uint16_t *srcUV, size_t srcUVStride, size_t dstUVStride,
+                       size_t width, size_t height);
+
 void convertRGBA1010102ToYUV420Planar16(uint16_t* dstY, uint16_t* dstU, uint16_t* dstV,
                                         const uint32_t* srcRGBA, size_t srcRGBStride, size_t width,
                                         size_t height, C2Color::matrix_t colorMatrix,
                                         C2Color::range_t colorRange);
+
+void convertRGBA1010102ToP210(uint16_t* dstY, uint16_t* dstUV, const uint32_t* srcRGBA,
+                              size_t srcRGBStride, size_t width, size_t height,
+                              C2Color::matrix_t colorMatrix, C2Color::range_t colorRange);
+
 void convertPlanar16ToY410OrRGBA1010102(uint8_t* dst, const uint16_t* srcY, const uint16_t* srcU,
                                         const uint16_t* srcV, size_t srcYStride, size_t srcUStride,
                                         size_t srcVStride, size_t dstStride, size_t width,
@@ -96,6 +105,18 @@ void convertPlanar8ToYV12(uint8_t* dstY, uint8_t* dstU, uint8_t* dstV, const uin
                           size_t srcUStride, size_t srcVStride, size_t dstYStride,
                           size_t dstUStride, size_t dstVStride, uint32_t width, uint32_t height,
                           bool isMonochrome, CONV_FORMAT_T format);
+void convertSemiPlanar8ToP210(uint16_t *dstY, uint16_t *dstUV,
+                              const uint8_t *srcY, const uint8_t *srcUV,
+                              size_t srcYStride, size_t srcUVStride,
+                              size_t dstYStride, size_t dstUVStride,
+                              uint32_t width, uint32_t height,
+                              CONV_FORMAT_T format);
+void convertPlanar8ToP210(uint16_t *dstY, uint16_t *dstUV,
+                              const uint8_t *srcY, const uint8_t *srcU, const uint8_t *srcV,
+                              size_t srcYStride, size_t srcUStride, size_t srcVStride,
+                              size_t dstYStride, size_t dstUVStride,
+                              uint32_t width, uint32_t height,
+                              CONV_FORMAT_T format);
 
 class SimpleC2Component
         : public C2Component, public std::enable_shared_from_this<SimpleC2Component> {

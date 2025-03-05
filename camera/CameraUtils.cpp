@@ -32,7 +32,7 @@ namespace android {
 const char *kCameraServiceDisabledProperty = "config.disable_cameraservice";
 
 status_t CameraUtils::getRotationTransform(const CameraMetadata& staticInfo,
-        int mirrorMode, /*out*/int32_t* transform) {
+        int mirrorMode,  bool enableTransformInverseDisplay, /*out*/int32_t* transform) {
     ALOGV("%s", __FUNCTION__);
 
     if (transform == NULL) {
@@ -128,7 +128,9 @@ status_t CameraUtils::getRotationTransform(const CameraMetadata& staticInfo,
      * aspect ratio, or the preview will end up looking non-uniformly
      * stretched.
      */
-    flags |= NATIVE_WINDOW_TRANSFORM_INVERSE_DISPLAY;
+    if (enableTransformInverseDisplay) {
+        flags |= NATIVE_WINDOW_TRANSFORM_INVERSE_DISPLAY;
+    }
 
     ALOGV("%s: final transform = 0x%x", __FUNCTION__, flags);
 

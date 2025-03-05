@@ -66,6 +66,16 @@
                         channelMasks="AUDIO_CHANNEL_IN_STEREO"/>
                 </mixPort>
                 <mixPort name="hifi_input" role="sink" />
+                <mixPort name="multiple_channels_input" role="sink">
+                    <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+                             samplingRates="48000"
+                             channelMasks="AUDIO_CHANNEL_IN_5POINT1"/>
+                </mixPort>
+                <mixPort name="mixport_fast_input" role="sink" flags="AUDIO_INPUT_FLAG_FAST">
+                    <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+                        samplingRates="48000"
+                        channelMasks="AUDIO_CHANNEL_IN_STEREO"/>
+                </mixPort>
             </mixPorts>
             <devicePorts>
                 <devicePort tagName="Speaker" type="AUDIO_DEVICE_OUT_SPEAKER" role="sink">
@@ -114,6 +124,10 @@
                     sources="BUS Device In"/>
                 <route type="mix" sink="hifi_input"
                         sources="USB Device In" />
+                <route type="mix" sink="multiple_channels_input"
+                       sources="Built-In Mic" />
+                <route type="mix" sink="mixport_fast_input"
+                    sources="Built-In Mic"/>
             </routes>
         </module>
 

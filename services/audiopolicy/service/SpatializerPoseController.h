@@ -118,34 +118,34 @@ class SpatializerPoseController : private media::SensorPoseProvider::Listener {
     std::string toString(unsigned level) const;
 
   private:
-    mutable std::timed_mutex mMutex;
+    mutable std::mutex mMutex;
     Listener* const mListener;
     const std::chrono::microseconds mSensorPeriod;
-    std::unique_ptr<media::HeadTrackingProcessor> mProcessor;
-    int32_t mHeadSensor = media::SensorPoseProvider::INVALID_HANDLE;
-    int32_t mScreenSensor = media::SensorPoseProvider::INVALID_HANDLE;
-    std::optional<media::HeadTrackingMode> mActualMode;
-    std::condition_variable_any mCondVar;
-    bool mShouldCalculate = true;
-    bool mShouldExit = false;
-    bool mCalculated = false;
+    std::unique_ptr<media::HeadTrackingProcessor> mProcessor GUARDED_BY(mMutex);
+    int32_t mHeadSensor GUARDED_BY(mMutex) = media::SensorPoseProvider::INVALID_HANDLE;
+    int32_t mScreenSensor GUARDED_BY(mMutex) = media::SensorPoseProvider::INVALID_HANDLE;
+    std::optional<media::HeadTrackingMode> mActualMode GUARDED_BY(mMutex);
+    std::condition_variable mCondVar GUARDED_BY(mMutex);
+    bool mShouldCalculate GUARDED_BY(mMutex) = true;
+    bool mShouldExit GUARDED_BY(mMutex) = false;
+    bool mCalculated GUARDED_BY(mMutex) = false;
 
-    media::VectorRecorder mHeadSensorRecorder{
+    media::VectorRecorder mHeadSensorRecorder GUARDED_BY(mMutex) {
         8 /* vectorSize */, std::chrono::seconds(1), 10 /* maxLogLine */,
         { 3, 6, 7 } /* delimiterIdx */};
-    media::VectorRecorder mHeadSensorDurableRecorder{
+    media::VectorRecorder mHeadSensorDurableRecorder GUARDED_BY(mMutex) {
         8 /* vectorSize */, std::chrono::minutes(1), 10 /* maxLogLine */,
         { 3, 6, 7 } /* delimiterIdx */};
 
-    media::VectorRecorder mScreenSensorRecorder{
+    media::VectorRecorder mScreenSensorRecorder GUARDED_BY(mMutex) {
         4 /* vectorSize */, std::chrono::seconds(1), 10 /* maxLogLine */,
         { 3 } /* delimiterIdx */};
-    media::VectorRecorder mScreenSensorDurableRecorder{
+    media::VectorRecorder mScreenSensorDurableRecorder GUARDED_BY(mMutex) {
         4 /* vectorSize */, std::chrono::minutes(1), 10 /* maxLogLine */,
         { 3 } /* delimiterIdx */};
 
     // Next to last variable as releasing this stops the callbacks
-    std::unique_ptr<media::SensorPoseProvider> mPoseProvider;
+    std::unique_ptr<media::SensorPoseProvider> mPoseProvider GUARDED_BY(mMutex);
 
     // It's important that mThread is the last variable in this class
     // since we starts mThread in initializer list
@@ -158,7 +158,8 @@ class SpatializerPoseController : private media::SensorPoseProvider::Listener {
      * Calculates the new outputs and updates internal state. Must be called with the lock held.
      * Returns values that should be passed to the respective callbacks.
      */
-    std::tuple<media::Pose3f, std::optional<media::HeadTrackingMode>> calculate_l();
+    std::tuple<media::Pose3f, std::optional<media::HeadTrackingMode>> calculate_l()
+            REQUIRES(mMutex);
 };
 
 }  // namespace android

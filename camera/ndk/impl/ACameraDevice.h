@@ -37,14 +37,19 @@
 #include <camera/camera2/OutputConfiguration.h>
 #include <camera/camera2/SessionConfiguration.h>
 #include <camera/camera2/CaptureRequest.h>
+#include <fmq/AidlMessageQueueCpp.h>
 
-#include <camera/NdkCameraManager.h>
 #include <camera/NdkCameraCaptureSession.h>
+#include <camera/NdkCameraManager.h>
+#include <gui/Flags.h>  // remove with WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
 
 #include "ACameraMetadata.h"
 
 namespace android {
 namespace acam {
+
+using android::hardware::common::fmq::SynchronizedReadWrite;
+using ResultMetadataQueue = AidlMessageQueueCpp<int8_t, SynchronizedReadWrite>;
 
 // Wrap ACameraCaptureFailure so it can be ref-counted
 struct CameraCaptureFailure : public RefBase, public ACameraCaptureFailure {};
@@ -61,9 +66,11 @@ struct ACameraPhysicalCaptureResultInfo: public RefBase {
 
 class CameraDevice final : public RefBase {
   public:
+
+    using CameraMetadataInfo = android::hardware::camera2::CameraMetadataInfo;
     CameraDevice(const char* id, ACameraDevice_StateCallbacks* cb,
                   sp<ACameraMetadata> chars,
-                  ACameraDevice* wrapper);
+                  ACameraDevice* wrapper, bool sharedMode);
     ~CameraDevice();
 
     inline const char* getId() const { return mCameraId.c_str(); }
@@ -91,14 +98,18 @@ class CameraDevice final : public RefBase {
         binder::Status onDeviceIdle() override;
         binder::Status onCaptureStarted(const CaptureResultExtras& resultExtras,
                               int64_t timestamp) override;
-        binder::Status onResultReceived(const CameraMetadata& metadata,
+        binder::Status onResultReceived(const CameraMetadataInfo &resultInfo,
                               const CaptureResultExtras& resultExtras,
                               const std::vector<PhysicalCaptureResultInfo>& physicalResultInfos) override;
         binder::Status onPrepared(int streamId) override;
         binder::Status onRequestQueueEmpty() override;
         binder::Status onRepeatingRequestError(int64_t lastFrameNumber,
                 int32_t stoppedSequenceId) override;
+        binder::Status onClientSharedAccessPriorityChanged(bool isPrimaryClient) override;
       private:
+        camera_status_t readOneResultMetadata(
+                const CameraMetadataInfo& resultInfo, ResultMetadataQueue* metadataQueue,
+                CameraMetadata* metadata);
         const wp<CameraDevice> mDevice;
     };
     inline sp<hardware::camera2::ICameraDeviceCallbacks> getServiceCallback() {
@@ -107,11 +118,15 @@ class CameraDevice final : public RefBase {
 
     // Camera device is only functional after remote being set
     void setRemoteDevice(sp<hardware::camera2::ICameraDeviceUser> remote);
+    bool setDeviceMetadataQueues();
 
     inline ACameraDevice* getWrapper() const { return mWrapper; };
 
     // Stop the looper thread and unregister the handler
     void stopLooperAndDisconnect();
+
+    void setPrimaryClient(bool isPrimary) {mIsPrimaryClient = isPrimary;};
+    bool isPrimaryClient() {return mIsPrimaryClient;};
 
   private:
     friend ACameraCaptureSession;
@@ -174,8 +189,10 @@ class CameraDevice final : public RefBase {
     // Input message will be posted and cleared after this returns
     void postSessionMsgAndCleanup(sp<AMessage>& msg);
 
-    static camera_status_t getIGBPfromAnw(
-            ANativeWindow* anw, sp<IGraphicBufferProducer>& out);
+    // Only used when WB_LIBCAMERASERVICE_WITH_DEPENDENCIES is active
+    static ParcelableSurfaceType convertSurfaceTypeToView(sp<SurfaceType> surface);
+
+    static camera_status_t getSurfacefromAnw(ANativeWindow* anw, sp<SurfaceType>& out);
 
     static camera_status_t getSurfaceFromANativeWindow(
             ANativeWindow* anw, sp<Surface>& out);
@@ -186,6 +203,8 @@ class CameraDevice final : public RefBase {
     const sp<ACameraMetadata> mChars;                 // Camera characteristics
     const sp<ServiceCallback> mServiceCallback;
     ACameraDevice* mWrapper;
+    bool mSharedMode;
+    bool mIsPrimaryClient;
 
     // stream id -> pair of (ANW* from application, OutputConfiguration used for camera service)
     std::map<int, std::pair<ANativeWindow*, OutputConfiguration>> mConfiguredOutputs;
@@ -227,7 +246,8 @@ class CameraDevice final : public RefBase {
         kWhatCaptureBufferLost, // onCaptureBufferLost
         kWhatPreparedCb, // onWindowPrepared
         // Internal cleanup
-        kWhatCleanUpSessions   // Cleanup cached sp<ACameraCaptureSession>
+        kWhatCleanUpSessions,   // Cleanup cached sp<ACameraCaptureSession>
+        kWhatClientSharedAccessPriorityChanged
     };
     static const char* kContextKey;
     static const char* kDeviceKey;
@@ -392,6 +412,9 @@ class CameraDevice final : public RefBase {
     int32_t mPartialResultCount;  // const after constructor
     std::vector<std::string> mPhysicalIds; // const after constructor
 
+    // Metadata queue to write the result metadata to.
+    std::unique_ptr<ResultMetadataQueue> mCaptureResultMetadataQueue;
+
 };
 
 } // namespace acam;
@@ -403,8 +426,8 @@ class CameraDevice final : public RefBase {
  */
 struct ACameraDevice {
     ACameraDevice(const char* id, ACameraDevice_StateCallbacks* cb,
-                  sp<ACameraMetadata> chars) :
-            mDevice(new android::acam::CameraDevice(id, cb, chars, this)) {}
+                  sp<ACameraMetadata> chars, bool sharedMode) :
+            mDevice(new android::acam::CameraDevice(id, cb, chars, this, sharedMode)) {}
 
     ~ACameraDevice();
 
@@ -443,6 +466,18 @@ struct ACameraDevice {
     // Camera device is only functional after remote being set
     inline void setRemoteDevice(android::sp<android::hardware::camera2::ICameraDeviceUser> remote) {
         mDevice->setRemoteDevice(remote);
+    }
+
+    inline bool setDeviceMetadataQueues() {
+        return mDevice->setDeviceMetadataQueues();
+    }
+
+    inline void setPrimaryClient(bool isPrimary) {
+        mDevice->setPrimaryClient(isPrimary);
+    }
+
+    inline bool isPrimaryClient() {
+        return mDevice->isPrimaryClient();
     }
 
   private:

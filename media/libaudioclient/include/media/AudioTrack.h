@@ -835,18 +835,18 @@ public:
      */
      audio_port_handle_t getOutputDevice();
 
-     /* Returns the ID of the audio device actually used by the output to which this AudioTrack is
+     /* Returns the IDs of the audio devices actually used by the output to which this AudioTrack is
       * attached.
       * When the AudioTrack is inactive, the device ID returned can be either:
-      * - AUDIO_PORT_HANDLE_NONE if the AudioTrack is not attached to any output.
-      * - The device ID used before paused or stopped.
+      * - An empty vector if the AudioTrack is not attached to any output.
+      * - The device IDs used before paused or stopped.
       * - The device ID selected by audio policy manager of setOutputDevice() if the AudioTrack
       * has not been started yet.
       *
       * Parameters:
       *  none.
       */
-     audio_port_handle_t getRoutedDeviceId();
+     DeviceIdVector getRoutedDeviceIds();
 
     /* Returns the unique session ID associated with this track.
      *
@@ -1089,7 +1089,7 @@ public:
 
             // AudioSystem::AudioDeviceCallback> virtuals
             virtual void onAudioDeviceUpdate(audio_io_handle_t audioIo,
-                                             audio_port_handle_t deviceId);
+                                             const DeviceIdVector& deviceIds);
 
     /* Obtain the pending duration in milliseconds for playback of pure PCM
      * (mixable without embedded timing) data remaining in AudioTrack.
@@ -1258,7 +1258,7 @@ public:
 
             void     restartIfDisabled();
 
-            void     updateRoutedDeviceId_l();
+            void     updateRoutedDeviceIds_l();
 
             /* Sets the Dual Mono mode presentation on the output device. */
             status_t setDualMonoMode_l(audio_dual_mono_mode_t mode);
@@ -1482,9 +1482,9 @@ public:
     // Device requested by the application.
     audio_port_handle_t mSelectedDeviceId = AUDIO_PORT_HANDLE_NONE;
 
-    // Device actually selected by AudioPolicyManager: This may not match the app
+    // Devices actually selected by AudioPolicyManager: This may not match the app
     // selection depending on other activity and connected devices.
-    audio_port_handle_t mRoutedDeviceId = AUDIO_PORT_HANDLE_NONE;
+    DeviceIdVector             mRoutedDeviceIds;
 
     sp<media::VolumeHandler>       mVolumeHandler;
 

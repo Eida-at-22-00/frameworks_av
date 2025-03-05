@@ -40,7 +40,7 @@ using android::media::audio::common::AudioMMapPolicyType;
  */
 static void openStreamAndVerify(aaudio_direction_t direction) {
     std::vector<AudioMMapPolicyInfo> policyInfos;
-    ASSERT_EQ(android::NO_ERROR, android::AudioSystem::getMmapPolicyInfo(
+    ASSERT_EQ(android::NO_ERROR, android::AudioSystem::getMmapPolicyInfos(
             AudioMMapPolicyType::DEFAULT, &policyInfos));
     if (AAudio_getAAudioPolicy(policyInfos) == AAUDIO_POLICY_NEVER) {
         // Query the system MMAP policy, if it is NEVER, it indicates there is no MMAP support.

@@ -34,7 +34,16 @@ using android::media::audio::common::AudioFormatDescription;
 AAudioStreamConfiguration::AAudioStreamConfiguration(const StreamParameters& parcelable) {
     setChannelMask(parcelable.channelMask);
     setSampleRate(parcelable.sampleRate);
-    setDeviceId(parcelable.deviceId);
+    auto deviceIds = android::convertContainer<android::DeviceIdVector>(
+            parcelable.deviceIds, android::aidl2legacy_int32_t_audio_port_handle_t);
+    if (deviceIds.ok()) {
+        setDeviceIds(deviceIds.value());
+    } else {
+        ALOGE("deviceIds (%s) aidl2legacy conversion failed",
+              android::toString(parcelable.deviceIds).c_str());
+        android::DeviceIdVector emptyDeviceIds;
+        setDeviceIds(emptyDeviceIds);
+    }
     static_assert(sizeof(aaudio_sharing_mode_t) == sizeof(parcelable.sharingMode));
     setSharingMode(parcelable.sharingMode);
     auto convFormat = android::aidl2legacy_AudioFormatDescription_audio_format_t(
@@ -50,7 +59,7 @@ AAudioStreamConfiguration::AAudioStreamConfiguration(const StreamParameters& par
     setUsage(parcelable.usage);
     static_assert(sizeof(aaudio_content_type_t) == sizeof(parcelable.contentType));
     setContentType(parcelable.contentType);
-
+    setTags(std::set(parcelable.tags.begin(), parcelable.tags.end()));
     static_assert(sizeof(aaudio_spatialization_behavior_t) ==
             sizeof(parcelable.spatializationBehavior));
     setSpatializationBehavior(parcelable.spatializationBehavior);
@@ -87,7 +96,15 @@ StreamParameters AAudioStreamConfiguration::parcelable() const {
     StreamParameters result;
     result.channelMask = getChannelMask();
     result.sampleRate = getSampleRate();
-    result.deviceId = getDeviceId();
+    auto deviceIds = android::convertContainer<std::vector<int32_t>>(
+            getDeviceIds(), android::legacy2aidl_audio_port_handle_t_int32_t);
+    if (deviceIds.ok()) {
+        result.deviceIds = deviceIds.value();
+    } else {
+        ALOGE("deviceIds (%s) legacy2aidl conversion failed",
+              android::toString(getDeviceIds()).c_str());
+        result.deviceIds = {};
+    }
     static_assert(sizeof(aaudio_sharing_mode_t) == sizeof(result.sharingMode));
     result.sharingMode = getSharingMode();
     auto convAudioFormat = android::legacy2aidl_audio_format_t_AudioFormatDescription(getFormat());
@@ -106,6 +123,8 @@ StreamParameters AAudioStreamConfiguration::parcelable() const {
     result.usage = getUsage();
     static_assert(sizeof(aaudio_content_type_t) == sizeof(result.contentType));
     result.contentType = getContentType();
+    auto tags = getTags();
+    result.tags = std::vector(tags.begin(), tags.end());
     static_assert(
             sizeof(aaudio_spatialization_behavior_t) == sizeof(result.spatializationBehavior));
     result.spatializationBehavior = getSpatializationBehavior();

@@ -22,6 +22,9 @@ namespace android {
 // Returns true iff AIDL c2 HAL is selected for the system
 bool IsCodec2AidlHalSelected();
 
+// Returns true iff AIDL c2 InputSurface interface is selected for the system
+bool IsCodec2AidlInputSurfaceSelected();
+
 }  // namespace android
 
 #endif  // CODEC2_HAL_SELECTION_H

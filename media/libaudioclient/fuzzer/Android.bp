@@ -37,8 +37,6 @@ cc_fuzz {
         "effect-aidl-cpp",
         "libaudioclient",
         "libbase",
-        "libcgrouprc",
-        "libcgrouprc_format",
         "libcutils",
         "libjsoncpp",
         "liblog",
@@ -46,6 +44,7 @@ cc_fuzz {
         "libmediametrics",
         "libmediametricsservice",
         "libprocessgroup",
+        "libprocessgroup_util",
         "shared-file-region-aidl-cpp",
     ],
     shared_libs: [

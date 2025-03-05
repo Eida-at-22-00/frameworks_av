@@ -21,6 +21,7 @@
 
 #include "AudioInputDescriptor.h"
 #include "EffectDescriptor.h"
+#include <system/audio_effects/audio_effects_utils.h>
 #include <utils/String8.h>
 
 #include <AudioPolicyInterface.h>
@@ -157,14 +158,18 @@ status_t EffectDescriptorCollection::setEffectEnabled(const sp<EffectDescriptor>
     return NO_ERROR;
 }
 
-bool EffectDescriptorCollection::isNonOffloadableEffectEnabled() const
+bool EffectDescriptorCollection::isNonOffloadableEffectEnabled(
+        const std::optional<const effect_uuid_t>& uuid) const
 {
+    using namespace android::effect::utils;
     for (size_t i = 0; i < size(); i++) {
         sp<EffectDescriptor> effectDesc = valueAt(i);
-        if (effectDesc->mEnabled && (effectDesc->isMusicEffect()) &&
-                ((effectDesc->mDesc.flags & EFFECT_FLAG_OFFLOAD_SUPPORTED) == 0)) {
-            ALOGV("isNonOffloadableEffectEnabled() non offloadable effect %s enabled on session %d",
-                  effectDesc->mDesc.name, effectDesc->mSession);
+        if ((effectDesc->mEnabled && (effectDesc->isMusicEffect()) &&
+             ((effectDesc->mDesc.flags & EFFECT_FLAG_OFFLOAD_SUPPORTED) == 0)) &&
+            (uuid == std::nullopt || uuid.value() == effectDesc->mDesc.uuid)) {
+            ALOGE("%s: non offloadable effect %s, uuid %s, enabled on session %d", __func__,
+                  effectDesc->mDesc.name, ToString(effectDesc->mDesc.uuid).c_str(),
+                  effectDesc->mSession);
             return true;
         }
     }

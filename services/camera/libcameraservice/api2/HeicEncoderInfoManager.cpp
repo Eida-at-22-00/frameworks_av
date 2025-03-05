@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <regex>
 
+#include <com_android_internal_camera_flags.h>
 #include <cutils/properties.h>
 #include <log/log_main.h>
 #include <system/graphics.h>
@@ -33,14 +34,16 @@
 namespace android {
 namespace camera3 {
 
-HeicEncoderInfoManager::HeicEncoderInfoManager() :
+namespace flags = com::android::internal::camera::flags;
+
+HeicEncoderInfoManager::HeicEncoderInfoManager(bool useSWCodec) :
         mIsInited(false),
         mMinSizeHeic(0, 0),
         mMaxSizeHeic(INT32_MAX, INT32_MAX),
         mHasHEVC(false),
         mHasHEIC(false),
         mDisableGrid(false) {
-    if (initialize() == OK) {
+    if (initialize(useSWCodec) == OK) {
         mIsInited = true;
     }
 }
@@ -72,12 +75,13 @@ bool HeicEncoderInfoManager::isSizeSupported(int32_t width, int32_t height, bool
                 (width <= 1920 && height <= 1080))) {
             enableGrid = false;
         }
-        if (hevcName != nullptr) {
-            *hevcName = mHevcName;
-        }
     } else {
         // No encoder available for the requested size.
         return false;
+    }
+
+    if (hevcName != nullptr) {
+        *hevcName = mHevcName;
     }
 
     if (stall != nullptr) {
@@ -109,7 +113,7 @@ bool HeicEncoderInfoManager::isSizeSupported(int32_t width, int32_t height, bool
     return true;
 }
 
-status_t HeicEncoderInfoManager::initialize() {
+status_t HeicEncoderInfoManager::initialize(bool allowSWCodec) {
     mDisableGrid = property_get_bool("camera.heic.disable_grid", false);
     sp<IMediaCodecList> codecsList = MediaCodecList::getInstance();
     if (codecsList == nullptr) {
@@ -119,7 +123,7 @@ status_t HeicEncoderInfoManager::initialize() {
 
     sp<AMessage> heicDetails = getCodecDetails(codecsList, MEDIA_MIMETYPE_IMAGE_ANDROID_HEIC);
 
-    if (!getHevcCodecDetails(codecsList, MEDIA_MIMETYPE_VIDEO_HEVC)) {
+    if (!getHevcCodecDetails(codecsList, MEDIA_MIMETYPE_VIDEO_HEVC, allowSWCodec)) {
         if (heicDetails != nullptr) {
             ALOGE("%s: Device must support HEVC codec if HEIC codec is available!",
                     __FUNCTION__);
@@ -268,7 +272,7 @@ sp<AMessage> HeicEncoderInfoManager::getCodecDetails(
 }
 
 bool HeicEncoderInfoManager::getHevcCodecDetails(
-        sp<IMediaCodecList> codecsList, const char* mime) {
+        sp<IMediaCodecList> codecsList, const char* mime, bool allowSWCodec) {
     bool found = false;
     ssize_t idx = 0;
     while ((idx = codecsList->findCodecByType(mime, true /*encoder*/, idx)) >= 0) {
@@ -280,11 +284,13 @@ bool HeicEncoderInfoManager::getHevcCodecDetails(
         ALOGV("%s: [%s] codec found", __FUNCTION__,
                 info->getCodecName());
 
-        // Filter out software ones as they may be too slow
-        if (!(info->getAttributes() & MediaCodecInfo::kFlagIsHardwareAccelerated)) {
-            ALOGV("%s: [%s] Filter out software ones as they may be too slow", __FUNCTION__,
-                    info->getCodecName());
-            continue;
+        if (!allowSWCodec) {
+            // Filter out software ones as they may be too slow
+            if (!(info->getAttributes() & MediaCodecInfo::kFlagIsHardwareAccelerated)) {
+                ALOGV("%s: [%s] Filter out software ones as they may be too slow", __FUNCTION__,
+                        info->getCodecName());
+                continue;
+            }
         }
 
         const sp<MediaCodecInfo::Capabilities> caps =

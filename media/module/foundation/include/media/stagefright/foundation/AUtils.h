@@ -92,4 +92,13 @@ inline static T periodicError(const T &val, const T &period) {
     return (err < (period / 2)) ? err : (period - err);
 }
 
+inline static bool IsPowerOfTwo(int32_t value) {
+    return (value & (value - 1)) == 0;
+}
+
+/** Checks if the value is a power of two and not zero. */
+inline static bool IsPowerOfTwoStrict(int32_t value) {
+    return value != 0 && (value & (value - 1)) == 0;
+}
+
 #endif  // A_UTILS_H_

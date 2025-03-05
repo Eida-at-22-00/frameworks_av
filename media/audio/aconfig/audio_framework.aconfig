@@ -1,5 +1,6 @@
 # Top level framework (android.media) flags
 # Only add flags here which must be included in framework.jar
+# Flags used in both framework.jar and native can be added here
 #
 # Please add flags in alphabetical order.
 
@@ -20,6 +21,35 @@ flag {
         "Enable the automatic Bluetooth audio device type "
         "categorization based on BluetoothDevice class metadata."
     bug: "302323921"
+}
+
+flag {
+    name: "concurrent_audio_record_bypass_permission"
+    namespace: "media_audio"
+    description:
+       "New privileged permission to allow bypassing concurrent audio"
+       "capture rules."
+    bug: "374751406"
+    is_exported: true
+}
+
+flag {
+    name: "deprecate_stream_bt_sco"
+    namespace: "media_audio"
+    description: "Deprecate STREAM_BLUETOOTH_SCO"
+    is_exported: true
+    bug: "376756660"
+}
+
+flag {
+    name: "enable_multichannel_group_device"
+    namespace: "media_audio"
+    description:
+        "Enable new audio device type for wireless connected speaker group"
+        "supporting multichannel content."
+    is_exported: true
+    is_fixed_read_only: true
+    bug: "344031109"
 }
 
 flag{
@@ -45,6 +75,15 @@ flag {
         "Audio focus GAIN_TRANSIENT_EXCLUSIVE only mutes"
         "notifications when the focus owner is also recording"
     bug: "316414750"
+}
+
+flag {
+    name: "dolby_ac4_level4_encoding_api"
+    namespace: "media_audio"
+    description: "Feature flag for Dolby AC-4 level 4 AudioFormat encoding."
+    is_fixed_read_only: true
+    bug: "266537650"
+    is_exported: true
 }
 
 # TODO remove
@@ -75,6 +114,30 @@ flag {
 }
 
 flag {
+    name: "hardening_permission_api"
+    is_exported: true
+    namespace: "media_audio"
+    description: "API flag for additional appop/perm constructs for hardening."
+    bug: "376480814"
+}
+
+flag {
+    name: "hardening_permission_spa"
+    is_exported: true
+    namespace: "media_audio"
+    description: "Flag for special app access impl for hardening."
+    bug: "376480814"
+}
+
+flag {
+    name: "iamf_definitions_api"
+    is_exported: true
+    namespace: "media_audio"
+    description: "API definitions for the IAMF format"
+    bug: "337522902"
+}
+
+flag {
     name: "loudness_configurator_api"
     is_exported: true
     namespace: "media_audio"
@@ -97,6 +160,7 @@ flag {
     namespace: "media_audio"
     description: "Playback monitoring flag used when player muted by port volume"
     bug: "319515324"
+    is_exported: true
 }
 
 flag {
@@ -136,6 +200,46 @@ flag {
     is_fixed_read_only: true
 }
 
+flag {
+    name: "routed_device_ids"
+    namespace: "media_audio"
+    description:
+        "Enable Java and native functions to get"
+        "multiple routed device ids"
+    bug: "367816690"
+    is_exported: true
+}
+
+flag {
+    name: "spatial_audio_settings_versioning"
+    namespace: "media_audio"
+    description: "introduce versioning of spatial audio settings"
+    bug: "377977731"
+}
+
+flag {
+    name: "spatializer_capabilities"
+    namespace: "media_audio"
+    description: "spatializer reports effective channel masks"
+    bug: "377582613"
+    is_exported: true
+}
+
+flag {
+    name: "speaker_cleanup_usage"
+    namespace: "media_audio"
+    description: "Support new AudioAttributes usage for speaker cleanup"
+    bug: "355050846"
+    is_exported: true
+}
+
+flag {
+    name: "speaker_layout_api"
+    namespace: "media_audio"
+    description: "Surface new API method for returning speaker layout channel mask for devices"
+    bug: "337522902"
+    is_exported: true
+}
 
 # TODO remove
 flag {

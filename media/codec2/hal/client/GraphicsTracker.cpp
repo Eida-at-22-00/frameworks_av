@@ -32,6 +32,9 @@ namespace {
 static constexpr int kMaxDequeueMin = 1;
 static constexpr int kMaxDequeueMax = ::android::BufferQueueDefs::NUM_BUFFER_SLOTS - 2;
 
+// Just some delay for HAL to receive the stop()/release() request.
+static constexpr int kAllocateDirectDelayUs = 16666;
+
 c2_status_t retrieveAHardwareBufferId(const C2ConstGraphicBlock &blk, uint64_t *bid) {
     std::shared_ptr<const _C2BlockPoolData> bpData = _C2BlockFactory::GetGraphicBlockPoolData(blk);
     if (!bpData || bpData->getType() != _C2BlockPoolData::TYPE_AHWBUFFER) {
@@ -177,7 +180,7 @@ GraphicsTracker::GraphicsTracker(int maxDequeueCount)
     mMaxDequeueCommitted{maxDequeueCount},
     mDequeueable{maxDequeueCount},
     mTotalDequeued{0}, mTotalCancelled{0}, mTotalDropped{0}, mTotalReleased{0},
-    mInConfig{false}, mStopped{false} {
+    mInConfig{false}, mStopped{false}, mStopRequested{false}, mAllocAfterStopRequested{0} {
     if (maxDequeueCount < kMaxDequeueMin) {
         mMaxDequeue = kMaxDequeueMin;
         mMaxDequeueCommitted = kMaxDequeueMin;
@@ -490,6 +493,18 @@ void GraphicsTracker::stop() {
     }
 }
 
+void GraphicsTracker::onRequestStop() {
+    std::unique_lock<std::mutex> l(mLock);
+    if (mStopped) {
+        return;
+    }
+    if (mStopRequested) {
+        return;
+    }
+    mStopRequested = true;
+    writeIncDequeueableLocked(kMaxDequeueMax - 1);
+}
+
 void GraphicsTracker::writeIncDequeueableLocked(int inc) {
     CHECK(inc > 0 && inc < kMaxDequeueMax);
     thread_local char buf[kMaxDequeueMax];
@@ -544,8 +559,7 @@ c2_status_t GraphicsTracker::getWaitableFd(int *pipeFd) {
     return C2_OK;
 }
 
-c2_status_t GraphicsTracker::requestAllocate(std::shared_ptr<BufferCache> *cache) {
-    std::lock_guard<std::mutex> l(mLock);
+c2_status_t GraphicsTracker::requestAllocateLocked(std::shared_ptr<BufferCache> *cache) {
     if (mDequeueable > 0) {
         char buf[1];
         int ret = ::read(mReadPipeFd.get(), buf, 1);
@@ -728,6 +742,34 @@ c2_status_t GraphicsTracker::_allocate(const std::shared_ptr<BufferCache> &cache
     return C2_OK;
 }
 
+c2_status_t GraphicsTracker::_allocateDirect(
+        uint32_t width, uint32_t height, PixelFormat format, uint64_t usage,
+        AHardwareBuffer **buf, sp<Fence> *rFence) {
+    AHardwareBuffer_Desc desc;
+    desc.width = width;
+    desc.height = height;
+    desc.layers = 1u;
+    desc.format = ::android::AHardwareBuffer_convertFromPixelFormat(format);
+    desc.usage = ::android::AHardwareBuffer_convertFromGrallocUsageBits(usage);
+    desc.rfu0 = 0;
+    desc.rfu1 = 0;
+
+    int res = AHardwareBuffer_allocate(&desc, buf);
+    if (res != ::android::OK) {
+        ALOGE("_allocateDirect() failed(%d)", res);
+        if (res == ::android::NO_MEMORY) {
+            return C2_NO_MEMORY;
+        } else {
+            return C2_CORRUPTED;
+        }
+    }
+
+    int alloced = mAllocAfterStopRequested++;
+    *rFence = Fence::NO_FENCE;
+    ALOGD("_allocateDirect() allocated %d buffer", alloced);
+    return C2_OK;
+}
+
 c2_status_t GraphicsTracker::allocate(
         uint32_t width, uint32_t height, PixelFormat format, uint64_t usage,
         AHardwareBuffer **buf, sp<Fence> *rFence) {
@@ -735,10 +777,21 @@ c2_status_t GraphicsTracker::allocate(
         ALOGE("cannot allocate due to being stopped");
         return C2_BAD_STATE;
     }
+    c2_status_t res = C2_OK;
     std::shared_ptr<BufferCache> cache;
-    c2_status_t res = requestAllocate(&cache);
-    if (res != C2_OK) {
-        return res;
+    {
+        std::unique_lock<std::mutex> l(mLock);
+        if (mStopRequested) {
+            l.unlock();
+            res = _allocateDirect(width, height, format, usage, buf, rFence);
+            // Delay a little bit for HAL to receive stop()/release() request.
+            ::usleep(kAllocateDirectDelayUs);
+            return res;
+        }
+        c2_status_t res = requestAllocateLocked(&cache);
+        if (res != C2_OK) {
+            return res;
+        }
     }
     ALOGV("allocatable or dequeueable");
 
@@ -1001,6 +1054,19 @@ c2_status_t GraphicsTracker::render(const C2ConstGraphicBlock& blk,
         updateDequeueConf();
     }
     return C2_OK;
+}
+
+void GraphicsTracker::pollForRenderedFrames(FrameEventHistoryDelta* delta) {
+    sp<IGraphicBufferProducer> igbp;
+    {
+        std::unique_lock<std::mutex> l(mLock);
+        if (mBufferCache) {
+            igbp = mBufferCache->mIgbp;
+        }
+    }
+    if (igbp) {
+        igbp->getFrameTimestamps(delta);
+    }
 }
 
 void GraphicsTracker::onReleased(uint32_t generation) {

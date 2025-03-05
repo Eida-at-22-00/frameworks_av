@@ -97,6 +97,8 @@ class AidlCameraDeviceUser final : public SBnCameraDeviceUser {
         return mCaptureResultMetadataQueue;
     }
 
+    ndk::ScopedAStatus isPrimaryClient(bool* _aidl_return) override;
+
   private:
     bool initDevice();
 

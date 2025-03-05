@@ -16,6 +16,10 @@ cc_library_headers {
 cc_library_shared {
     name: "libsfplugin_ccodec",
 
+    defaults: [
+        "android.hardware.graphics.common-ndk_shared",
+    ],
+
     export_include_dirs: ["include"],
 
     srcs: [
@@ -46,6 +50,7 @@ cc_library_shared {
     ],
 
     static_libs: [
+        "libPlatformProperties",
         "libSurfaceFlingerProperties",
         "aconfig_mediacodec_flags_c_lib",
         "android.media.codec-aconfig-cc",
@@ -56,7 +61,6 @@ cc_library_shared {
         "android.hardware.drm@1.0",
         "android.hardware.media.c2@1.0",
         "android.hardware.media.omx@1.0",
-        "android.hardware.graphics.common-V5-ndk",
         "graphicbuffersource-aidl-ndk",
         "libbase",
         "libbinder",

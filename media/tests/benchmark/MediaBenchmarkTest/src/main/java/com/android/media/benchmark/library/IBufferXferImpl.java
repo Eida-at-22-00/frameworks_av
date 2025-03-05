@@ -96,10 +96,10 @@ public class IBufferXferImpl implements IBufferXfer.ISendBuffer {
                       pBuf.info.buf.remaining() +" C:" + cBuf.info.buf.remaining());
               }
           }
+          cBuf.info.infos = pBuf.info.infos;
           cBuf.info.bytesRead = bytesRead;
           cBuf.info.presentationTimeUs = pBuf.info.presentationTimeUs;
           cBuf.info.flag = pBuf.info.flag;
-
           if (pBuf.rIface != null) {
               pBuf.rIface.receiveBuffer(pBuf.info);
           }

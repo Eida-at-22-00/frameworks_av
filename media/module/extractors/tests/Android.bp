@@ -21,6 +21,7 @@ package {
     // to get the below license kinds:
     //   SPDX-license-identifier-Apache-2.0
     default_applicable_licenses: ["frameworks_av_license"],
+    default_team: "trendy_team_android_media_solutions_playback",
 }
 
 cc_test {
@@ -31,6 +32,8 @@ cc_test {
     srcs: ["ExtractorUnitTest.cpp"],
 
     static_libs: [
+        "android.media.extractor.flags-aconfig-cc",
+        "libaconfig_storage_read_api_cc",
         "libaacextractor",
         "libamrextractor",
         "libmp3extractor",
@@ -77,6 +80,7 @@ cc_test {
         "libhidlmemory",
         "libhidlbase",
         "libbase",
+        "server_configurable_flags",
     ],
 
     compile_multilib: "first",

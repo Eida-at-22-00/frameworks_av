@@ -15,6 +15,13 @@
  */
 #include <aaudio/AAudio.h>
 #include <aaudio/AAudioTesting.h>
+#include <android/media/audio/common/AudioDevice.h>
+#include <android/media/audio/common/AudioMMapPolicyInfo.h>
+#include <android/media/audio/common/AudioMMapPolicyType.h>
+#include <media/AidlConversionCppNdk.h>
+#include <media/AudioSystem.h>
+#include <system/audio-hal-enums.h>
+#include <utility/AAudioUtilities.h>
 
 #include "AudioGlobal.h"
 
@@ -22,6 +29,10 @@
  * Static globals.
  */
 namespace aaudio {
+
+using android::media::audio::common::AudioDevice;
+using android::media::audio::common::AudioMMapPolicyInfo;
+using android::media::audio::common::AudioMMapPolicyType;
 
 static aaudio_policy_t g_MMapPolicy = AAUDIO_UNSPECIFIED;
 
@@ -130,6 +141,39 @@ const char* AudioGlobal_convertStreamStateToText(aaudio_stream_state_t state) {
         AAUDIO_CASE_ENUM(AAUDIO_STREAM_STATE_DISCONNECTED);
     }
     return "Unrecognized";
+}
+
+namespace {
+
+aaudio_policy_t getPlatformMMapPolicy(AudioMMapPolicyType policyType, AAudio_DeviceType device,
+                                      aaudio_direction_t direction) {
+    if (direction != AAUDIO_DIRECTION_INPUT && direction != AAUDIO_DIRECTION_OUTPUT) {
+        return AAUDIO_ERROR_ILLEGAL_ARGUMENT;
+    }
+    const audio_devices_t deviceType = AAudioConvert_aaudioToAndroidDeviceType(device, direction);
+    if (deviceType == AUDIO_DEVICE_NONE) {
+        return AAUDIO_ERROR_ILLEGAL_ARGUMENT;
+    }
+
+    AudioMMapPolicyInfo policyInfo;
+    if (android::status_t status = android::AudioSystem::getMmapPolicyForDevice(
+            policyType, deviceType, &policyInfo);
+        status != android::NO_ERROR) {
+        return AAudioConvert_androidToAAudioResult(status);
+    }
+    return AAudioConvert_androidToAAudioMMapPolicy(policyInfo.mmapPolicy);
+}
+
+} // namespace
+
+aaudio_policy_t AudioGlobal_getPlatformMMapPolicy(
+        AAudio_DeviceType device, aaudio_direction_t direction) {
+    return getPlatformMMapPolicy(AudioMMapPolicyType::DEFAULT, device, direction);
+}
+
+aaudio_policy_t AudioGlobal_getPlatformMMapExclusivePolicy(
+        AAudio_DeviceType device, aaudio_direction_t direction) {
+    return getPlatformMMapPolicy(AudioMMapPolicyType::EXCLUSIVE, device, direction);
 }
 
 #undef AAUDIO_CASE_ENUM

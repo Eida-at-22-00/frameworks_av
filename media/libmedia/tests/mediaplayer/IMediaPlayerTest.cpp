@@ -50,7 +50,7 @@ TEST_F(IMediaPlayerTest, PrepareDrmInvalidTransaction) {
 
     // We write a length greater than the following session id array. Should be discarded.
     data.writeUint32(2);
-    data.writeUnpadded(kMockByteArray, 1);
+    data.write(kMockByteArray, 1);
 
     status_t result = IMediaPlayer::asBinder(iMediaPlayer_)
             ->transact(PREPARE_DRM, data, &reply);

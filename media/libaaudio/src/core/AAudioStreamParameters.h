@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include <aaudio/AAudio.h>
+#include <media/AudioContainers.h>
 #include <utility/AAudioUtilities.h>
 
 namespace aaudio {
@@ -29,12 +30,12 @@ public:
     AAudioStreamParameters() = default;
     virtual ~AAudioStreamParameters() = default;
 
-    int32_t getDeviceId() const {
-        return mDeviceId;
+    android::DeviceIdVector getDeviceIds() const {
+        return mDeviceIds;
     }
 
-    void setDeviceId(int32_t deviceId) {
-        mDeviceId = deviceId;
+    void setDeviceIds(const android::DeviceIdVector& deviceIds) {
+        mDeviceIds = deviceIds;
     }
 
     int32_t getSampleRate() const {
@@ -96,6 +97,16 @@ public:
     void setContentType(aaudio_content_type_t contentType) {
         mContentType = contentType;
     }
+
+    void setTags(const std::set<std::string>& tags) {
+        mTags = tags;
+    }
+
+    const std::set<std::string>& getTags() const {
+        return mTags;
+    }
+
+    std::string getTagsAsString() const;
 
     aaudio_spatialization_behavior_t getSpatializationBehavior() const {
         return mSpatializationBehavior;
@@ -212,12 +223,15 @@ public:
 
     void dump() const;
 
+protected:
+    std::set<std::string>           mTags;
+
 private:
     aaudio_result_t validateChannelMask() const;
 
     int32_t                         mSamplesPerFrame      = AAUDIO_UNSPECIFIED;
     int32_t                         mSampleRate           = AAUDIO_UNSPECIFIED;
-    int32_t                         mDeviceId             = AAUDIO_UNSPECIFIED;
+    android::DeviceIdVector         mDeviceIds;
     aaudio_sharing_mode_t           mSharingMode          = AAUDIO_SHARING_MODE_SHARED;
     audio_format_t                  mAudioFormat          = AUDIO_FORMAT_DEFAULT;
     aaudio_direction_t              mDirection            = AAUDIO_DIRECTION_OUTPUT;

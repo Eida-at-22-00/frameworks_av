@@ -19,7 +19,9 @@
 #include "AudioRecordClient.h"
 #include "AudioPolicyService.h"
 #include "binder/AppOpsManager.h"
+#include "mediautils/ServiceUtilities.h"
 #include <android_media_audiopolicy.h>
+#include <media/AttrSourceIter.h>
 
 #include <algorithm>
 
@@ -57,39 +59,6 @@ int getTargetSdkForPackageName(std::string_view packageName) {
 bool doesPackageTargetAtLeastU(std::string_view packageName) {
     return getTargetSdkForPackageName(packageName) >= __ANDROID_API_U__;
 }
-
-class AttrSourceItr {
-  public:
-    using iterator_category = std::forward_iterator_tag;
-    using difference_type = std::ptrdiff_t;
-    using value_type = AttributionSourceState;
-    using pointer = const value_type*;
-    using reference = const value_type&;
-
-    AttrSourceItr() : mAttr(nullptr) {}
-
-    AttrSourceItr(const AttributionSourceState& attr) : mAttr(&attr) {}
-
-    reference operator*() const { return *mAttr; }
-    pointer operator->() const { return mAttr; }
-
-    AttrSourceItr& operator++() {
-        mAttr = !mAttr->next.empty() ? mAttr->next.data() : nullptr;
-        return *this;
-    }
-
-    AttrSourceItr operator++(int) {
-        AttrSourceItr tmp = *this;
-        ++(*this);
-        return tmp;
-    }
-
-    friend bool operator==(const AttrSourceItr& a, const AttrSourceItr& b) = default;
-
-    static AttrSourceItr end() { return AttrSourceItr{}; }
-private:
-    const AttributionSourceState * mAttr;
-};
 } // anonymous
 
 // static
@@ -118,18 +87,37 @@ OpRecordAudioMonitor::createIfNeeded(
     }
 
     return new OpRecordAudioMonitor(attributionSource, virtualDeviceId, attr,
-                                    getOpForSource(attr.source), commandThread);
+                                    getOpForSource(attr.source),
+                                    isRecordOpRequired(attr.source),
+                                    commandThread);
+}
+
+// The vdi is carried in the attribution source for appops perm checks.
+// Overwrite the entire chain with the vdi associated with the mix this client is attached to
+// This ensures the checkOps triggered by the listener are correct.
+// Note: we still only register for events by package name, so we assume that we get events
+// independent of vdi.
+static AttributionSourceState& overwriteVdi(AttributionSourceState& chain, int vdi) {
+    using permission::AttrSourceIter::begin;
+    using permission::AttrSourceIter::end;
+    if (vdi != 0 /* default vdi */) {
+        std::for_each(begin(chain), end(), [vdi](auto& attr) { attr.deviceId = vdi; });
+    }
+    return chain;
 }
 
 OpRecordAudioMonitor::OpRecordAudioMonitor(
-        const AttributionSourceState &attributionSource,
+        AttributionSourceState attributionSource,
         const uint32_t virtualDeviceId, const audio_attributes_t &attr,
         int32_t appOp,
+        bool shouldMonitorRecord,
         wp<AudioPolicyService::AudioCommandThread> commandThread) :
-        mHasOp(true), mAttributionSource(attributionSource),
-        mVirtualDeviceId(virtualDeviceId), mAttr(attr), mAppOp(appOp),
-        mCommandThread(commandThread) {
-}
+        mHasOp(true),
+        mAttributionSource(overwriteVdi(attributionSource, virtualDeviceId)),
+        mVirtualDeviceId(virtualDeviceId), mAttr(attr),
+        mAppOp(appOp),
+        mShouldMonitorRecord(shouldMonitorRecord),
+        mCommandThread(commandThread) {}
 
 OpRecordAudioMonitor::~OpRecordAudioMonitor()
 {
@@ -141,6 +129,9 @@ OpRecordAudioMonitor::~OpRecordAudioMonitor()
 
 void OpRecordAudioMonitor::onFirstRef()
 {
+    using permission::AttrSourceIter::cbegin;
+    using permission::AttrSourceIter::cend;
+
     checkOp();
     mOpCallback = new RecordAudioOpCallback(this);
     ALOGV("start watching op %d for %s", mAppOp, mAttributionSource.toString().c_str());
@@ -150,7 +141,7 @@ void OpRecordAudioMonitor::onFirstRef()
                         : 0;
 
     const auto reg = [&](int32_t op) {
-        std::for_each(AttrSourceItr{mAttributionSource}, AttrSourceItr::end(),
+        std::for_each(cbegin(mAttributionSource), cend(),
                       [&](const auto& attr) {
                           mAppOpsManager.startWatchingMode(
                                   op,
@@ -160,7 +151,7 @@ void OpRecordAudioMonitor::onFirstRef()
                       });
     };
     reg(mAppOp);
-    if (mAppOp != AppOpsManager::OP_RECORD_AUDIO) {
+    if (mAppOp != AppOpsManager::OP_RECORD_AUDIO && mShouldMonitorRecord) {
         reg(AppOpsManager::OP_RECORD_AUDIO);
     }
 }
@@ -176,9 +167,11 @@ bool OpRecordAudioMonitor::hasOp() const {
 // - not called from constructor,
 // - not called from RecordAudioOpCallback because the callback is not installed in this case
 void OpRecordAudioMonitor::checkOp(bool updateUidStates) {
+    using permission::AttrSourceIter::cbegin;
+    using permission::AttrSourceIter::cend;
+
     const auto check = [&](int32_t op) -> bool {
-        return std::all_of(
-                AttrSourceItr{mAttributionSource}, AttrSourceItr::end(), [&](const auto& x) {
+        return std::all_of(cbegin(mAttributionSource), cend(), [&](const auto& x) {
                     return mAppOpsManager.checkOp(op, x.uid,
                                                   VALUE_OR_FATAL(aidl2legacy_string_view_String16(
                                                           x.packageName.value_or("")))) ==
@@ -186,7 +179,7 @@ void OpRecordAudioMonitor::checkOp(bool updateUidStates) {
                 });
     };
     bool hasIt = check(mAppOp);
-    if (mAppOp != AppOpsManager::OP_RECORD_AUDIO) {
+    if (mAppOp != AppOpsManager::OP_RECORD_AUDIO && mShouldMonitorRecord) {
         hasIt = hasIt && check(AppOpsManager::OP_RECORD_AUDIO);
     }
 

@@ -69,12 +69,21 @@ public:
     size_t getFrameCountHAL() const { return mFrameCountHAL; }
     uint32_t getLatency() const { return mLatency; }
     audio_port_handle_t getPortId() const { return mPortId; }
-    audio_port_handle_t getDeviceId() const {
-        if (mPatch.num_sources != 0 && mPatch.num_sinks != 0) {
-            // FIXME: the API only returns the first device in case of multiple device selection
-            return mIsInput ? mPatch.sources[0].id : mPatch.sinks[0].id;
+    std::vector<audio_port_handle_t> getDeviceIds() const {
+        std::vector<audio_port_handle_t> deviceIds;
+        if (mPatch.num_sources == 0 || mPatch.num_sinks == 0) {
+            return deviceIds;
         }
-        return AUDIO_PORT_HANDLE_NONE;
+        if (mIsInput) {
+            for (unsigned int i = 0; i < mPatch.num_sources; i++) {
+                deviceIds.push_back(mPatch.sources[i].id);
+            }
+        } else {
+            for (unsigned int i = 0; i < mPatch.num_sinks; i++) {
+                deviceIds.push_back(mPatch.sinks[i].id);
+            }
+        }
+        return deviceIds;
     }
     void setPatch(const audio_patch& patch) { mPatch = patch; }
 
@@ -88,7 +97,13 @@ public:
                    (mIsInput ? audio_channel_in_mask_to_string(mChannelMask) :
                            audio_channel_out_mask_to_string(mChannelMask)))
            << ", frameCount " << mFrameCount << ", frameCountHAL " << mFrameCountHAL
-           << ", deviceId " << getDeviceId();
+           << ", deviceIds ";
+
+        std::vector<audio_port_handle_t> deviceIds = getDeviceIds();
+        for (auto deviceId : deviceIds) {
+            ss << deviceId << " ";
+        }
+
         return ss.str();
     }
 

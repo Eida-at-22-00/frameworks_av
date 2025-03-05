@@ -41,7 +41,7 @@ public:
     CompositeStream(sp<CameraDeviceBase> device, wp<hardware::camera2::ICameraDeviceCallbacks> cb);
     virtual ~CompositeStream() {}
 
-    status_t createStream(const std::vector<sp<Surface>>& consumers,
+    status_t createStream(const std::vector<SurfaceHolder>& consumers,
             bool hasDeferredConsumer, uint32_t width, uint32_t height, int format,
             camera_stream_rotation_t rotation, int *id, const std::string& physicalCameraId,
             const std::unordered_set<int32_t> &sensorPixelModesUsed,
@@ -55,7 +55,7 @@ public:
     void switchToOffline();
 
     // Create and register all internal camera streams.
-    virtual status_t createInternalStreams(const std::vector<sp<Surface>>& consumers,
+    virtual status_t createInternalStreams(const std::vector<SurfaceHolder>& consumers,
             bool hasDeferredConsumer, uint32_t width, uint32_t height, int format,
             camera_stream_rotation_t rotation, int *id, const std::string& physicalCameraId,
             const std::unordered_set<int32_t> &sensorPixelModesUsed,

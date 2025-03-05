@@ -46,7 +46,7 @@ class CameraUtils {
          * Returns OK on success, or a negative error code.
          */
         static status_t getRotationTransform(const CameraMetadata& staticInfo,
-                int mirrorMode, /*out*/int32_t* transform);
+                int mirrorMode, bool enableTransformInverseDisplay, /*out*/int32_t* transform);
 
         /**
          * Check if the image data is VideoNativeHandleMetadata, that contains a native handle.

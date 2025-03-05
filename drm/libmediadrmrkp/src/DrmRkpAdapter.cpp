@@ -87,13 +87,21 @@ getDrmRemotelyProvisionedComponents() {
                           status.getDescription().c_str());
                     return;
                 }
-
+                std::vector<uint8_t> bcc_signature;
+                status =
+                        mDrm->getPropertyByteArray("bootCertificateChainSignature", &bcc_signature);
+                if (!status.isOk()) {
+                    ALOGW("mDrm->getPropertyByteArray(\"bootCertificateChainSignature\") failed."
+                          "Detail: [%s].",
+                          status.getDescription().c_str());
+                    // bcc signature is optional, no need to return when it is unavailable.
+                }
                 std::string compName(instance);
                 auto comps = static_cast<
                         std::map<std::string, std::shared_ptr<IRemotelyProvisionedComponent>>*>(
                         context);
                 (*comps)[compName] = ::ndk::SharedRefBase::make<DrmRemotelyProvisionedComponent>(
-                        mDrm, drmVendor, drmDesc, bcc);
+                        mDrm, drmVendor, drmDesc, bcc, bcc_signature);
             });
     return comps;
 }

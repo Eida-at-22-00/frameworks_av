@@ -33,6 +33,7 @@
 #include "SampleTable.h"
 #include "ItemTable.h"
 
+#include <com_android_media_extractor_flags.h>
 #include <media/esds/ESDS.h>
 #include <ID3.h>
 #include <media/stagefright/DataSourceBase.h>
@@ -51,6 +52,7 @@
 #include <media/stagefright/MediaBufferGroup.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MetaDataBase.h>
+#include <media/stagefright/MetaDataUtils.h>
 #include <utils/String8.h>
 
 #include <byteswap.h>
@@ -146,6 +148,7 @@ private:
 
     bool mIsAVC;
     bool mIsHEVC;
+    bool mIsAPV;
     bool mIsDolbyVision;
     bool mIsAC4;
     bool mIsMpegH = false;
@@ -364,6 +367,13 @@ static const char *FourCC2MIME(uint32_t fourcc) {
         case FOURCC("hvc1"):
         case FOURCC("hev1"):
             return MEDIA_MIMETYPE_VIDEO_HEVC;
+
+        case FOURCC("apv1"):
+            if (!com::android::media::extractor::flags::extractor_mp4_enable_apv()) {
+                ALOGV("APV support not enabled");
+                return "application/octet-stream";
+            }
+            return MEDIA_MIMETYPE_VIDEO_APV;
 
         case FOURCC("dvav"):
         case FOURCC("dva1"):
@@ -2105,6 +2115,7 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
         case FOURCC("dav1"):
         case FOURCC("av01"):
         case FOURCC("vp09"):
+        case FOURCC("apv1"):
         {
             uint8_t buffer[78];
             if (chunk_data_size < (ssize_t)sizeof(buffer)) {
@@ -2596,10 +2607,42 @@ status_t MPEG4Extractor::parseChunk(off64_t *offset, int depth) {
             *offset += chunk_size;
             break;
         }
-
         case FOURCC("vpcC"):
+        {
+            if (mLastTrack == NULL) {
+                return ERROR_MALFORMED;
+            }
+
+            auto buffer = heapbuffer<uint8_t>(chunk_data_size);
+
+            if (buffer.get() == NULL) {
+                ALOGE("b/28471206");
+                return NO_MEMORY;
+            }
+
+            if (mDataSource->readAt(data_offset, buffer.get(), chunk_data_size) < chunk_data_size) {
+                return ERROR_IO;
+            }
+
+            if (!MakeVP9CodecPrivateFromVpcC(mLastTrack->meta, buffer.get(), chunk_data_size)) {
+                ALOGE("Failed to create VP9 CodecPrivate from vpcC.");
+                return ERROR_MALFORMED;
+            }
+
+            *offset += chunk_size;
+            break;
+        }
+
+        case FOURCC("apvC"):
         case FOURCC("av1C"):
         {
+            if (!com::android::media::extractor::flags::extractor_mp4_enable_apv() &&
+                chunk_type == FOURCC("apvC")) {
+                ALOGV("APV support not enabled");
+                *offset += chunk_size;
+                break;
+            }
+
             auto buffer = heapbuffer<uint8_t>(chunk_data_size);
 
             if (buffer.get() == NULL) {
@@ -5120,6 +5163,7 @@ MPEG4Source::MPEG4Source(
       mCurrentSampleInfoOffsets(NULL),
       mIsAVC(false),
       mIsHEVC(false),
+      mIsAPV(false),
       mIsDolbyVision(false),
       mIsAC4(false),
       mIsPcm(false),
@@ -5162,6 +5206,8 @@ MPEG4Source::MPEG4Source(
     mIsAVC = !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_AVC);
     mIsHEVC = !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_HEVC) ||
               !strcasecmp(mime, MEDIA_MIMETYPE_IMAGE_ANDROID_HEIC);
+    mIsAPV = com::android::media::extractor::flags::extractor_mp4_enable_apv() &&
+             !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_APV);
     mIsAC4 = !strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_AC4);
     mIsDolbyVision = !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_DOLBY_VISION);
     mIsHeif = !strcasecmp(mime, MEDIA_MIMETYPE_IMAGE_ANDROID_HEIC) && mItemTable != NULL;

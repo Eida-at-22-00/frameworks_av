@@ -119,8 +119,9 @@ sp<AAudioServiceEndpoint> AAudioEndpointManager::findExclusiveEndpoint_l(
         }
     }
 
-    ALOGV("findExclusiveEndpoint_l(), found %p for device = %d, sessionId = %d",
-          endpoint.get(), configuration.getDeviceId(), configuration.getSessionId());
+    ALOGV("findExclusiveEndpoint_l(), found %p for devices = %s, sessionId = %d",
+          endpoint.get(), toString(configuration.getDeviceIds()).c_str(),
+          configuration.getSessionId());
     return endpoint;
 }
 
@@ -137,8 +138,9 @@ sp<AAudioServiceEndpointShared> AAudioEndpointManager::findSharedEndpoint_l(
         }
     }
 
-    ALOGV("findSharedEndpoint_l(), found %p for device = %d, sessionId = %d",
-          endpoint.get(), configuration.getDeviceId(), configuration.getSessionId());
+    ALOGV("findSharedEndpoint_l(), found %p for devices = %s, sessionId = %d",
+          endpoint.get(), toString(configuration.getDeviceIds()).c_str(),
+          configuration.getSessionId());
     return endpoint;
 }
 
@@ -192,8 +194,8 @@ sp<AAudioServiceEndpoint> AAudioEndpointManager::openExclusiveEndpoint(
     } else {
         const sp<AAudioServiceEndpointMMAP> endpointMMap =
                 new AAudioServiceEndpointMMAP(aaudioService);
-        ALOGV("%s(), no match so try to open MMAP %p for dev %d",
-              __func__, endpointMMap.get(), configuration.getDeviceId());
+        ALOGV("%s(), no match so try to open MMAP %p for devices %s",
+              __func__, endpointMMap.get(), toString(configuration.getDeviceIds()).c_str());
         endpoint = endpointMMap;
 
         const aaudio_result_t result = endpoint->open(request);
@@ -250,8 +252,9 @@ sp<AAudioServiceEndpoint> AAudioEndpointManager::openSharedEndpoint(
                 mSharedOpenCount++;
             }
         }
-        ALOGV("%s(), created endpoint %p, requested device = %d, dir = %d",
-              __func__, endpoint.get(), configuration.getDeviceId(), (int)direction);
+        ALOGV("%s(), created endpoint %p, requested device = %s, dir = %d",
+              __func__, endpoint.get(), android::toString(configuration.getDeviceIds()).c_str(),
+              (int)direction);
         IPCThreadState::self()->restoreCallingIdentity(token);
     }
 
@@ -289,8 +292,9 @@ void AAudioEndpointManager::closeExclusiveEndpoint(
 
         serviceEndpoint->close();
         mExclusiveCloseCount++;
-        ALOGV("%s() %p for device %d",
-              __func__, serviceEndpoint.get(), serviceEndpoint->getDeviceId());
+        ALOGV("%s() %p for devices %s",
+              __func__, serviceEndpoint.get(),
+              android::toString(serviceEndpoint->getDeviceIds()).c_str());
     }
 }
 
@@ -313,7 +317,8 @@ void AAudioEndpointManager::closeSharedEndpoint(const sp<AAudioServiceEndpoint>&
         serviceEndpoint->close();
 
         mSharedCloseCount++;
-        ALOGV("%s(%p) closed for device %d",
-              __func__, serviceEndpoint.get(), serviceEndpoint->getDeviceId());
+        ALOGV("%s(%p) closed for device %s",
+              __func__, serviceEndpoint.get(),
+              android::toString(serviceEndpoint->getDeviceIds()).c_str());
     }
 }

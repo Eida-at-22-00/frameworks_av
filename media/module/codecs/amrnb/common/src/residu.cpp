@@ -227,22 +227,35 @@ void Residu(
         p_input3 = p_input_ptr--;
         p_input4 = p_input_ptr--;
 
+        Word32 tmp;
         for (j = M >> 1; j != 0; j--)
         {
-            s1 += ((Word32) * (p_coef) * *(p_input1++));
-            s2 += ((Word32) * (p_coef) * *(p_input2++));
-            s3 += ((Word32) * (p_coef) * *(p_input3++));
-            s4 += ((Word32) * (p_coef--) * *(p_input4++));
-            s1 += ((Word32) * (p_coef) * *(p_input1++));
-            s2 += ((Word32) * (p_coef) * *(p_input2++));
-            s3 += ((Word32) * (p_coef) * *(p_input3++));
-            s4 += ((Word32) * (p_coef--) * *(p_input4++));
+            __builtin_mul_overflow(*p_coef, *(p_input1++), &tmp);
+            __builtin_add_overflow(s1, tmp, &s1);
+            __builtin_mul_overflow(*p_coef, *(p_input2++), &tmp);
+            __builtin_add_overflow(s2, tmp, &s2);
+            __builtin_mul_overflow(*p_coef, *(p_input3++), &tmp);
+            __builtin_add_overflow(s3, tmp, &s3);
+            __builtin_mul_overflow(*(p_coef--), *(p_input4++), &tmp);
+            __builtin_add_overflow(s4, tmp, &s4);
+            __builtin_mul_overflow(*p_coef, *(p_input1++), &tmp);
+            __builtin_add_overflow(s1, tmp, &s1);
+            __builtin_mul_overflow(*p_coef, *(p_input2++), &tmp);
+            __builtin_add_overflow(s2, tmp, &s2);
+            __builtin_mul_overflow(*p_coef, *(p_input3++), &tmp);
+            __builtin_add_overflow(s3, tmp, &s3);
+            __builtin_mul_overflow(*(p_coef--), *(p_input4++), &tmp);
+            __builtin_add_overflow(s4, tmp, &s4);
         }
 
-        s1 += (((Word32) * (p_coef)) * *(p_input1));
-        s2 += (((Word32) * (p_coef)) * *(p_input2));
-        s3 += (((Word32) * (p_coef)) * *(p_input3));
-        s4 += (((Word32) * (p_coef)) * *(p_input4));
+        __builtin_mul_overflow(*p_coef, *(p_input1), &tmp);
+        __builtin_add_overflow(s1, tmp, &s1);
+        __builtin_mul_overflow(*p_coef, *(p_input2), &tmp);
+        __builtin_add_overflow(s2, tmp, &s2);
+        __builtin_mul_overflow(*p_coef, *(p_input3), &tmp);
+        __builtin_add_overflow(s3, tmp, &s3);
+        __builtin_mul_overflow(*p_coef, *(p_input4), &tmp);
+        __builtin_add_overflow(s4, tmp, &s4);
 
         *(p_residual_ptr--) = (Word16)(s1 >> 12);
         *(p_residual_ptr--) = (Word16)(s2 >> 12);

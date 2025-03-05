@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 
-#include <hidl/Utils.h>
-#include <gui/bufferqueue/1.0/H2BGraphicBufferProducer.h>
-#include <cutils/native_handle.h>
-#include <mediautils/AImageReaderUtils.h>
 #include <camera/StringUtils.h>
+#include <cutils/native_handle.h>
+#include <gui/Flags.h>  // remove with WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+#include <gui/bufferqueue/1.0/H2BGraphicBufferProducer.h>
+#include <hidl/Utils.h>
+#include <mediautils/AImageReaderUtils.h>
 
 namespace android {
 namespace hardware {
@@ -28,6 +29,7 @@ namespace conversion {
 
 using hardware::graphics::bufferqueue::V1_0::utils::H2BGraphicBufferProducer;
 using aimg::AImageReader_getHGBPFromHandle;
+using CameraMetadataInfo = android::hardware::camera2::CameraMetadataInfo;
 
 // Note: existing data in dst will be gone. Caller still owns the memory of src
 void convertToHidl(const camera_metadata_t *src, HCameraMetadata* dst) {
@@ -84,9 +86,9 @@ int convertFromHidl(HOutputConfiguration::Rotation rotation) {
 
 hardware::camera2::params::OutputConfiguration convertFromHidl(
     const HOutputConfiguration &hOutputConfiguration) {
-    std::vector<sp<IGraphicBufferProducer>> iGBPs;
-    auto &windowHandles = hOutputConfiguration.windowHandles;
-    iGBPs.reserve(windowHandles.size());
+    std::vector<ParcelableSurfaceType> surfaces;
+    auto& windowHandles = hOutputConfiguration.windowHandles;
+    surfaces.reserve(windowHandles.size());
     for (auto &handle : windowHandles) {
         auto igbp = AImageReader_getHGBPFromHandle(handle);
         if (igbp == nullptr) {
@@ -94,10 +96,16 @@ hardware::camera2::params::OutputConfiguration convertFromHidl(
                     __FUNCTION__, handle.getNativeHandle());
             continue;
         }
-        iGBPs.push_back(new H2BGraphicBufferProducer(igbp));
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+        view::Surface surface;
+        surface.graphicBufferProducer = new H2BGraphicBufferProducer(igbp);
+        surfaces.push_back(surface);
+#else
+        surfaces.push_back(new H2BGraphicBufferProducer(igbp));
+#endif
     }
     hardware::camera2::params::OutputConfiguration outputConfiguration(
-        iGBPs, convertFromHidl(hOutputConfiguration.rotation),
+        surfaces, convertFromHidl(hOutputConfiguration.rotation),
         hOutputConfiguration.physicalCameraId,
         hOutputConfiguration.windowGroupId, OutputConfiguration::SURFACE_TYPE_UNKNOWN, 0, 0,
         (windowHandles.size() > 1));
@@ -274,7 +282,8 @@ HPhysicalCaptureResultInfo convertToHidl(
     hPhysicalCaptureResultInfo.physicalCameraId =
         toString8(physicalCaptureResultInfo.mPhysicalCameraId);
     const camera_metadata_t *rawMetadata =
-        physicalCaptureResultInfo.mPhysicalCameraMetadata.getAndLock();
+        physicalCaptureResultInfo.mCameraMetadataInfo.get<CameraMetadataInfo::metadata>().
+                getAndLock();
     // Try using fmq at first.
     size_t metadata_size = get_camera_metadata_size(rawMetadata);
     if ((metadata_size > 0) && (captureResultMetadataQueue->availableToWrite() > 0)) {
@@ -287,7 +296,8 @@ HPhysicalCaptureResultInfo convertToHidl(
             hPhysicalCaptureResultInfo.physicalCameraMetadata.metadata(std::move(metadata));
         }
     }
-    physicalCaptureResultInfo.mPhysicalCameraMetadata.unlock(rawMetadata);
+    physicalCaptureResultInfo.mCameraMetadataInfo.get<CameraMetadataInfo::metadata>().
+            unlock(rawMetadata);
     return hPhysicalCaptureResultInfo;
 }
 

@@ -75,6 +75,7 @@ void CameraUtilsFuzzer::invokeCameraUtils() {
 
                     CameraUtils::getRotationTransform(
                             staticMetadata, mFDP->ConsumeIntegral<int32_t>() /* mirrorMode */,
+                            true /*enableTransformInverseDisplay*/,
                             &transform /*out*/);
                 },
                 [&]() { CameraUtils::isCameraServiceDisabled(); },

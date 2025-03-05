@@ -29,45 +29,89 @@ import java.util.concurrent.TimeUnit;
 
 public class FrameReleaseQueue {
     private static final String TAG = "FrameReleaseQueue";
+    private static final boolean DEBUG = false;
     private final String MIME_AV1 = "video/av01";
     private final int AV1_SUPERFRAME_DELAY = 6;
     private final int THRESHOLD_TIME = 5;
+
+    private final long HOUR_IN_MS = (60 * 60 * 1000L);
+    private final long MINUTE_IN_MS = (60 * 1000L);
 
     private MediaCodec mCodec;
     private LinkedBlockingQueue<FrameInfo> mFrameInfoQueue;
     private ReleaseThread mReleaseThread;
     private AtomicBoolean doFrameRelease = new AtomicBoolean(false);
-    private boolean mReleaseJobStarted = false;
+    private AtomicBoolean mReleaseJobStarted = new AtomicBoolean(false);
     private boolean mRender = false;
-    private int mWaitTime = 40; // milliseconds per frame
+    private long mWaitTime = 40; // milliseconds per frame
     private int mWaitTimeCorrection = 0;
     private int mCorrectionLoopCount;
-    private int firstReleaseTime = -1;
-    private int mAllowedDelayTime = THRESHOLD_TIME;
+    protected long firstReleaseTime = -1;
+    private long mAllowedDelayTime = THRESHOLD_TIME;
     private int mFrameDelay = 0;
     private final ScheduledExecutorService mScheduler = Executors.newScheduledThreadPool(1);
 
+    public FrameReleaseQueue(boolean render, int frameRate) {
+        this.mFrameInfoQueue = new LinkedBlockingQueue();
+        this.mReleaseThread = new ReleaseThread();
+        this.doFrameRelease.set(true);
+        this.mRender = render;
+        this.mWaitTime = 1000 / frameRate; // wait time in milliseconds per frame
+        int waitTimeRemainder = 1000 % frameRate;
+        int gcd = gcd(frameRate, waitTimeRemainder);
+        this.mCorrectionLoopCount = frameRate / gcd;
+        this.mWaitTimeCorrection = waitTimeRemainder / gcd;
+        Log.i(TAG, "Constructed FrameReleaseQueue with wait time " + this.mWaitTime + " ms");
+    }
+
+    public FrameReleaseQueue(boolean render, int sampleRate, int nChannels, int bytesPerChannel) {
+        this.mFrameInfoQueue = new LinkedBlockingQueue();
+        this.doFrameRelease.set(true);
+        this.mRender = render;
+        this.mReleaseThread = new AudioRendererThread(sampleRate, nChannels, bytesPerChannel);
+    }
 
     private static class FrameInfo {
         private int number;
         private int bufferId;
         private int displayTime;
+        private int bytes;
         public FrameInfo(int frameNumber, int frameBufferId, int frameDisplayTime) {
             this.number = frameNumber;
             this.bufferId = frameBufferId;
             this.displayTime = frameDisplayTime;
         }
+        public FrameInfo(int frameBufferId, int bytes) {
+            this.bufferId = frameBufferId;
+            this.bytes = bytes;
+        }
     }
 
     private class ReleaseThread extends Thread {
         private int mLoopCount = 0;
-        private int mNextReleaseTime = 0;
+        private long mNextReleaseTime = 0;
+
+        protected void printPlaybackTime() {
+            if (firstReleaseTime == -1) {
+                Log.d(TAG, "Playback Time not initialized");
+                return;
+            }
+            long curTime = getCurSysTime() - firstReleaseTime;
+            long hours = curTime / (HOUR_IN_MS);
+            curTime -= (hours * HOUR_IN_MS);
+            long min = curTime / MINUTE_IN_MS;
+            curTime -= (min * MINUTE_IN_MS);
+            Log.d(TAG, "Playback time: "
+                    + hours + "h "
+                    + min + "m "
+                    + (double)(curTime / (double)1000) +"s");
+        }
 
         @SuppressWarnings("FutureReturnValueIgnored")
         public void run() {
             /* Check if the release thread wakes up too late */
             if (mLoopCount != 0) {
-                int delta = getCurSysTime() - mNextReleaseTime;
+                long delta = getCurSysTime() - mNextReleaseTime;
                 if (delta >= THRESHOLD_TIME) {
                     Log.d(TAG, "Release thread wake up late by " + delta);
                     /* For accidental late wake up, we should relax the timestamp
@@ -93,8 +137,8 @@ public class FrameReleaseQueue {
                         popAndRelease(false);
                     } else {
                         mNextReleaseTime += mWaitTime;
-                        int curSysTime = getCurSysTime();
-                        int curMediaTime = curSysTime - firstReleaseTime;
+                        long curSysTime = getCurSysTime();
+                        long curMediaTime = curSysTime - firstReleaseTime;
                         while (curFrameInfo != null && curFrameInfo.displayTime > 0 &&
                                 curFrameInfo.displayTime <= curMediaTime) {
                             if (!((curMediaTime - curFrameInfo.displayTime) <= mAllowedDelayTime)) {
@@ -123,21 +167,86 @@ public class FrameReleaseQueue {
                     mNextReleaseTime += mWaitTimeCorrection;
                 }
                 mLoopCount += 1;
+            } else {
+                mReleaseJobStarted.set(false);
             }
         }
     }
 
-    public FrameReleaseQueue(boolean render, int frameRate) {
-        this.mFrameInfoQueue = new LinkedBlockingQueue();
-        this.mReleaseThread = new ReleaseThread();
-        this.doFrameRelease.set(true);
-        this.mRender = render;
-        this.mWaitTime = 1000 / frameRate; // wait time in milliseconds per frame
-        int waitTimeRemainder = 1000 % frameRate;
-        int gcd = gcd(frameRate, waitTimeRemainder);
-        this.mCorrectionLoopCount = frameRate / gcd;
-        this.mWaitTimeCorrection = waitTimeRemainder / gcd;
-        Log.i(TAG, "Constructed FrameReleaseQueue with wait time " + this.mWaitTime + " ms");
+    private class AudioRendererThread extends ReleaseThread {
+        private final int WAIT_FOR_BUFFER_IN_SEC = 2;
+        private double mTimeAdjustMs = 0;
+        private double mMsForByte = 0;
+        private double mExpectedWakeUpTime = 0;
+        private FrameInfo mCurrentFrameInfo;
+
+        AudioRendererThread(int sampleRate, int nChannels, int bytesPerChannel) {
+            if (DEBUG) {
+                Log.d(TAG, "sampleRate " + sampleRate
+                        + " nChannels " + nChannels
+                        + " bytesPerChannel " + bytesPerChannel);
+            }
+            this.mMsForByte = 1000 / (double)(sampleRate * nChannels * bytesPerChannel);
+        }
+
+        @Override
+        @SuppressWarnings("FutureReturnValueIgnored")
+        public void run() {
+            long curTime = getCurSysTime();
+            if (DEBUG) {
+                if (firstReleaseTime == -1) {
+                    firstReleaseTime = curTime;
+                }
+                printPlaybackTime();
+            }
+            if (mMsForByte == 0) {
+                Log.e(TAG, "Audio rendering not possible, no valid params");
+                return;
+            }
+            if (mCurrentFrameInfo != null) {
+                try {
+                    mCodec.releaseOutputBuffer(mCurrentFrameInfo.bufferId, mRender);
+                } catch (IllegalStateException e) {
+                    doFrameRelease.set(false);
+                    Log.e(TAG, "Threw InterruptedException on releaseOutputBuffer");
+                } finally {
+                    mCurrentFrameInfo = null;
+                }
+            }
+            boolean requestedSchedule = false;
+            try {
+                while (doFrameRelease.get() || mFrameInfoQueue.size() > 0) {
+                    mCurrentFrameInfo = mFrameInfoQueue.poll(
+                            WAIT_FOR_BUFFER_IN_SEC, TimeUnit.SECONDS);
+                    if (mCurrentFrameInfo != null) {
+                        mTimeAdjustMs = 0;
+                        if (mExpectedWakeUpTime != 0) {
+                            mTimeAdjustMs = mExpectedWakeUpTime - getCurSysTime();
+                        }
+                        double sleepTimeUs =
+                                (mMsForByte * mCurrentFrameInfo.bytes + mTimeAdjustMs) * 1000;
+                        mExpectedWakeUpTime = getCurSysTime() + (sleepTimeUs / 1000);
+                        if (DEBUG) {
+                            Log.d(TAG, " mExpectedWakeUpTime " + mExpectedWakeUpTime
+                                + " Waiting for " + (long)(sleepTimeUs) + "us"
+                                + " Now " + getCurSysTime()
+                                + " bytes " + mCurrentFrameInfo.bytes
+                                + " bufferID " + mCurrentFrameInfo.bufferId);
+                        }
+                        mScheduler.schedule(
+                                mReleaseThread,(long)(sleepTimeUs),TimeUnit.MICROSECONDS);
+                        requestedSchedule = true;
+                        break;
+                    }
+                }
+            } catch(InterruptedException e) {
+                Log.d(TAG, "Interrupted during poll wait");
+                doFrameRelease.set(false);
+            }
+            if (!requestedSchedule) {
+                mReleaseJobStarted.set(false);
+            }
+        }
     }
 
     private static int gcd(int a, int b) {
@@ -154,6 +263,19 @@ public class FrameReleaseQueue {
         }
     }
 
+    public boolean pushFrame(int frameBufferId, int bytes) {
+        FrameInfo info = new FrameInfo(frameBufferId, bytes);
+        boolean pushSuccess = mFrameInfoQueue.offer(info);
+        if (!pushSuccess) {
+            Log.e(TAG, "Failed to push frame with buffer id " + info.bufferId);
+            return false;
+        }
+        if (!mReleaseJobStarted.get()) {
+            mScheduler.execute(mReleaseThread);
+            mReleaseJobStarted.set(true);
+        }
+        return true;
+    }
     public boolean pushFrame(int frameNumber, int frameBufferId, long frameDisplayTime) {
         int frameDisplayTimeMs = (int)(frameDisplayTime/1000);
         FrameInfo curFrameInfo = new FrameInfo(frameNumber, frameBufferId, frameDisplayTimeMs);
@@ -163,16 +285,16 @@ public class FrameReleaseQueue {
             return false;
         }
 
-        if (!mReleaseJobStarted && frameNumber >= mFrameDelay) {
+        if (!mReleaseJobStarted.get() && frameNumber >= mFrameDelay) {
             mScheduler.execute(mReleaseThread);
-            mReleaseJobStarted = true;
+            mReleaseJobStarted.set(true);
             Log.i(TAG, "Started frame release thread");
         }
         return true;
     }
 
-    private int getCurSysTime() {
-        return (int)(System.nanoTime()/1000000);
+    private long getCurSysTime() {
+        return (long)(System.nanoTime() / 1000000L);
     }
 
     @SuppressWarnings("FutureReturnValueIgnored")
@@ -196,7 +318,7 @@ public class FrameReleaseQueue {
 
     public void stopFrameRelease() {
         doFrameRelease.set(false);
-        while (mFrameInfoQueue.size() > 0) {
+        while (mReleaseJobStarted.get()) {
             try {
                 TimeUnit.SECONDS.sleep(1);
             } catch (InterruptedException e) {

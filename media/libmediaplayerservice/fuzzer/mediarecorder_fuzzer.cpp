@@ -24,6 +24,7 @@
 #include <fakeservicemanager/FakeServiceManager.h>
 #include <gui/IGraphicBufferProducer.h>
 #include <gui/Surface.h>
+#include <gui/Flags.h>
 #include <gui/SurfaceComposerClient.h>
 #include <media/stagefright/PersistentSurface.h>
 #include <media/stagefright/foundation/AString.h>
@@ -115,7 +116,7 @@ class TestAudioDeviceCallback : public AudioSystem::AudioDeviceCallback {
     virtual ~TestAudioDeviceCallback() = default;
 
     void onAudioDeviceUpdate(audio_io_handle_t /*audioIo*/,
-                             audio_port_handle_t /*deviceId*/) override{};
+                             const DeviceIdVector& /*deviceIds*/) override{};
 };
 
 class TestCamera : public ICamera {
@@ -126,14 +127,9 @@ class TestCamera : public ICamera {
     status_t connect(const sp<ICameraClient> & /*client*/) override { return 0; };
     status_t lock() override { return 0; };
     status_t unlock() override { return 0; };
-    status_t setPreviewTarget(const sp<IGraphicBufferProducer> & /*bufferProducer*/) override {
-        return 0;
-    };
+    status_t setPreviewTarget(const sp<SurfaceType> & /*target*/) override { return 0; };
+    status_t setPreviewCallbackTarget(const sp<SurfaceType> & /*target*/) override { return 0; };
     void setPreviewCallbackFlag(int /*flag*/) override{};
-    status_t setPreviewCallbackTarget(
-        const sp<IGraphicBufferProducer> & /*callbackProducer*/) override {
-        return 0;
-    };
     status_t startPreview() override { return 0; };
     void stopPreview() override{};
     bool previewEnabled() override { return true; };
@@ -152,9 +148,7 @@ class TestCamera : public ICamera {
         return 0;
     };
     status_t setVideoBufferMode(int32_t /*videoBufferMode*/) override { return 0; };
-    status_t setVideoTarget(const sp<IGraphicBufferProducer> & /*bufferProducer*/) override {
-        return 0;
-    };
+    status_t setVideoTarget(const sp<SurfaceType> & /*target*/) override { return 0; };
     status_t setAudioRestriction(int32_t /*mode*/) override { return 0; };
     int32_t getGlobalAudioRestriction() override { return 0; };
     IBinder *onAsBinder() override { return reinterpret_cast<IBinder *>(this); };
@@ -191,8 +185,8 @@ void MediaRecorderClientFuzzer::getConfig() {
     int32_t max;
     mStfRecorder->getMaxAmplitude(&max);
 
-    int32_t deviceId;
-    mStfRecorder->getRoutedDeviceId(&deviceId);
+    DeviceIdVector deviceIds;
+    mStfRecorder->getRoutedDeviceIds(deviceIds);
 
     vector<android::media::MicrophoneInfoFw> activeMicrophones{};
     mStfRecorder->getActiveMicrophones(&activeMicrophones);

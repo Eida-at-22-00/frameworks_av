@@ -108,6 +108,8 @@ class EffectProxy final : public ::aidl::android::hardware::audio::effect::BnEff
     std::string toString(size_t indent = 0) const;
 
   private:
+    // The shared capability of all sub-effects
+    const ::aidl::android::hardware::audio::effect::Capability mSharedCapability;
     // Proxy descriptor common part, copy from one sub-effect, and update the implementation UUID to
     // proxy UUID, proxy descriptor capability part comes from the active sub-effect capability
     const ::aidl::android::hardware::audio::effect::Descriptor::Common mDescriptorCommon;
@@ -143,6 +145,11 @@ class EffectProxy final : public ::aidl::android::hardware::audio::effect::BnEff
     // build Descriptor.Common with all sub-effect descriptors
     static ::aidl::android::hardware::audio::effect::Descriptor::Common buildDescriptorCommon(
             const ::aidl::android::media::audio::common::AudioUuid& uuid,
+            const std::vector<::aidl::android::hardware::audio::effect::Descriptor>&
+                    subEffectDescs);
+
+    // build a shared capability with all sub-effect descriptors
+    static ::aidl::android::hardware::audio::effect::Capability buildDescriptorCapability(
             const std::vector<::aidl::android::hardware::audio::effect::Descriptor>&
                     subEffectDescs);
 

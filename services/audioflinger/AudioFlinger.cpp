@@ -26,9 +26,7 @@
 #include "Configuration.h"
 #include "AudioFlinger.h"
 
-//#define BUFLOG_NDEBUG 0
-#include <afutils/BufLog.h>
-#include <afutils/DumpTryLock.h>
+#include <afutils/FallibleLockGuard.h>
 #include <afutils/NBAIO_Tee.h>
 #include <afutils/Permission.h>
 #include <afutils/PropertyUtils.h>
@@ -68,6 +66,7 @@
 // not needed with the includes above, added to prevent transitive include dependency.
 #include <chrono>
 #include <thread>
+#include <string_view>
 
 // ----------------------------------------------------------------------------
 
@@ -86,6 +85,8 @@
 
 namespace android {
 
+using namespace std::string_view_literals;
+
 using ::android::base::StringPrintf;
 using aidl_utils::statusTFromBinderStatus;
 using media::IEffectClient;
@@ -102,31 +103,34 @@ using com::android::media::permission::ValidatedAttributionSourceState;
 static const AudioHalVersionInfo kMaxAAudioPropertyDeviceHalVersion =
         AudioHalVersionInfo(AudioHalVersionInfo::Type::HIDL, 7, 1);
 
-static constexpr char kDeadlockedString[] = "AudioFlinger may be deadlocked\n";
-static constexpr char kHardwareLockedString[] = "Hardware lock is taken\n";
-static constexpr char kClientLockedString[] = "Client lock is taken\n";
-static constexpr char kNoEffectsFactory[] = "Effects Factory is absent\n";
+constexpr auto kDeadlockedString = "AudioFlinger may be deadlocked\n"sv;
+constexpr auto kHardwareLockedString = "Hardware lock is taken\n"sv;
+constexpr auto kClientLockedString = "Client lock is taken\n"sv;
+constexpr auto kNoEffectsFactory = "Effects Factory is absent\n"sv;
 
 static constexpr char kAudioServiceName[] = "audio";
-
-// In order to avoid invalidating offloaded tracks each time a Visualizer is turned on and off
-// we define a minimum time during which a global effect is considered enabled.
-static const nsecs_t kMinGlobalEffectEnabletimeNs = seconds(7200);
 
 // Keep a strong reference to media.log service around forever.
 // The service is within our parent process so it can never die in a way that we could observe.
 // These two variables are const after initialization.
-static sp<IBinder> sMediaLogServiceAsBinder;
 static sp<IMediaLogService> sMediaLogService;
 
 static pthread_once_t sMediaLogOnce = PTHREAD_ONCE_INIT;
 
 static void sMediaLogInit()
 {
-    sMediaLogServiceAsBinder = defaultServiceManager()->getService(String16("media.log"));
+    auto sMediaLogServiceAsBinder = defaultServiceManager()->getService(String16("media.log"));
     if (sMediaLogServiceAsBinder != 0) {
         sMediaLogService = interface_cast<IMediaLogService>(sMediaLogServiceAsBinder);
     }
+}
+
+static int writeStr(int fd, std::string_view s) {
+    return write(fd, s.data(), s.size());
+}
+
+static int writeStr(int fd, const String8& s) {
+    return write(fd, s.c_str(), s.size());
 }
 
 static error::BinderResult<ValidatedAttributionSourceState>
@@ -533,7 +537,7 @@ status_t MmapStreamInterface::openMmapStream(MmapStreamInterface::stream_directi
                                              const audio_attributes_t *attr,
                                              audio_config_base_t *config,
                                              const AudioClient& client,
-                                             audio_port_handle_t *deviceId,
+                                             DeviceIdVector *deviceIds,
                                              audio_session_t *sessionId,
                                              const sp<MmapStreamCallback>& callback,
                                              sp<MmapStreamInterface>& interface,
@@ -545,7 +549,7 @@ status_t MmapStreamInterface::openMmapStream(MmapStreamInterface::stream_directi
     status_t ret = NO_INIT;
     if (af != 0) {
         ret = af->openMmapStream(
-                direction, attr, config, client, deviceId,
+                direction, attr, config, client, deviceIds,
                 sessionId, callback, interface, handle);
     }
     return ret;
@@ -555,7 +559,7 @@ status_t AudioFlinger::openMmapStream(MmapStreamInterface::stream_direction_t di
                                       const audio_attributes_t *attr,
                                       audio_config_base_t *config,
                                       const AudioClient& client,
-                                      audio_port_handle_t *deviceId,
+                                      DeviceIdVector *deviceIds,
                                       audio_session_t *sessionId,
                                       const sp<MmapStreamCallback>& callback,
                                       sp<MmapStreamInterface>& interface,
@@ -621,15 +625,18 @@ status_t AudioFlinger::openMmapStream(MmapStreamInterface::stream_direction_t di
         bool isSpatialized;
         bool isBitPerfect;
         float volume;
+        bool muted;
         ret = AudioSystem::getOutputForAttr(&localAttr, &io,
                                             actualSessionId,
                                             &streamType, adjAttributionSource,
                                             &fullConfig,
                                             (audio_output_flags_t)(AUDIO_OUTPUT_FLAG_MMAP_NOIRQ |
                                                     AUDIO_OUTPUT_FLAG_DIRECT),
-                                            deviceId, &portId, &secondaryOutputs, &isSpatialized,
+                                            deviceIds, &portId, &secondaryOutputs,
+                                            &isSpatialized,
                                             &isBitPerfect,
-                                            &volume);
+                                            &volume,
+                                            &muted);
         if (ret != NO_ERROR) {
             config->sample_rate = fullConfig.sample_rate;
             config->channel_mask = fullConfig.channel_mask;
@@ -638,12 +645,17 @@ status_t AudioFlinger::openMmapStream(MmapStreamInterface::stream_direction_t di
         ALOGW_IF(!secondaryOutputs.empty(),
                  "%s does not support secondary outputs, ignoring them", __func__);
     } else {
+        audio_port_handle_t deviceId = getFirstDeviceId(*deviceIds);
         ret = AudioSystem::getInputForAttr(&localAttr, &io,
                                               RECORD_RIID_INVALID,
                                               actualSessionId,
                                               adjAttributionSource,
                                               config,
-                                              AUDIO_INPUT_FLAG_MMAP_NOIRQ, deviceId, &portId);
+                                              AUDIO_INPUT_FLAG_MMAP_NOIRQ, &deviceId, &portId);
+        deviceIds->clear();
+        if (deviceId != AUDIO_PORT_HANDLE_NONE) {
+            deviceIds->push_back(deviceId);
+        }
     }
     if (ret != NO_ERROR) {
         return ret;
@@ -657,7 +669,7 @@ status_t AudioFlinger::openMmapStream(MmapStreamInterface::stream_direction_t di
     const sp<IAfMmapThread> thread = mMmapThreads.valueFor(io);
     if (thread != 0) {
         interface = IAfMmapThread::createMmapStreamInterfaceAdapter(thread);
-        thread->configure(&localAttr, streamType, actualSessionId, callback, *deviceId, portId);
+        thread->configure(&localAttr, streamType, actualSessionId, callback, *deviceIds, portId);
         *handle = portId;
         *sessionId = actualSessionId;
         config->sample_rate = thread->sampleRate();
@@ -738,18 +750,19 @@ AudioHwDevice* AudioFlinger::findSuitableHwDev_l(
     return NULL;
 }
 
-void AudioFlinger::dumpClients_ll(int fd, const Vector<String16>& args __unused)
-{
+void AudioFlinger::dumpClients_ll(int fd, bool dumpAllocators) {
     String8 result;
 
-    result.append("Client Allocators:\n");
-    for (size_t i = 0; i < mClients.size(); ++i) {
-        sp<Client> client = mClients.valueAt(i).promote();
-        if (client != 0) {
-          result.appendFormat("Client: %d\n", client->pid());
-          result.append(client->allocator().dump().c_str());
+    if (dumpAllocators) {
+        result.append("Client Allocators:\n");
+        for (size_t i = 0; i < mClients.size(); ++i) {
+            sp<Client> client = mClients.valueAt(i).promote();
+            if (client != 0) {
+              result.appendFormat("Client: %d\n", client->pid());
+              result.append(client->allocator().dump().c_str());
+            }
         }
-   }
+    }
 
     result.append("Notification Clients:\n");
     result.append("   pid    uid  name\n");
@@ -770,12 +783,11 @@ void AudioFlinger::dumpClients_ll(int fd, const Vector<String16>& args __unused)
         result.appendFormat("  %7d %4d %7d %6u  %s\n", r->mSessionid, r->mCnt, r->mPid,
                 r->mUid, info->package.c_str());
     }
-    write(fd, result.c_str(), result.size());
+    writeStr(fd, result);
 }
 
 
-void AudioFlinger::dumpInternals_l(int fd, const Vector<String16>& args __unused)
-{
+void AudioFlinger::dumpInternals_l(int fd) {
     const size_t SIZE = 256;
     char buffer[SIZE];
     String8 result;
@@ -783,7 +795,7 @@ void AudioFlinger::dumpInternals_l(int fd, const Vector<String16>& args __unused
 
     snprintf(buffer, SIZE, "Hardware status: %d\n", hardwareStatus);
     result.append(buffer);
-    write(fd, result.c_str(), result.size());
+    writeStr(fd, result);
 
     dprintf(fd, "Vibrator infos(size=%zu):\n", mAudioVibratorInfos.size());
     for (const auto& vibratorInfo : mAudioVibratorInfos) {
@@ -793,8 +805,43 @@ void AudioFlinger::dumpInternals_l(int fd, const Vector<String16>& args __unused
             mBluetoothLatencyModesEnabled ? "" : "not ");
 }
 
-void AudioFlinger::dumpPermissionDenial(int fd, const Vector<String16>& args __unused)
-{
+void AudioFlinger::dumpStats(int fd) {
+    // Dump binder stats
+    dprintf(fd, "\nIAudioFlinger binder call profile:\n");
+    writeStr(fd, getIAudioFlingerStatistics().dump());
+
+    extern mediautils::MethodStatistics<int>& getIEffectStatistics();
+    dprintf(fd, "\nIEffect binder call profile:\n");
+    writeStr(fd, getIEffectStatistics().dump());
+
+    // Automatically fetch HIDL or AIDL statistics.
+    const std::string_view halType = (mDevicesFactoryHal->getHalVersion().getType() ==
+                              AudioHalVersionInfo::Type::HIDL)
+                                     ? METHOD_STATISTICS_MODULE_NAME_AUDIO_HIDL
+                                     : METHOD_STATISTICS_MODULE_NAME_AUDIO_AIDL;
+    const std::shared_ptr<std::vector<std::string>> halClassNames =
+            mediautils::getStatisticsClassesForModule(halType);
+    if (halClassNames) {
+        for (const auto& className : *halClassNames) {
+            auto stats = mediautils::getStatisticsForClass(className);
+            if (stats) {
+                dprintf(fd, "\n%s binder call profile:\n", className.c_str());
+                writeStr(fd, stats->dump());
+            }
+        }
+    }
+
+    dprintf(fd, "\nTimeCheck:\n");
+    writeStr(fd, mediautils::TimeCheck::toString());
+    dprintf(fd, "\n");
+    // dump mutex stats
+    writeStr(fd, audio_utils::mutex::all_stats_to_string());
+    // dump held mutexes
+    writeStr(fd, audio_utils::mutex::all_threads_to_string());
+
+}
+
+void AudioFlinger::dumpPermissionDenial(int fd) {
     const size_t SIZE = 256;
     char buffer[SIZE];
     String8 result;
@@ -803,52 +850,102 @@ void AudioFlinger::dumpPermissionDenial(int fd, const Vector<String16>& args __u
             IPCThreadState::self()->getCallingPid(),
             IPCThreadState::self()->getCallingUid());
     result.append(buffer);
-    write(fd, result.c_str(), result.size());
+    writeStr(fd, result);
+}
+
+static void dump_printHelp(int fd) {
+    constexpr static auto helpStr =
+            "AudioFlinger dumpsys help options\n"
+            "  -h/--help: Print this help text\n"
+            "  --hal: Include dump of audio hal\n"
+            "  --stats: Include call/lock/watchdog stats\n"
+            "  --effects: Include effect definitions\n"
+            "  --memory: Include memory dump\n"
+            "  -a/--all: Print all except --memory\n"sv;
+
+    write(fd, helpStr.data(), helpStr.length());
 }
 
 status_t AudioFlinger::dump(int fd, const Vector<String16>& args)
-NO_THREAD_SAFETY_ANALYSIS  // conditional try lock
 {
+    using afutils::FallibleLockGuard;
     if (!dumpAllowed()) {
-        dumpPermissionDenial(fd, args);
-    } else {
-        // get state of hardware lock
-        const bool hardwareLocked = afutils::dumpTryLock(hardwareMutex());
-        if (!hardwareLocked) {
-            String8 result(kHardwareLockedString);
-            write(fd, result.c_str(), result.size());
+        dumpPermissionDenial(fd);
+        return NO_ERROR;
+    }
+    // Arg parsing
+    struct {
+        bool shouldDumpMem, shouldDumpStats, shouldDumpHal, shouldDumpEffects;
+    } parsedArgs {}; // zero-init
+
+    for (const auto& arg : args) {
+        const String8 utf8arg{arg};
+        if (utf8arg == "-h" || utf8arg == "--help") {
+            dump_printHelp(fd);
+            return NO_ERROR;
+        }
+        if (utf8arg == "-a" || utf8arg == "--all") {
+            parsedArgs.shouldDumpStats = true;
+            parsedArgs.shouldDumpHal = true;
+            parsedArgs.shouldDumpEffects = true;
+            continue;
+        }
+        if (utf8arg == "--hal") {
+            parsedArgs.shouldDumpHal = true;
+            continue;
+        }
+        if (utf8arg == "--stats") {
+            parsedArgs.shouldDumpStats = true;
+            continue;
+        }
+        if (utf8arg == "--effects") {
+            parsedArgs.shouldDumpEffects = true;
+            continue;
+        }
+        if (utf8arg == "--memory") {
+            parsedArgs.shouldDumpMem = true;
+            continue;
+        }
+        // Unknown arg silently ignored
+    }
+
+    {
+        std::string res;
+        res.reserve(100);
+        res += "Start begin: ";
+        const auto startTimeStr = audio_utils_time_string_from_ns(mStartTime);
+        res += startTimeStr.time;
+        const auto startFinishedTime = getStartupFinishedTime();
+        if (startFinishedTime != 0) {
+            res += "\nStart end:   ";
+            const auto startEndStr = audio_utils_time_string_from_ns(startFinishedTime);
+            res += startEndStr.time;
         } else {
-            hardwareMutex().unlock();
+            res += "\nStartup not yet finished!";
+        }
+        const auto nowTimeStr = audio_utils_time_string_from_ns(audio_utils_get_real_time_ns());
+        res += "\nNow:         ";
+        res += nowTimeStr.time;
+        res += "\n";
+        writeStr(fd, res);
+    }
+    // get state of hardware lock
+    {
+        FallibleLockGuard l{hardwareMutex()};
+        if (!l) writeStr(fd, kHardwareLockedString);
+    }
+    {
+        FallibleLockGuard  l{mutex()};
+        if (!l) writeStr(fd, kDeadlockedString);
+        {
+            FallibleLockGuard ll{clientMutex()};
+            if (!ll) writeStr(fd, kClientLockedString);
+            dumpClients_ll(fd, parsedArgs.shouldDumpMem);
         }
 
-        const bool locked = afutils::dumpTryLock(mutex());
+        dumpInternals_l(fd);
 
-        // failed to lock - AudioFlinger is probably deadlocked
-        if (!locked) {
-            String8 result(kDeadlockedString);
-            write(fd, result.c_str(), result.size());
-        }
-
-        const bool clientLocked = afutils::dumpTryLock(clientMutex());
-        if (!clientLocked) {
-            String8 result(kClientLockedString);
-            write(fd, result.c_str(), result.size());
-        }
-
-        if (mEffectsFactoryHal != 0) {
-            mEffectsFactoryHal->dumpEffects(fd);
-        } else {
-            String8 result(kNoEffectsFactory);
-            write(fd, result.c_str(), result.size());
-        }
-
-        dumpClients_ll(fd, args);
-        if (clientLocked) {
-            clientMutex().unlock();
-        }
-
-        dumpInternals_l(fd, args);
-
+        dprintf(fd, "\n ## BEGIN thread dump \n");
         // dump playback threads
         for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
             mPlaybackThreads.valueAt(i)->dump(fd, args);
@@ -866,141 +963,84 @@ NO_THREAD_SAFETY_ANALYSIS  // conditional try lock
 
         // dump orphan effect chains
         if (mOrphanEffectChains.size() != 0) {
-            write(fd, "  Orphan Effect Chains\n", strlen("  Orphan Effect Chains\n"));
+            writeStr(fd, "  Orphan Effect Chains\n");
             for (size_t i = 0; i < mOrphanEffectChains.size(); i++) {
                 mOrphanEffectChains.valueAt(i)->dump(fd, args);
             }
         }
-        // dump all hardware devs
-        for (size_t i = 0; i < mAudioHwDevs.size(); i++) {
-            sp<DeviceHalInterface> dev = mAudioHwDevs.valueAt(i)->hwDevice();
-            dev->dump(fd, args);
-        }
-
-        mPatchPanel->dump(fd);
-
-        mDeviceEffectManager->dump(fd);
-
-        std::string melOutput = mMelReporter->dump();
-        write(fd, melOutput.c_str(), melOutput.size());
+        // dump historical threads in the last 10 seconds
+        writeStr(fd, mThreadLog.dumpToString(
+                "Historical Thread Log ", 0 /* lines */,
+                audio_utils_get_real_time_ns() - 10 * 60 * NANOS_PER_SECOND));
 
         // dump external setParameters
+        dprintf(fd, "\n ## BEGIN setParameters dump \n");
         auto dumpLogger = [fd](SimpleLog& logger, const char* name) {
-            dprintf(fd, "\n%s setParameters:\n", name);
+            dprintf(fd, "\n  %s setParameters:\n", name);
             logger.dump(fd, "    " /* prefix */);
         };
         dumpLogger(mRejectedSetParameterLog, "Rejected");
         dumpLogger(mAppSetParameterLog, "App");
         dumpLogger(mSystemSetParameterLog, "System");
 
-        // dump historical threads in the last 10 seconds
-        const std::string threadLog = mThreadLog.dumpToString(
-                "Historical Thread Log ", 0 /* lines */,
-                audio_utils_get_real_time_ns() - 10 * 60 * NANOS_PER_SECOND);
-        write(fd, threadLog.c_str(), threadLog.size());
 
-        BUFLOG_RESET;
+        dprintf(fd, "\n ## BEGIN misc af dump \n");
+        mPatchPanel->dump(fd);
+        mDeviceEffectManager->dump(fd);
+        writeStr(fd, mMelReporter->dump());
 
         if (media::psh_utils::AudioPowerManager::enabled()) {
             char value[PROPERTY_VALUE_MAX];
             property_get("ro.build.display.id", value, "Unknown build");
             std::string build(value);
-            build.append("\n");
-            write(fd, build.c_str(), build.size());
-            const std::string powerLog =
-                    media::psh_utils::AudioPowerManager::getAudioPowerManager().toString();
-            write(fd, powerLog.c_str(), powerLog.size());
+            writeStr(fd, build + "\n");
+            writeStr(fd, media::psh_utils::AudioPowerManager::getAudioPowerManager().toString());
         }
 
-        if (locked) {
-            mutex().unlock();
-        }
-
-#ifdef TEE_SINK
-        // NBAIO_Tee dump is safe to call outside of AF lock.
-        NBAIO_Tee::dumpAll(fd, "_DUMP");
-#endif
-        // append a copy of media.log here by forwarding fd to it, but don't attempt
-        // to lookup the service if it's not running, as it will block for a second
-        if (sMediaLogServiceAsBinder != 0) {
-            dprintf(fd, "\nmedia.log:\n");
-            sMediaLogServiceAsBinder->dump(fd, args);
-        }
-
-        // check for optional arguments
-        bool dumpMem = false;
-        bool unreachableMemory = false;
-        for (const auto &arg : args) {
-            if (arg == String16("-m")) {
-                dumpMem = true;
-            } else if (arg == String16("--unreachable")) {
-                unreachableMemory = true;
+        if (parsedArgs.shouldDumpEffects) {
+            dprintf(fd, "\n ## BEGIN effects dump \n");
+            if (mEffectsFactoryHal != 0) {
+                mEffectsFactoryHal->dumpEffects(fd);
+            } else {
+                writeStr(fd, kNoEffectsFactory);
             }
         }
 
-        if (dumpMem) {
-            dprintf(fd, "\nDumping memory:\n");
-            std::string s = dumpMemoryAddresses(100 /* limit */);
-            write(fd, s.c_str(), s.size());
-        }
-        if (unreachableMemory) {
-            dprintf(fd, "\nDumping unreachable memory:\n");
-            // TODO - should limit be an argument parameter?
-            std::string s = GetUnreachableMemoryString(true /* contents */, 100 /* limit */);
-            write(fd, s.c_str(), s.size());
-        }
-        {
-            std::string timeCheckStats = getIAudioFlingerStatistics().dump();
-            dprintf(fd, "\nIAudioFlinger binder call profile:\n");
-            write(fd, timeCheckStats.c_str(), timeCheckStats.size());
-
-            extern mediautils::MethodStatistics<int>& getIEffectStatistics();
-            timeCheckStats = getIEffectStatistics().dump();
-            dprintf(fd, "\nIEffect binder call profile:\n");
-            write(fd, timeCheckStats.c_str(), timeCheckStats.size());
-
-            // Automatically fetch HIDL or AIDL statistics.
-            const std::string_view halType = (mDevicesFactoryHal->getHalVersion().getType() ==
-                                      AudioHalVersionInfo::Type::HIDL)
-                                             ? METHOD_STATISTICS_MODULE_NAME_AUDIO_HIDL
-                                             : METHOD_STATISTICS_MODULE_NAME_AUDIO_AIDL;
-            const std::shared_ptr<std::vector<std::string>> halClassNames =
-                    mediautils::getStatisticsClassesForModule(halType);
-            if (halClassNames) {
-                for (const auto& className : *halClassNames) {
-                    auto stats = mediautils::getStatisticsForClass(className);
-                    if (stats) {
-                        timeCheckStats = stats->dump();
-                        dprintf(fd, "\n%s binder call profile:\n", className.c_str());
-                        write(fd, timeCheckStats.c_str(), timeCheckStats.size());
-                    }
-                }
+        if (parsedArgs.shouldDumpHal) {
+            dprintf(fd, "\n ## BEGIN HAL dump \n");
+            FallibleLockGuard ll{hardwareMutex()};
+            // dump all hardware devs
+            for (size_t i = 0; i < mAudioHwDevs.size(); i++) {
+                sp<DeviceHalInterface> dev = mAudioHwDevs.valueAt(i)->hwDevice();
+                dev->dump(fd, args);
             }
-
-            timeCheckStats = mediautils::TimeCheck::toString();
-            dprintf(fd, "\nTimeCheck:\n");
-            write(fd, timeCheckStats.c_str(), timeCheckStats.size());
-            dprintf(fd, "\n");
         }
-        // dump mutex stats
-        const auto mutexStats = audio_utils::mutex::all_stats_to_string();
-        write(fd, mutexStats.c_str(), mutexStats.size());
+    }  // end af lock
 
-        // dump held mutexes
-        const auto mutexThreadInfo = audio_utils::mutex::all_threads_to_string();
-        write(fd, mutexThreadInfo.c_str(), mutexThreadInfo.size());
+    if (parsedArgs.shouldDumpStats) {
+        dprintf(fd, "\n ## BEGIN stats dump \n");
+        dumpStats(fd);
     }
+
+    if (parsedArgs.shouldDumpMem) {
+        dprintf(fd, "\n ## BEGIN memory dump \n");
+        writeStr(fd, dumpMemoryAddresses(100 /* limit */));
+        dprintf(fd, "\nDumping unreachable memory:\n");
+        // TODO - should limit be an argument parameter?
+        writeStr(fd, GetUnreachableMemoryString(true /* contents */, 100 /* limit */));
+    }
+
     return NO_ERROR;
 }
 
-sp<Client> AudioFlinger::registerPid(pid_t pid)
+sp<Client> AudioFlinger::registerClient(pid_t pid, uid_t uid)
 {
     audio_utils::lock_guard _cl(clientMutex());
     // If pid is already in the mClients wp<> map, then use that entry
     // (for which promote() is always != 0), otherwise create a new entry and Client.
     sp<Client> client = mClients.valueFor(pid).promote();
     if (client == 0) {
-        client = sp<Client>::make(sp<IAfClientCallback>::fromExisting(this), pid);
+        client = sp<Client>::make(sp<IAfClientCallback>::fromExisting(this), pid, uid);
         mClients.add(pid, client);
     }
 
@@ -1081,6 +1121,7 @@ status_t AudioFlinger::createTrack(const media::CreateTrackRequest& _input,
     bool isSpatialized = false;
     bool isBitPerfect = false;
     float volume;
+    bool muted;
 
     audio_io_handle_t effectThreadId = AUDIO_IO_HANDLE_NONE;
     std::vector<int> effectIds;
@@ -1127,6 +1168,7 @@ status_t AudioFlinger::createTrack(const media::CreateTrackRequest& _input,
         adjAttributionSource = std::move(validatedAttrSource).unwrapInto();
     }
 
+    DeviceIdVector selectedDeviceIds;
     audio_session_t sessionId = input.sessionId;
     if (sessionId == AUDIO_SESSION_ALLOCATE) {
         sessionId = (audio_session_t) newAudioUniqueId(AUDIO_UNIQUE_ID_USE_SESSION);
@@ -1137,11 +1179,14 @@ status_t AudioFlinger::createTrack(const media::CreateTrackRequest& _input,
 
     output.sessionId = sessionId;
     output.outputId = AUDIO_IO_HANDLE_NONE;
-    output.selectedDeviceId = input.selectedDeviceId;
+    if (input.selectedDeviceId != AUDIO_PORT_HANDLE_NONE) {
+        selectedDeviceIds.push_back(input.selectedDeviceId);
+    }
     lStatus = AudioSystem::getOutputForAttr(&localAttr, &output.outputId, sessionId, &streamType,
                                             adjAttributionSource, &input.config, input.flags,
-                                            &output.selectedDeviceId, &portId, &secondaryOutputs,
-                                            &isSpatialized, &isBitPerfect, &volume);
+                                            &selectedDeviceIds, &portId, &secondaryOutputs,
+                                            &isSpatialized, &isBitPerfect, &volume, &muted);
+    output.selectedDeviceIds = selectedDeviceIds;
 
     if (lStatus != NO_ERROR || output.outputId == AUDIO_IO_HANDLE_NONE) {
         ALOGE("createTrack() getOutputForAttr() return error %d or invalid output handle", lStatus);
@@ -1178,7 +1223,7 @@ status_t AudioFlinger::createTrack(const media::CreateTrackRequest& _input,
             goto Exit;
         }
 
-        client = registerPid(adjAttributionSource.pid);
+        client = registerClient(adjAttributionSource.pid, adjAttributionSource.uid);
 
         IAfPlaybackThread* effectThread = nullptr;
         sp<IAfEffectChain> effectChain = nullptr;
@@ -1198,7 +1243,7 @@ status_t AudioFlinger::createTrack(const media::CreateTrackRequest& _input,
         if (effectThread == nullptr) {
             effectChain = getOrphanEffectChain_l(sessionId);
         }
-        ALOGV("createTrack() sessionId: %d volume: %f", sessionId, volume);
+        ALOGV("createTrack() sessionId: %d volume: %f muted %d", sessionId, volume, muted);
 
         output.sampleRate = input.config.sample_rate;
         output.frameCount = input.frameCount;
@@ -1213,7 +1258,7 @@ status_t AudioFlinger::createTrack(const media::CreateTrackRequest& _input,
                                       input.sharedBuffer, sessionId, &output.flags,
                                       callingPid, adjAttributionSource, input.clientInfo.clientTid,
                                       &lStatus, portId, input.audioTrackCallback, isSpatialized,
-                                      isBitPerfect, &output.afTrackFlags, volume);
+                                      isBitPerfect, &output.afTrackFlags, volume, muted);
         LOG_ALWAYS_FATAL_IF((lStatus == NO_ERROR) && (track == 0));
         // we don't abort yet if lStatus != NO_ERROR; there is still work to be done regardless
 
@@ -1637,7 +1682,7 @@ status_t AudioFlinger::checkStreamType(audio_stream_type_t stream)
 }
 
 status_t AudioFlinger::setStreamVolume(audio_stream_type_t stream, float value,
-        audio_io_handle_t output)
+        bool muted, audio_io_handle_t output)
 {
     // check calling permissions
     if (!settingsAllowed()) {
@@ -1659,14 +1704,14 @@ status_t AudioFlinger::setStreamVolume(audio_stream_type_t stream, float value,
     if (volumeInterface == NULL) {
         return BAD_VALUE;
     }
-    volumeInterface->setStreamVolume(stream, value);
+    volumeInterface->setStreamVolume(stream, value, muted);
 
     return NO_ERROR;
 }
 
 status_t AudioFlinger::setPortsVolume(
-        const std::vector<audio_port_handle_t>& ports, float volume, audio_io_handle_t output)
-{
+        const std::vector<audio_port_handle_t> &ports, float volume, bool muted,
+        audio_io_handle_t output) {
     for (const auto& port : ports) {
         if (port == AUDIO_PORT_HANDLE_NONE) {
             return BAD_VALUE;
@@ -1681,12 +1726,12 @@ status_t AudioFlinger::setPortsVolume(
     audio_utils::lock_guard lock(mutex());
     IAfPlaybackThread *thread = checkPlaybackThread_l(output);
     if (thread != nullptr) {
-        return thread->setPortsVolume(ports, volume);
+        return thread->setPortsVolume(ports, volume, muted);
     }
     const sp<IAfMmapThread> mmapThread = checkMmapThread_l(output);
     if (mmapThread != nullptr && mmapThread->isOutput()) {
         IAfMmapPlaybackThread *mmapPlaybackThread = mmapThread->asIAfMmapPlaybackThread().get();
-        return mmapPlaybackThread->setPortsVolume(ports, volume);
+        return mmapPlaybackThread->setPortsVolume(ports, volume, muted);
     }
     return BAD_VALUE;
 }
@@ -2473,7 +2518,7 @@ status_t AudioFlinger::createRecord(const media::CreateRecordRequest& _input,
     output.selectedDeviceId = input.selectedDeviceId;
     output.flags = input.flags;
 
-    client = registerPid(VALUE_OR_FATAL(aidl2legacy_int32_t_pid_t(adjAttributionSource.pid)));
+    client = registerClient(adjAttributionSource.pid, adjAttributionSource.uid);
 
     // Not a conventional loop, but a retry loop for at most two iterations total.
     // Try first maybe with FAST flag then try again without FAST flag if that fails.
@@ -3039,7 +3084,7 @@ sp<IAfThreadBase> AudioFlinger::openOutput_l(audio_module_handle_t module,
                                                         audio_config_base_t *mixerConfig,
                                                         audio_devices_t deviceType,
                                                         const String8& address,
-                                                        audio_output_flags_t flags,
+                                                        audio_output_flags_t *flags,
                                                         const audio_attributes_t attributes)
 {
     AudioHwDevice *outHwDev = findSuitableHwDev_l(module, deviceType);
@@ -3074,7 +3119,7 @@ sp<IAfThreadBase> AudioFlinger::openOutput_l(audio_module_handle_t module,
     mHardwareStatus = AUDIO_HW_IDLE;
 
     if (status == NO_ERROR) {
-        if (flags & AUDIO_OUTPUT_FLAG_MMAP_NOIRQ) {
+        if (*flags & AUDIO_OUTPUT_FLAG_MMAP_NOIRQ) {
             const sp<IAfMmapPlaybackThread> thread = IAfMmapPlaybackThread::create(
                     this, *output, outHwDev, outputStream, mSystemReady);
             mMmapThreads.add(*output, thread);
@@ -3083,22 +3128,22 @@ sp<IAfThreadBase> AudioFlinger::openOutput_l(audio_module_handle_t module,
             return thread;
         } else {
             sp<IAfPlaybackThread> thread;
-            if (flags & AUDIO_OUTPUT_FLAG_BIT_PERFECT) {
+            if (*flags & AUDIO_OUTPUT_FLAG_BIT_PERFECT) {
                 thread = IAfPlaybackThread::createBitPerfectThread(
                         this, outputStream, *output, mSystemReady);
                 ALOGV("%s() created bit-perfect output: ID %d thread %p",
                       __func__, *output, thread.get());
-            } else if (flags & AUDIO_OUTPUT_FLAG_SPATIALIZER) {
+            } else if (*flags & AUDIO_OUTPUT_FLAG_SPATIALIZER) {
                 thread = IAfPlaybackThread::createSpatializerThread(this, outputStream, *output,
                                                     mSystemReady, mixerConfig);
                 ALOGV("openOutput_l() created spatializer output: ID %d thread %p",
                       *output, thread.get());
-            } else if (flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) {
+            } else if (*flags & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) {
                 thread = IAfPlaybackThread::createOffloadThread(this, outputStream, *output,
                         mSystemReady, halConfig->offload_info);
                 ALOGV("openOutput_l() created offload output: ID %d thread %p",
                       *output, thread.get());
-            } else if ((flags & AUDIO_OUTPUT_FLAG_DIRECT)
+            } else if ((*flags & AUDIO_OUTPUT_FLAG_DIRECT)
                     || !IAfThreadBase::isValidPcmSinkFormat(halConfig->format)
                     || !IAfThreadBase::isValidPcmSinkChannelMask(halConfig->channel_mask)) {
                 thread = IAfPlaybackThread::createDirectOutputThread(this, outputStream, *output,
@@ -3162,7 +3207,7 @@ status_t AudioFlinger::openOutput(const media::OpenOutputRequest& request,
     audio_utils::lock_guard _l(mutex());
 
     const sp<IAfThreadBase> thread = openOutput_l(module, &output, &halConfig,
-            &mixerConfig, deviceType, address, flags, attributes);
+            &mixerConfig, deviceType, address, &flags, attributes);
     if (thread != 0) {
         uint32_t latencyMs = 0;
         if ((flags & AUDIO_OUTPUT_FLAG_MMAP_NOIRQ) == 0) {
@@ -4081,7 +4126,8 @@ void AudioFlinger::updateSecondaryOutputsForTrack_l(
                                                        0ns /* timeout */,
                                                        frameCountToBeReady,
                                                        track->getSpeed(),
-                                                       1.f /* volume */);
+                                                       1.f /* volume */,
+                                                       false /* muted */);
         status = patchTrack->initCheck();
         if (status != NO_ERROR) {
             ALOGE("Secondary output patchTrack init failed: %d", status);
@@ -4396,7 +4442,7 @@ status_t AudioFlinger::createEffect(const media::CreateEffectRequest& request,
         audio_utils::lock_guard _l(mutex());
 
         if (sessionId == AUDIO_SESSION_DEVICE) {
-            sp<Client> client = registerPid(currentPid);
+            sp<Client> client = registerClient(currentPid, adjAttributionSource.uid);
             ALOGV("%s device type %#x address %s", __func__, device.mType, device.getAddress());
             handle = mDeviceEffectManager->createEffect_l(
                     &descOut, device, client, effectClient, mPatchPanel->patches_l(),
@@ -4458,7 +4504,7 @@ status_t AudioFlinger::createEffect(const media::CreateEffectRequest& request,
                     goto Exit;
                 }
                 ALOGV("%s() got io %d for effect %s", __func__, io, descOut.name);
-                sp<Client> client = registerPid(currentPid);
+                sp<Client> client = registerClient(currentPid, adjAttributionSource.uid);
                 bool pinned = !audio_is_global_session(sessionId) && isSessionAcquired_l(sessionId);
                 handle = createOrphanEffect_l(client, effectClient, priority, sessionId,
                                               &descOut, &enabledOut, &lStatus, pinned,
@@ -4520,7 +4566,7 @@ status_t AudioFlinger::createEffect(const media::CreateEffectRequest& request,
             }
         }
 
-        sp<Client> client = registerPid(currentPid);
+        sp<Client> client = registerClient(currentPid, adjAttributionSource.uid);
 
         // create effect on selected output thread
         bool pinned = !audio_is_global_session(sessionId) && isSessionAcquired_l(sessionId);
@@ -4969,11 +5015,6 @@ Exit:
 
 bool AudioFlinger::isNonOffloadableGlobalEffectEnabled_l() const
 {
-    if (mGlobalEffectEnableTime != 0 &&
-            ((systemTime() - mGlobalEffectEnableTime) < kMinGlobalEffectEnabletimeNs)) {
-        return true;
-    }
-
     for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
         const auto thread = mPlaybackThreads.valueAt(i);
         audio_utils::lock_guard l(thread->mutex());
@@ -4988,8 +5029,6 @@ bool AudioFlinger::isNonOffloadableGlobalEffectEnabled_l() const
 void AudioFlinger::onNonOffloadableGlobalEffectEnable()
 {
     audio_utils::lock_guard _l(mutex());
-
-    mGlobalEffectEnableTime = systemTime();
 
     for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
         const sp<IAfPlaybackThread> t = mPlaybackThreads.valueAt(i);

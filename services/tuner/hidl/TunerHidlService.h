@@ -73,20 +73,19 @@ public:
     virtual ~TunerHidlService();
 
     ::ndk::ScopedAStatus getFrontendIds(vector<int32_t>* out_ids) override;
-    ::ndk::ScopedAStatus getFrontendInfo(int32_t in_frontendHandle,
-                                         FrontendInfo* _aidl_return) override;
-    ::ndk::ScopedAStatus openFrontend(int32_t in_frontendHandle,
+    ::ndk::ScopedAStatus getFrontendInfo(int32_t in_id, FrontendInfo* _aidl_return) override;
+    ::ndk::ScopedAStatus openFrontend(int64_t in_frontendHandle,
                                       shared_ptr<ITunerFrontend>* _aidl_return) override;
-    ::ndk::ScopedAStatus openLnb(int32_t in_lnbHandle,
+    ::ndk::ScopedAStatus openLnb(int64_t in_lnbHandle,
                                  shared_ptr<ITunerLnb>* _aidl_return) override;
     ::ndk::ScopedAStatus openLnbByName(const std::string& in_lnbName,
                                        shared_ptr<ITunerLnb>* _aidl_return) override;
-    ::ndk::ScopedAStatus openDemux(int32_t in_demuxHandle,
+    ::ndk::ScopedAStatus openDemux(int64_t in_demuxHandle,
                                    shared_ptr<ITunerDemux>* _aidl_return) override;
     ::ndk::ScopedAStatus getDemuxCaps(DemuxCapabilities* _aidl_return) override;
-    ::ndk::ScopedAStatus getDemuxInfo(int32_t in_demuxHandle, DemuxInfo* _aidl_return) override;
+    ::ndk::ScopedAStatus getDemuxInfo(int64_t in_demuxHandle, DemuxInfo* _aidl_return) override;
     ::ndk::ScopedAStatus getDemuxInfoList(vector<DemuxInfo>* _aidl_return) override;
-    ::ndk::ScopedAStatus openDescrambler(int32_t in_descramblerHandle,
+    ::ndk::ScopedAStatus openDescrambler(int64_t in_descramblerHandle,
                                          shared_ptr<ITunerDescrambler>* _aidl_return) override;
     ::ndk::ScopedAStatus getTunerHalVersion(int32_t* _aidl_return) override;
     ::ndk::ScopedAStatus openSharedFilter(const string& in_filterToken,
@@ -106,7 +105,7 @@ public:
 private:
     void updateTunerResources();
     vector<TunerFrontendInfo> getTRMFrontendInfos();
-    vector<int32_t> getTRMLnbHandles();
+    vector<int64_t> getTRMLnbHandles();
     HidlResult getHidlFrontendIds(hidl_vec<HidlFrontendId>& ids);
     HidlResult getHidlFrontendInfo(const int id, HidlFrontendInfo& info);
     DemuxCapabilities getAidlDemuxCaps(const HidlDemuxCapabilities& caps);

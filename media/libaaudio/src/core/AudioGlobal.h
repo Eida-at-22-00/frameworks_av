@@ -30,6 +30,8 @@ enum {
 
 };
 
+static const char AUDIO_ATTRIBUTES_TAGS_SEPARATOR = ';';
+
 aaudio_policy_t AudioGlobal_getMMapPolicy();
 aaudio_result_t AudioGlobal_setMMapPolicy(aaudio_policy_t policy);
 
@@ -39,6 +41,11 @@ const char* AudioGlobal_convertPerformanceModeToText(aaudio_performance_mode_t m
 const char* AudioGlobal_convertResultToText(aaudio_result_t returnCode);
 const char* AudioGlobal_convertSharingModeToText(aaudio_sharing_mode_t mode);
 const char* AudioGlobal_convertStreamStateToText(aaudio_stream_state_t state);
+
+aaudio_policy_t AudioGlobal_getPlatformMMapPolicy(
+        AAudio_DeviceType device, aaudio_direction_t direction);
+aaudio_policy_t AudioGlobal_getPlatformMMapExclusivePolicy(
+        AAudio_DeviceType device, aaudio_direction_t direction);
 
 } // namespace aaudio
 

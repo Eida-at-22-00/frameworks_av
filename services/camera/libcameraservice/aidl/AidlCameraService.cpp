@@ -30,6 +30,9 @@
 #include <hidl/HidlTransportSupport.h>
 #include <utils/AttributionAndPermissionUtils.h>
 #include <utils/Utils.h>
+#include <com_android_internal_camera_flags.h>
+
+namespace flags = com::android::internal::camera::flags;
 
 namespace android::frameworks::cameraservice::service::implementation {
 
@@ -131,9 +134,27 @@ ScopedAStatus AidlCameraService::getCameraCharacteristics(const std::string& in_
 
     return ScopedAStatus::ok();
 }
+
 ndk::ScopedAStatus AidlCameraService::connectDevice(
         const std::shared_ptr<SICameraDeviceCallback>& in_callback,
         const std::string& in_cameraId,
+        std::shared_ptr<SICameraDeviceUser>* _aidl_return) {
+    return connectDeviceImpl(in_callback, in_cameraId, /*sharedMode*/false, _aidl_return);
+}
+
+ndk::ScopedAStatus AidlCameraService::connectDeviceV2(
+        const std::shared_ptr<SICameraDeviceCallback>& in_callback,
+        const std::string& in_cameraId, bool sharedMode,
+        std::shared_ptr<SICameraDeviceUser>* _aidl_return) {
+      if (!flags::camera_multi_client()) {
+          return fromSStatus(SStatus::INVALID_OPERATION);
+      }
+      return connectDeviceImpl(in_callback, in_cameraId, sharedMode, _aidl_return);
+}
+
+ndk::ScopedAStatus AidlCameraService::connectDeviceImpl(
+        const std::shared_ptr<SICameraDeviceCallback>& in_callback,
+        const std::string& in_cameraId, bool sharedMode,
         std::shared_ptr<SICameraDeviceUser>* _aidl_return) {
     // Here, we first get NDK ICameraDeviceUser from mCameraService, then save
     // that interface in the newly created AidlCameraDeviceUser impl class.
@@ -156,7 +177,7 @@ ndk::ScopedAStatus AidlCameraService::connectDevice(
                     kDefaultDeviceId);
     clientAttribution.packageName = "";
     clientAttribution.attributionTag = std::nullopt;
-    binder::Status serviceRet = mCameraService->connectDevice(
+    binder::Status serviceRet = mCameraService->connectDeviceVendor(
             callbacks,
             in_cameraId,
             /* scoreOffset= */ 0,
@@ -164,6 +185,7 @@ ndk::ScopedAStatus AidlCameraService::connectDevice(
             ROTATION_OVERRIDE_NONE,
             clientAttribution,
             /* devicePolicy= */ 0,
+            sharedMode,
             &unstableDevice);
     if (!serviceRet.isOk()) {
         ALOGE("%s: Unable to connect to camera device: %s", __FUNCTION__,

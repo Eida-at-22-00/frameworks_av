@@ -12,8 +12,6 @@ package {
 cc_defaults {
     name: "libmediautils_tests_config",
 
-    host_supported: true,
-
     cflags: [
         "-Wall",
         "-Werror",
@@ -65,6 +63,22 @@ cc_defaults {
         "libmediautils",
         "libutils",
     ],
+}
+
+aidl_interface {
+    name: "ServiceSingletonTestInterface",
+    unstable: true,
+    srcs: [
+        "IServiceSingletonTest.aidl",
+    ],
+    backend: {
+        cpp: {
+            enabled: true,
+        },
+        ndk: {
+            enabled: true,
+        },
+    },
 }
 
 cc_test_library {
@@ -174,6 +188,34 @@ cc_test {
 
     srcs: [
         "methodstatistics_tests.cpp",
+    ],
+}
+
+cc_test {
+    name: "service_singleton_tests",
+
+    defaults: ["libmediautils_tests_config"],
+
+    // to add and get services, we need to be root.
+    require_root: true,
+    host_supported: false,
+
+    srcs: [
+        "service_singleton_tests.cpp",
+    ],
+
+    shared_libs: [
+        "libaudioutils",
+        "libbinder",
+        "libbinder_ndk",
+        "liblog",
+        "libmediautils",
+        "libutils",
+    ],
+
+    static_libs: [
+        "ServiceSingletonTestInterface-cpp",
+        "ServiceSingletonTestInterface-ndk",
     ],
 }
 

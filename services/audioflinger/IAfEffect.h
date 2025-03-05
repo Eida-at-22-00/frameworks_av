@@ -345,7 +345,8 @@ public:
 
     // sendMetadata_l() must be called with thread->mLock held
     virtual void sendMetadata_l(const std::vector<playback_track_metadata_v7_t>& allMetadata,
-        const std::optional<const std::vector<playback_track_metadata_v7_t>> spatializedMetadata);
+                                const std::optional<const std::vector<playback_track_metadata_v7_t>>
+                                        spatializedMetadata) = 0;
 
     virtual void dump(int fd, const Vector<String16>& args) const = 0;
 };

@@ -7,9 +7,42 @@ container: "system"
 
 flag {
   name: "aidl_hal_input_surface"
+  is_exported: true
   namespace: "codec_fwk"
   description: "Feature flags for enabling AIDL HAL InputSurface handling"
   bug: "201479783"
+}
+
+flag {
+  name: "apv_support"
+  is_exported: true
+  namespace: "codec_fwk"
+  description: "Feature flag for Android support for APV Content"
+  bug: "375464302"
+}
+
+flag {
+  name: "codec_availability"
+  namespace: "codec_fwk"
+  description: "Feature flag for codec availability HAL API support"
+  bug: "363282971"
+}
+
+flag {
+  name: "codec_availability_support"
+  namespace: "codec_fwk"
+  description: "Feature flag for codec availability HAL API implementation"
+  bug: "363282971"
+}
+
+flag {
+  name: "codec_buffer_state_cleanup"
+  namespace: "codec_fwk"
+  description: "Bugfix flag for more buffer state cleanup in MediaCodec"
+  bug: "343502509"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
 }
 
 flag {
@@ -93,6 +126,22 @@ flag {
 }
 
 flag {
+  name: "num_input_slots"
+  namespace: "codec_fwk"
+  description: "Feature flag for exposing number of input slots"
+  bug: "159891571"
+  is_exported: true
+}
+
+flag {
+  name: "p210_format_support"
+  is_exported: true
+  namespace: "codec_fwk"
+  description: "Feature flag for Android support for P210 YCbCr format"
+  bug: "368395888"
+}
+
+flag {
   name: "region_of_interest"
   is_exported: true
   namespace: "codec_fwk"
@@ -105,6 +154,13 @@ flag {
   namespace: "codec_fwk"
   description: "Feature flag for region of interest support"
   bug: "325549730"
+}
+
+flag {
+  name: "rendering_depth_removal"
+  namespace: "codec_fwk"
+  description: "Feature flag for removing rendering depth"
+  bug: "275527219"
 }
 
 flag {
@@ -145,6 +201,14 @@ flag {
   metadata {
     purpose: PURPOSE_BUGFIX
   }
+}
+
+flag {
+  name: "subsession_metrics"
+  namespace: "codec_fwk"
+  description: "Feature flag for subsession codec metrics"
+  bug: "363382811"
+  is_exported: true
 }
 
 flag {

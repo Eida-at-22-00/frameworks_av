@@ -85,7 +85,7 @@ public:
             AudioStreamOut **ppStreamOut,
             audio_io_handle_t handle,
             audio_devices_t deviceType,
-            audio_output_flags_t flags,
+            audio_output_flags_t *flags,
             struct audio_config *config,
             const char *address,
             const std::vector<playback_track_metadata_v7_t>& sourceMetadata);

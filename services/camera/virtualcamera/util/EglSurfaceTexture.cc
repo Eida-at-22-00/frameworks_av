@@ -40,6 +40,21 @@ namespace {
 // Maximal number of buffers producer can dequeue without blocking.
 constexpr int kBufferProducerMaxDequeueBufferCount = 64;
 
+class FrameAvailableListenerProxy : public ConsumerBase::FrameAvailableListener {
+ public:
+  FrameAvailableListenerProxy(const std::function<void()>& callback)
+      : mOnFrameAvailableCallback(callback) {
+  }
+
+  virtual void onFrameAvailable(const BufferItem&) override {
+    ALOGV("%s: onFrameAvailable", __func__);
+    mOnFrameAvailableCallback();
+  }
+
+ private:
+  std::function<void()> mOnFrameAvailableCallback;
+};
+
 }  // namespace
 
 EglSurfaceTexture::EglSurfaceTexture(const uint32_t width, const uint32_t height)
@@ -92,8 +107,13 @@ sp<GraphicBuffer> EglSurfaceTexture::getCurrentBuffer() {
 }
 
 void EglSurfaceTexture::setFrameAvailableListener(
-    const wp<ConsumerBase::FrameAvailableListener>& listener) {
-  mGlConsumer->setFrameAvailableListener(listener);
+    const std::function<void()>& listener) {
+  mFrameAvailableListener =
+      sp<FrameAvailableListenerProxy>::make([this, listener]() {
+        mIsFirstFrameDrawn.store(true);
+        listener();
+      });
+  mGlConsumer->setFrameAvailableListener(mFrameAvailableListener);
 }
 
 bool EglSurfaceTexture::waitForNextFrame(const std::chrono::nanoseconds timeout) {
@@ -103,6 +123,10 @@ bool EglSurfaceTexture::waitForNextFrame(const std::chrono::nanoseconds timeout)
 
 std::chrono::nanoseconds EglSurfaceTexture::getTimestamp() {
   return std::chrono::nanoseconds(mGlConsumer->getTimestamp());
+}
+
+bool EglSurfaceTexture::isFirstFrameDrawn() {
+  return mIsFirstFrameDrawn.load();
 }
 
 GLuint EglSurfaceTexture::updateTexture() {

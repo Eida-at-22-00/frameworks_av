@@ -19,6 +19,7 @@
 #include <fuzzer/FuzzedDataProvider.h>
 #include <gui/IGraphicBufferProducer.h>
 #include <gui/Surface.h>
+#include <gui/Flags.h>  // remove with WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
 #include <gui/SurfaceComposerClient.h>
 #include "camera2common.h"
 
@@ -37,11 +38,11 @@ class C2OutputConfigurationFuzzer {
   private:
     void invokeC2OutputConfigFuzzer();
     unique_ptr<OutputConfiguration> getC2OutputConfig();
-    sp<IGraphicBufferProducer> createIGraphicBufferProducer();
+    sp<SurfaceType> createSurface();
     FuzzedDataProvider* mFDP = nullptr;
 };
 
-sp<IGraphicBufferProducer> C2OutputConfigurationFuzzer::createIGraphicBufferProducer() {
+sp<SurfaceType> C2OutputConfigurationFuzzer::createSurface() {
     sp<SurfaceComposerClient> composerClient = new SurfaceComposerClient;
     sp<SurfaceControl> surfaceControl = composerClient->createSurface(
             static_cast<String8>(mFDP->ConsumeRandomLengthString(kMaxBytes).c_str()) /* name */,
@@ -51,10 +52,9 @@ sp<IGraphicBufferProducer> C2OutputConfigurationFuzzer::createIGraphicBufferProd
             mFDP->ConsumeIntegral<int32_t>() /* flags */);
     if (surfaceControl) {
         sp<Surface> surface = surfaceControl->getSurface();
-        return surface->getIGraphicBufferProducer();
+        return flagtools::surfaceToSurfaceType(surface);
     } else {
-        sp<IGraphicBufferProducer> gbp;
-        return gbp;
+        return nullptr;
     }
 }
 
@@ -69,9 +69,9 @@ unique_ptr<OutputConfiguration> C2OutputConfigurationFuzzer::getC2OutputConfig()
                         string physicalCameraId = mFDP->ConsumeRandomLengthString(kMaxBytes);
                         int32_t surfaceSetID = mFDP->ConsumeIntegral<int32_t>();
                         bool isShared = mFDP->ConsumeBool();
-                        sp<IGraphicBufferProducer> iGBP = createIGraphicBufferProducer();
+                        sp<SurfaceType> surface = createSurface();
                         outputConfiguration = make_unique<OutputConfiguration>(
-                                iGBP, rotation, physicalCameraId, surfaceSetID, isShared);
+                                surface, rotation, physicalCameraId, surfaceSetID, isShared);
                     },
 
                     [&]() {
@@ -79,14 +79,15 @@ unique_ptr<OutputConfiguration> C2OutputConfigurationFuzzer::getC2OutputConfig()
                         string physicalCameraId = mFDP->ConsumeRandomLengthString(kMaxBytes);
                         int32_t surfaceSetID = mFDP->ConsumeIntegral<int32_t>();
                         bool isShared = mFDP->ConsumeBool();
-                        size_t iGBPSize = mFDP->ConsumeIntegralInRange<size_t>(kSizeMin, kSizeMax);
-                        vector<sp<IGraphicBufferProducer>> iGBPs;
-                        for (size_t idx = 0; idx < iGBPSize; ++idx) {
-                            sp<IGraphicBufferProducer> iGBP = createIGraphicBufferProducer();
-                            iGBPs.push_back(iGBP);
+                        size_t surfaceSize =
+                                mFDP->ConsumeIntegralInRange<size_t>(kSizeMin, kSizeMax);
+                        vector<sp<SurfaceType>> surfaces;
+                        for (size_t idx = 0; idx < surfaceSize; ++idx) {
+                            sp<SurfaceType> surface = createSurface();
+                            surfaces.push_back(surface);
                         }
                         outputConfiguration = make_unique<OutputConfiguration>(
-                                iGBPs, rotation, physicalCameraId, surfaceSetID, isShared);
+                                surfaces, rotation, physicalCameraId, surfaceSetID, isShared);
                     },
             });
     selectOutputConfigurationConstructor();
@@ -107,20 +108,23 @@ void C2OutputConfigurationFuzzer::invokeC2OutputConfigFuzzer() {
                 [&]() { outputConfiguration->isDeferred(); },
                 [&]() { outputConfiguration->isShared(); },
                 [&]() { outputConfiguration->getPhysicalCameraId(); },
-                [&]() { outputConfiguration->gbpsEqual(*outputConfiguration2); },
+                [&]() { outputConfiguration->surfacesEqual(*outputConfiguration2); },
                 [&]() { outputConfiguration->sensorPixelModesUsedEqual(*outputConfiguration2); },
-                [&]() { outputConfiguration->gbpsLessThan(*outputConfiguration2); },
+                [&]() { outputConfiguration->surfacesLessThan(*outputConfiguration2); },
                 [&]() { outputConfiguration->sensorPixelModesUsedLessThan(*outputConfiguration2); },
-                [&]() { outputConfiguration->getGraphicBufferProducers(); },
+                [&]() { outputConfiguration->getSurfaces(); },
                 [&]() {
-                    sp<IGraphicBufferProducer> gbp = createIGraphicBufferProducer();
-                    outputConfiguration->addGraphicProducer(gbp);
+                    sp<SurfaceType> surface = createSurface();
+                    outputConfiguration->addSurface(surface);
                 },
                 [&]() { outputConfiguration->isMultiResolution(); },
                 [&]() { outputConfiguration->getColorSpace(); },
                 [&]() { outputConfiguration->getStreamUseCase(); },
                 [&]() { outputConfiguration->getTimestampBase(); },
-                [&]() { outputConfiguration->getMirrorMode(); },
+                [&]() {
+                    sp<SurfaceType> surface = createSurface();
+                    outputConfiguration->getMirrorMode(surface);
+                },
                 [&]() { outputConfiguration->useReadoutTimestamp(); },
         });
         callC2OutputConfAPIs();

@@ -391,7 +391,7 @@ HidlProviderInfo::startProviderInterface() {
                   __FUNCTION__,
                   mProviderName.c_str(),
                   linked.description().c_str());
-              mManager->removeProvider(mProviderInstance);
+              mManager->removeProvider(std::string(mProviderInstance));
               return nullptr;
             } else if (!linked) {
               ALOGW("%s: Unable to link to provider '%s' death notifications",
@@ -451,7 +451,7 @@ void HidlProviderInfo::serviceDied(uint64_t cookie,
         ALOGW("%s: Unexpected serviceDied cookie %" PRIu64 ", expected %" PRIu32,
                 __FUNCTION__, cookie, mId);
     }
-    mManager->removeProvider(mProviderInstance);
+    mManager->removeProvider(std::string(mProviderInstance));
 }
 
 std::unique_ptr<CameraProviderManager::ProviderInfo::DeviceInfo>
@@ -675,6 +675,21 @@ HidlProviderInfo::HidlDeviceInfo3::HidlDeviceInfo3(
         ALOGE("%s: Unable to add sensorReadoutTimestamp tag: %s (%d)",
                 __FUNCTION__, strerror(-res), res);
     }
+    if (flags::color_temperature()) {
+        res = addColorCorrectionAvailableModesTag(mCameraCharacteristics);
+        if (OK != res) {
+            ALOGE("%s: Unable to add COLOR_CORRECTION_AVAILABLE_MODES tag: %s (%d)",
+                    __FUNCTION__, strerror(-res), res);
+        }
+    }
+
+    if (flags::ae_priority()) {
+        res = addAePriorityModeTags();
+        if (OK != res) {
+            ALOGE("%s: Unable to add CONTROL_AE_AVAILABLE_PRIORITY_MODES tag: %s (%d)",
+                    __FUNCTION__, strerror(-res), res);
+        }
+    }
 
     camera_metadata_entry flashAvailable =
             mCameraCharacteristics.find(ANDROID_FLASH_INFO_AVAILABLE);
@@ -784,6 +799,14 @@ HidlProviderInfo::HidlDeviceInfo3::HidlDeviceInfo3(
                 ALOGE("%s: Unable to fix up manual flash strength control tags: %s (%d)",
                         __FUNCTION__, strerror(-res), res);
                 return;
+            }
+
+            if (flags::color_temperature()) {
+                res = addColorCorrectionAvailableModesTag(mPhysicalCameraCharacteristics[id]);
+                if (OK != res) {
+                    ALOGE("%s: Unable to add COLOR_CORRECTION_AVAILABLE_MODES tag: %s (%d)",
+                            __FUNCTION__, strerror(-res), res);
+                }
             }
         }
     }

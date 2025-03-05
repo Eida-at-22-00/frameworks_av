@@ -20,17 +20,18 @@
 #include <gtest/gtest.h>
 
 #include <android/content/AttributionSourceState.h>
+#include <android/hardware/ICameraService.h>
 #include <binder/ProcessState.h>
-#include <utils/Errors.h>
-#include <utils/Log.h>
-#include <gui/Surface.h>
-#include <gui/SurfaceComposerClient.h>
-#include <camera/CameraParameters.h>
-#include <camera/CameraMetadata.h>
 #include <camera/Camera.h>
+#include <camera/CameraMetadata.h>
+#include <camera/CameraParameters.h>
 #include <camera/CameraUtils.h>
 #include <camera/StringUtils.h>
-#include <android/hardware/ICameraService.h>
+#include <gui/Flags.h>
+#include <gui/Surface.h>
+#include <gui/SurfaceComposerClient.h>
+#include <utils/Errors.h>
+#include <utils/Log.h>
 
 using namespace android;
 using namespace android::hardware;
@@ -276,8 +277,11 @@ TEST_F(CameraZSLTests, TestAllPictureSizes) {
 
         previewSurface = surfaceControl->getSurface();
         ASSERT_TRUE(previewSurface != NULL);
-        ASSERT_EQ(NO_ERROR, cameraDevice->setPreviewTarget(
-                previewSurface->getIGraphicBufferProducer()));
+        ASSERT_EQ(NO_ERROR, cameraDevice->setPreviewTarget(previewSurface
+#if !WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+                                                                   ->getIGraphicBufferProducer()
+#endif
+                                                                   ));
 
         cameraDevice->setPreviewCallbackFlag(
                 CAMERA_FRAME_CALLBACK_FLAG_CAMCORDER);

@@ -115,7 +115,6 @@ extern "C"
      Returns:
         L_sum = 32-bit sum of L_var1 and L_var2 (Word32)
     */
-    __attribute__((no_sanitize("integer")))
     static inline Word32 L_add(Word32 L_var1, Word32 L_var2, Flag *pOverflow)
     {
         Word32 L_sum;
@@ -454,7 +453,8 @@ extern "C"
     {
         Word32 result;
 
-        result = L_var3 + L_var1 * L_var2;
+        __builtin_mul_overflow(L_var1, L_var2, &result);
+        __builtin_add_overflow(L_var3, result, &result);
 
         return result;
     }
@@ -463,7 +463,8 @@ extern "C"
     {
         Word32 result;
 
-        result = L_var3 - L_var1 * L_var2;
+        __builtin_mul_overflow(L_var1, L_var2, &result);
+        __builtin_sub_overflow(L_var3, result, &result);
 
         return result;
     }

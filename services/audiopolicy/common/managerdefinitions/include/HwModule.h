@@ -137,6 +137,7 @@ private:
 class HwModuleCollection : public Vector<sp<HwModule> >
 {
 public:
+    sp<HwModule> getModuleFromHandle(audio_module_handle_t handle) const;
     sp<HwModule> getModuleFromName(const char *name) const;
 
     /**

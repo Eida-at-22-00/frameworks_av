@@ -19,6 +19,7 @@
 
 #include <system/audio.h>
 #include <media/AudioClient.h>
+#include <media/AudioContainers.h>
 #include <utils/Errors.h>
 #include <utils/RefBase.h>
 
@@ -51,9 +52,10 @@ class MmapStreamInterface : public virtual RefBase
      *                       Requested parameters as input,
      *                       Actual parameters as output
      * \param[in] client a AudioClient struct describing the first client using this stream.
-     * \param[in,out] deviceId audio device the stream should preferably be routed to/from
-     *                       Requested as input,
-     *                       Actual as output
+     * \param[in,out] deviceIds audio devices the stream should preferably be routed to/from.
+     *                          Leave empty if there are no preferred devices.
+     *                          Requested as input,
+     *                          Actual as output
      * \param[in,out] sessionId audio sessionId for the stream
      *                       Requested as input, may be AUDIO_SESSION_ALLOCATE
      *                       Actual as output
@@ -70,7 +72,7 @@ class MmapStreamInterface : public virtual RefBase
                                            const audio_attributes_t *attr,
                                            audio_config_base_t *config,
                                            const AudioClient& client,
-                                           audio_port_handle_t *deviceId,
+                                           DeviceIdVector *deviceIds,
                                            audio_session_t *sessionId,
                                            const sp<MmapStreamCallback>& callback,
                                            sp<MmapStreamInterface>& interface,

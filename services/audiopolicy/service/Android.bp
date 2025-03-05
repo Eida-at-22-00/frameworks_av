@@ -11,16 +11,20 @@ package {
 cc_defaults {
     name: "libaudiopolicyservice_dependencies",
 
+    defaults: [
+        "latest_android_media_audio_common_types_cpp_shared",
+    ],
+
     include_dirs: [
         "frameworks/av/services/audiopolicy", // include path outside of libaudiopolicyservice
     ],
 
     shared_libs: [
+        "android.media.audio-aconfig-cc",
         "android.media.audiopolicy-aconfig-cc",
         "audio-permission-aidl-cpp",
         "audioclient-types-aidl-cpp",
         "audioflinger-aidl-cpp",
-        "audiopermissioncontroller",
         "audiopolicy-aidl-cpp",
         "audiopolicy-types-aidl-cpp",
         "capture_state_listener-aidl-cpp",
@@ -32,6 +36,7 @@ cc_defaults {
         "libaudioclient_aidl_conversion",
         "libaudiofoundation",
         "libaudiohal",
+        "libaudiopermission",
         "libaudiopolicy",
         "libaudiopolicycomponents",
         "libaudiopolicymanagerdefault",
@@ -63,7 +68,6 @@ cc_library {
     name: "libaudiopolicyservice",
 
     defaults: [
-        "latest_android_media_audio_common_types_cpp_shared",
         "libaudiopolicyservice_dependencies",
     ],
 
@@ -114,6 +118,6 @@ cc_library_headers {
     name: "audiopolicyservicelocal_headers",
     host_supported: true,
     export_include_dirs: ["include"],
-    header_libs: ["audiopermissioncontroller_headers"],
-    export_header_lib_headers: ["audiopermissioncontroller_headers"],
+    header_libs: ["libaudiopermission_headers"],
+    export_header_lib_headers: ["libaudiopermission_headers"],
 }

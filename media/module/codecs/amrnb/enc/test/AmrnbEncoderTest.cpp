@@ -21,6 +21,7 @@
 
 #include <audio_utils/sndfile.h>
 #include <stdio.h>
+#include <fstream>
 
 #include "gsmamr_enc.h"
 
@@ -39,7 +40,7 @@ struct AmrNbEncState {
 
 static AmrnbEncTestEnvironment *gEnv = nullptr;
 
-class AmrnbEncoderTest : public ::testing::TestWithParam<pair<string, int32_t>> {
+class AmrnbEncoderTest : public ::testing::TestWithParam<tuple<string, int32_t, string>> {
   public:
     AmrnbEncoderTest() : mAmrEncHandle(nullptr) {}
 
@@ -53,6 +54,7 @@ class AmrnbEncoderTest : public ::testing::TestWithParam<pair<string, int32_t>> 
     AmrNbEncState *mAmrEncHandle;
     int32_t EncodeFrames(int32_t mode, FILE *fpInput, FILE *mFpOutput,
                          int32_t frameCount = INT32_MAX);
+    bool compareBinaryFiles(const string& refFilePath, const string& outFilePath);
 };
 
 int32_t AmrnbEncoderTest::EncodeFrames(int32_t mode, FILE *fpInput, FILE *mFpOutput,
@@ -87,6 +89,42 @@ int32_t AmrnbEncoderTest::EncodeFrames(int32_t mode, FILE *fpInput, FILE *mFpOut
     return 0;
 }
 
+bool AmrnbEncoderTest::compareBinaryFiles(const std::string &refFilePath,
+                                          const std::string &outFilePath) {
+    std::ifstream refFile(refFilePath, std::ios::binary | std::ios::ate);
+    std::ifstream outFile(outFilePath, std::ios::binary | std::ios::ate);
+    assert(refFile.is_open() && "Error opening reference file " + refFilePath);
+    assert(outFile.is_open() && "Error opening output file " + outFilePath);
+
+    std::streamsize refFileSize = refFile.tellg();
+    std::streamsize outFileSize = outFile.tellg();
+    if (refFileSize != outFileSize) {
+        ALOGE("Error, File size mismatch: Reference file size = %td bytes,"
+              " but output file size = %td bytes.", refFileSize, outFileSize);
+        return false;
+    }
+
+    refFile.seekg(0, std::ios::beg);
+    outFile.seekg(0, std::ios::beg);
+    constexpr std::streamsize kBufferSize = 16 * 1024;
+    char refBuffer[kBufferSize];
+    char outBuffer[kBufferSize];
+
+    while (refFile && outFile) {
+        refFile.read(refBuffer, kBufferSize);
+        outFile.read(outBuffer, kBufferSize);
+
+        std::streamsize refBytesRead = refFile.gcount();
+        std::streamsize outBytesRead = outFile.gcount();
+
+        if (refBytesRead != outBytesRead || memcmp(refBuffer, outBuffer, refBytesRead) != 0) {
+            ALOGE("Error, File content mismatch.");
+            return false;
+        }
+    }
+    return true;
+}
+
 TEST_F(AmrnbEncoderTest, CreateAmrnbEncoderTest) {
     mAmrEncHandle = (AmrNbEncState *)malloc(sizeof(AmrNbEncState));
     ASSERT_NE(mAmrEncHandle, nullptr) << "Error in allocating memory to Codec handle";
@@ -111,7 +149,7 @@ TEST_P(AmrnbEncoderTest, EncodeTest) {
     int32_t status = AMREncodeInit(&mAmrEncHandle->encCtx, &mAmrEncHandle->pidSyncCtx, 0);
     ASSERT_EQ(status, 0) << "Error creating AMR-NB encoder";
 
-    string inputFile = gEnv->getRes() + GetParam().first;
+    string inputFile = gEnv->getRes() + std::get<0>(GetParam());
     FILE *fpInput = fopen(inputFile.c_str(), "rb");
     ASSERT_NE(fpInput, nullptr) << "Error opening input file " << inputFile;
 
@@ -121,7 +159,7 @@ TEST_P(AmrnbEncoderTest, EncodeTest) {
     // Write file header.
     fwrite("#!AMR\n", 1, 6, fpOutput);
 
-    int32_t mode = GetParam().second;
+    int32_t mode = std::get<1>(GetParam());
     int32_t encodeErr = EncodeFrames(mode, fpInput, fpOutput);
     ASSERT_EQ(encodeErr, 0) << "EncodeFrames returned error for Codec mode: " << mode;
 
@@ -134,6 +172,11 @@ TEST_P(AmrnbEncoderTest, EncodeTest) {
     free(mAmrEncHandle);
     mAmrEncHandle = nullptr;
     ALOGV("Successfully deleted encoder");
+
+    string refFilePath = gEnv->getRes() + std::get<2>(GetParam());
+    ASSERT_TRUE(compareBinaryFiles(refFilePath, OUTPUT_FILE))
+       << "Error, Binary file comparison failed: Output file " << OUTPUT_FILE
+       << " does not match the reference file " << refFilePath << ".";
 }
 
 TEST_P(AmrnbEncoderTest, ResetEncoderTest) {
@@ -142,7 +185,7 @@ TEST_P(AmrnbEncoderTest, ResetEncoderTest) {
     int32_t status = AMREncodeInit(&mAmrEncHandle->encCtx, &mAmrEncHandle->pidSyncCtx, 0);
     ASSERT_EQ(status, 0) << "Error creating AMR-NB encoder";
 
-    string inputFile = gEnv->getRes() + GetParam().first;
+    string inputFile = gEnv->getRes() + std::get<0>(GetParam());
     FILE *fpInput = fopen(inputFile.c_str(), "rb");
     ASSERT_NE(fpInput, nullptr) << "Error opening input file " << inputFile;
 
@@ -152,7 +195,7 @@ TEST_P(AmrnbEncoderTest, ResetEncoderTest) {
     // Write file header.
     fwrite("#!AMR\n", 1, 6, fpOutput);
 
-    int32_t mode = GetParam().second;
+    int32_t mode = std::get<1>(GetParam());
     // Encode kNumFrameReset first
     int32_t encodeErr = EncodeFrames(mode, fpInput, fpOutput, kNumFrameReset);
     ASSERT_EQ(encodeErr, 0) << "EncodeFrames returned error for Codec mode: " << mode;
@@ -177,22 +220,23 @@ TEST_P(AmrnbEncoderTest, ResetEncoderTest) {
 
 // TODO: Add more test vectors
 INSTANTIATE_TEST_SUITE_P(AmrnbEncoderTestAll, AmrnbEncoderTest,
-                         ::testing::Values(make_pair("bbb_raw_1ch_8khz_s16le.raw", MR475),
-                                           make_pair("bbb_raw_1ch_8khz_s16le.raw", MR515),
-                                           make_pair("bbb_raw_1ch_8khz_s16le.raw", MR59),
-                                           make_pair("bbb_raw_1ch_8khz_s16le.raw", MR67),
-                                           make_pair("bbb_raw_1ch_8khz_s16le.raw", MR74),
-                                           make_pair("bbb_raw_1ch_8khz_s16le.raw", MR795),
-                                           make_pair("bbb_raw_1ch_8khz_s16le.raw", MR102),
-                                           make_pair("bbb_raw_1ch_8khz_s16le.raw", MR122),
-                                           make_pair("sinesweepraw.raw", MR475),
-                                           make_pair("sinesweepraw.raw", MR515),
-                                           make_pair("sinesweepraw.raw", MR59),
-                                           make_pair("sinesweepraw.raw", MR67),
-                                           make_pair("sinesweepraw.raw", MR74),
-                                           make_pair("sinesweepraw.raw", MR795),
-                                           make_pair("sinesweepraw.raw", MR102),
-                                           make_pair("sinesweepraw.raw", MR122)));
+    ::testing::Values(
+        make_tuple("bbb_raw_1ch_8khz_s16le.raw", MR475, "bbb_raw_1ch_8khz_s16le_MR475_ref.amrnb"),
+        make_tuple("bbb_raw_1ch_8khz_s16le.raw", MR515, "bbb_raw_1ch_8khz_s16le_MR515_ref.amrnb"),
+        make_tuple("bbb_raw_1ch_8khz_s16le.raw", MR59, "bbb_raw_1ch_8khz_s16le_MR59_ref.amrnb"),
+        make_tuple("bbb_raw_1ch_8khz_s16le.raw", MR67, "bbb_raw_1ch_8khz_s16le_MR67_ref.amrnb"),
+        make_tuple("bbb_raw_1ch_8khz_s16le.raw", MR74, "bbb_raw_1ch_8khz_s16le_MR74_ref.amrnb"),
+        make_tuple("bbb_raw_1ch_8khz_s16le.raw", MR795, "bbb_raw_1ch_8khz_s16le_MR795_ref.amrnb"),
+        make_tuple("bbb_raw_1ch_8khz_s16le.raw", MR102, "bbb_raw_1ch_8khz_s16le_MR102_ref.amrnb"),
+        make_tuple("bbb_raw_1ch_8khz_s16le.raw", MR122, "bbb_raw_1ch_8khz_s16le_MR122_ref.amrnb"),
+        make_tuple("sinesweepraw.raw", MR475, "sinesweepraw_MR475_ref.amrnb"),
+        make_tuple("sinesweepraw.raw", MR515, "sinesweepraw_MR515_ref.amrnb"),
+        make_tuple("sinesweepraw.raw", MR59, "sinesweepraw_MR59_ref.amrnb"),
+        make_tuple("sinesweepraw.raw", MR67, "sinesweepraw_MR67_ref.amrnb"),
+        make_tuple("sinesweepraw.raw", MR74, "sinesweepraw_MR74_ref.amrnb"),
+        make_tuple("sinesweepraw.raw", MR795, "sinesweepraw_MR795_ref.amrnb"),
+        make_tuple("sinesweepraw.raw", MR102, "sinesweepraw_MR102_ref.amrnb"),
+        make_tuple("sinesweepraw.raw", MR122, "sinesweepraw_MR122_ref.amrnb")));
 
 int main(int argc, char **argv) {
     gEnv = new AmrnbEncTestEnvironment();

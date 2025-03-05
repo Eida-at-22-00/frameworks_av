@@ -610,6 +610,7 @@ extern "C"
         Word32 alp1;
         Word16 i;
         Word32 L_temp;
+        Word32 mul;
         Word16 *p_codvec = &codvec[0];
 
         OSCL_UNUSED_ARG(pOverflow);
@@ -693,7 +694,8 @@ extern "C"
                     L_temp = ((Word32) alp * sq1) << 1;
 
                     /* s = L_msu(L_temp, sq, alp_16, pOverflow); */
-                    s = L_temp - (((Word32) sq * alp_16) << 1);
+                    __builtin_mul_overflow(sq, alp_16, &mul);
+                    __builtin_sub_overflow(L_temp, (mul << 1), &s);
 
                     if (s > 0)
                     {

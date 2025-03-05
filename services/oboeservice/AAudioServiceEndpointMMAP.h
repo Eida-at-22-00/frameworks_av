@@ -83,7 +83,7 @@ public:
 
     void onVolumeChanged(float volume) override;
 
-    void onRoutingChanged(audio_port_handle_t portHandle) override;
+    void onRoutingChanged(const android::DeviceIdVector& deviceIds) override;
     // ------------------------------------------------------------------------------
 
     aaudio_result_t getDownDataDescription(AudioEndpointParcelable* parcelable);

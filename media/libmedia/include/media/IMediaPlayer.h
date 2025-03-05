@@ -23,6 +23,7 @@
 #include <utils/KeyedVector.h>
 #include <system/audio.h>
 
+#include <media/AudioContainers.h>
 #include <media/AudioResamplerPublic.h>
 #include <media/stagefright/MediaSource.h>
 #include <media/VolumeShaper.h>
@@ -135,7 +136,7 @@ public:
 
     // AudioRouting
     virtual status_t        setOutputDevice(audio_port_handle_t deviceId) = 0;
-    virtual status_t        getRoutedDeviceId(audio_port_handle_t *deviceId) = 0;
+    virtual status_t        getRoutedDeviceIds(DeviceIdVector& deviceIds) = 0;
     virtual status_t        enableAudioDeviceCallback(bool enabled) = 0;
 protected:
 
@@ -184,7 +185,7 @@ protected:
         RELEASE_DRM,
         // AudioRouting
         SET_OUTPUT_DEVICE,
-        GET_ROUTED_DEVICE_ID,
+        GET_ROUTED_DEVICE_IDS,
         ENABLE_AUDIO_DEVICE_CALLBACK,
     };
 };

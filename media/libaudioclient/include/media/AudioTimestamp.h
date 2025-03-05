@@ -154,10 +154,13 @@ struct alignas(8) /* bug 29096183, bug 29108507 */ ExtendedTimestamp {
     std::string toString() const {
         std::stringstream ss;
 
-        ss << "BOOTTIME offset " << mTimebaseOffset[TIMEBASE_BOOTTIME] << "\n";
+        ss << "BOOTTIME offset " << mTimebaseOffset[TIMEBASE_BOOTTIME] << ": ExtendedTimestamp: ";
         for (int i = 0; i < LOCATION_MAX; ++i) {
-            ss << "ExtendedTimestamp[" << i << "]  position: "
-                    << mPosition[i] << "  time: "  << mTimeNs[i] << "\n";
+            ss << "([" << i << "]  position: "
+                    << mPosition[i] << "  time: "  << mTimeNs[i] << ")";
+            if (i != LOCATION_MAX - 1) {
+                ss << ", ";
+            }
         }
         return ss.str();
     }

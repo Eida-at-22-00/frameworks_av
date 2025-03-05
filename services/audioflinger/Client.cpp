@@ -18,9 +18,10 @@
 
 namespace android {
 
-Client::Client(const sp<IAfClientCallback>& afClientCallback, pid_t pid)
+Client::Client(const sp<IAfClientCallback>& afClientCallback, pid_t pid, uid_t uid)
     : mAfClientCallback(afClientCallback)
     , mPid(pid)
+    , mUid(uid)
     , mClientAllocator(AllocatorFactory::getClientAllocator()) {}
 
 // Client destructor must be called with AudioFlinger::mClientLock held

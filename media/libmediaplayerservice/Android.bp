@@ -48,13 +48,14 @@ cc_defaults {
         "av-types-aidl-cpp",
         "framework-permission-aidl-cpp",
         "libaconfig_storage_read_api_cc",
-        "libaudioclient_aidl_conversion",
-        "libbase",
-        "libbinder_ndk",
         "libactivitymanager_aidl",
         "libandroid_net",
         "libaudioclient",
+        "libaudioclient_aidl_conversion",
+        "libaudiofoundation",
+        "libbase",
         "libbinder",
+        "libbinder_ndk",
         "libcamera_client",
         "libcodec2_client",
         "libcrypto",
@@ -84,25 +85,25 @@ cc_defaults {
     ],
 
     header_libs: [
-        "media_plugin_headers",
         "libmediautils_headers",
         "libstagefright_rtsp_headers",
         "libstagefright_webm_headers",
+        "media_plugin_headers",
     ],
 
     static_libs: [
         "com.android.media.flags.editing-aconfig-cc",
+        "framework-permission-aidl-cpp",
         "libplayerservice_datasource",
         "libstagefright_nuplayer",
         "libstagefright_rtsp",
         "libstagefright_timedtext",
-        "framework-permission-aidl-cpp",
     ],
 
     cflags: [
+        "-Wall",
         "-Werror",
         "-Wno-error=deprecated-declarations",
-        "-Wall",
     ],
 
     sanitize: {
@@ -118,8 +119,8 @@ cc_library {
     ],
 
     export_shared_lib_headers: [
-        "libmedia",
         "framework-permission-aidl-cpp",
+        "libmedia",
     ],
 
     export_header_lib_headers: [

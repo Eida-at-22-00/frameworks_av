@@ -70,6 +70,7 @@ struct C2Config {
     enum platform_level_t : uint32_t;       ///< platform level
     enum prepend_header_mode_t : uint32_t;  ///< prepend header operational modes
     enum profile_t : uint32_t;              ///< coding profile
+    enum resource_kind_t : uint32_t;        ///< resource kinds
     enum scaling_method_t : uint32_t;       ///< scaling methods
     enum scan_order_t : uint32_t;           ///< scan orders
     enum secure_mode_t : uint32_t;          ///< secure/protected modes
@@ -101,6 +102,7 @@ enum C2ParamIndexKind : C2Param::type_index_t {
     kParamIndexMasteringDisplayColorVolume,
     kParamIndexChromaOffset,
     kParamIndexGopLayer,
+    kParamIndexSystemResource,
 
     /* =================================== parameter indices =================================== */
 
@@ -166,6 +168,10 @@ enum C2ParamIndexKind : C2Param::type_index_t {
 
     /* Region of Interest Encoding parameters */
     kParamIndexQpOffsetMapBuffer, // info-buffer, used to signal qp-offset map for a frame
+
+    /* resource capacity and resources excluded */
+    kParamIndexResourcesCapacity,
+    kParamIndexResourcesExcluded,
 
     // deprecated
     kParamIndexDelayRequest = kParamIndexDelay | C2Param::CoreIndex::IS_REQUEST_FLAG,
@@ -263,7 +269,7 @@ enum C2ParamIndexKind : C2Param::type_index_t {
     kParamIndexSuspendAt, // input-surface, struct
     kParamIndexResumeAt, // input-surface, struct
     kParamIndexStopAt, // input-surface, struct
-    kParamIndexTimeOffset, // input-surface, struct
+    kParamIndexTimeOffset, // input-surface, int64_t
     kParamIndexMinFrameRate, // input-surface, float
     kParamIndexTimestampGapAdjustment, // input-surface, struct
 
@@ -293,6 +299,10 @@ enum C2ParamIndexKind : C2Param::type_index_t {
 
     // allow tunnel peek behavior to be unspecified for app compatibility
     kParamIndexTunnelPeekMode, // tunnel mode, enum
+
+    // input surface
+    kParamIndexCaptureFrameRate, // input-surface, float
+    kParamIndexStopTimeOffset, // input-surface, int64_t
 };
 
 }
@@ -430,6 +440,7 @@ enum : uint32_t {
     _C2_PL_AV1_BASE  = 0x9000,
     _C2_PL_VP8_BASE  = 0xA000,
     _C2_PL_MPEGH_BASE = 0xB000,     // MPEG-H 3D Audio
+    _C2_PL_APV_BASE = 0xC000,     // APV
 
     C2_PROFILE_LEVEL_VENDOR_START = 0x70000000,
 };
@@ -597,6 +608,15 @@ enum C2Config::profile_t : uint32_t {
     PROFILE_MPEGH_HIGH,                         ///< MPEG-H High
     PROFILE_MPEGH_LC,                           ///< MPEG-H Low-complexity
     PROFILE_MPEGH_BASELINE,                     ///< MPEG-H Baseline
+
+    // Advanced Professional VideoCodec (APV)
+    PROFILE_APV_422_10 = _C2_PL_APV_BASE,       ///< APV 422-10 Profile
+    PROFILE_APV_422_12,                         ///< APV 422-12 Profile
+    PROFILE_APV_444_10,                         ///< APV 444-10 Profile
+    PROFILE_APV_444_12,                         ///< APV 444-12 Profile
+    PROFILE_APV_4444_10,                        ///< APV 4444-10 Profile
+    PROFILE_APV_4444_12,                        ///< APV 4444-12 Profile
+    PROFILE_APV_400_10,                         ///< APV 400-10 Profile
 };
 
 enum C2Config::level_t : uint32_t {
@@ -752,6 +772,68 @@ enum C2Config::level_t : uint32_t {
     LEVEL_MPEGH_3,                              ///< MPEG-H L3
     LEVEL_MPEGH_4,                              ///< MPEG-H L4
     LEVEL_MPEGH_5,                              ///< MPEG-H L5
+
+    // Advanced Professional VideoCodec(APV) levels/bands
+    LEVEL_APV_1_BAND_0 = _C2_PL_APV_BASE,            ///< APV L 1, BAND 0
+    LEVEL_APV_1_1_BAND_0,                            ///< APV L 1.1, BAND 0
+    LEVEL_APV_2_BAND_0,                              ///< APV L 2, BAND 0
+    LEVEL_APV_2_1_BAND_0,                            ///< APV L 2.1, BAND 0
+    LEVEL_APV_3_BAND_0,                              ///< APV L 3, BAND 0
+    LEVEL_APV_3_1_BAND_0,                            ///< APV L 3.1, BAND 0
+    LEVEL_APV_4_BAND_0,                              ///< APV L 4, BAND 0
+    LEVEL_APV_4_1_BAND_0,                            ///< APV L 4.1, BAND 0
+    LEVEL_APV_5_BAND_0,                              ///< APV L 5, BAND 0
+    LEVEL_APV_5_1_BAND_0,                            ///< APV L 5.1, BAND 0
+    LEVEL_APV_6_BAND_0,                              ///< APV L 6, BAND 0
+    LEVEL_APV_6_1_BAND_0,                            ///< APV L 6.1, BAND 0
+    LEVEL_APV_7_BAND_0,                              ///< APV L 7, BAND 0
+    LEVEL_APV_7_1_BAND_0,                            ///< APV L 7.1, BAND 0
+
+    LEVEL_APV_1_BAND_1 = _C2_PL_APV_BASE + 0x100,    ///< APV L 1, BAND 1
+    LEVEL_APV_1_1_BAND_1,                            ///< APV L 1.1, BAND 1
+    LEVEL_APV_2_BAND_1,                              ///< APV L 2, BAND 1
+    LEVEL_APV_2_1_BAND_1,                            ///< APV L 2.1, BAND 1
+    LEVEL_APV_3_BAND_1,                              ///< APV L 3, BAND 1
+    LEVEL_APV_3_1_BAND_1,                            ///< APV L 3.1, BAND 1
+    LEVEL_APV_4_BAND_1,                              ///< APV L 4, BAND 1
+    LEVEL_APV_4_1_BAND_1,                            ///< APV L 4.1, BAND 1
+    LEVEL_APV_5_BAND_1,                              ///< APV L 5, BAND 1
+    LEVEL_APV_5_1_BAND_1,                            ///< APV L 5.1, BAND 1
+    LEVEL_APV_6_BAND_1,                              ///< APV L 6, BAND 1
+    LEVEL_APV_6_1_BAND_1,                            ///< APV L 6.1, BAND 1
+    LEVEL_APV_7_BAND_1,                              ///< APV L 7, BAND 1
+    LEVEL_APV_7_1_BAND_1,                            ///< APV L 7.1, BAND 1
+
+    LEVEL_APV_1_BAND_2 = _C2_PL_APV_BASE + 0x200,    ///< APV L 1, BAND 2
+    LEVEL_APV_1_1_BAND_2,                            ///< APV L 1.1, BAND 2
+    LEVEL_APV_2_BAND_2,                              ///< APV L 2, BAND 2
+    LEVEL_APV_2_1_BAND_2,                            ///< APV L 2.1, BAND 2
+    LEVEL_APV_3_BAND_2,                              ///< APV L 3, BAND 2
+    LEVEL_APV_3_1_BAND_2,                            ///< APV L 3.1, BAND 2
+    LEVEL_APV_4_BAND_2,                              ///< APV L 4, BAND 2
+    LEVEL_APV_4_1_BAND_2,                            ///< APV L 4.1, BAND 2
+    LEVEL_APV_5_BAND_2,                              ///< APV L 5, BAND 2
+    LEVEL_APV_5_1_BAND_2,                            ///< APV L 5.1, BAND 2
+    LEVEL_APV_6_BAND_2,                              ///< APV L 6, BAND 2
+    LEVEL_APV_6_1_BAND_2,                            ///< APV L 6.1, BAND 2
+    LEVEL_APV_7_BAND_2,                              ///< APV L 7, BAND 2
+    LEVEL_APV_7_1_BAND_2,                            ///< APV L 7.1, BAND 2
+
+    LEVEL_APV_1_BAND_3 = _C2_PL_APV_BASE + 0x300,    ///< APV L 1, BAND 3
+    LEVEL_APV_1_1_BAND_3,                            ///< APV L 1.1, BAND 3
+    LEVEL_APV_2_BAND_3,                              ///< APV L 2, BAND 3
+    LEVEL_APV_2_1_BAND_3,                            ///< APV L 2.1, BAND 3
+    LEVEL_APV_3_BAND_3,                              ///< APV L 3, BAND 3
+    LEVEL_APV_3_1_BAND_3,                            ///< APV L 3.1, BAND 3
+    LEVEL_APV_4_BAND_3,                              ///< APV L 4, BAND 3
+    LEVEL_APV_4_1_BAND_3,                            ///< APV L 4.1, BAND 3
+    LEVEL_APV_5_BAND_3,                              ///< APV L 5, BAND 3
+    LEVEL_APV_5_1_BAND_3,                            ///< APV L 5.1, BAND 3
+    LEVEL_APV_6_BAND_3,                              ///< APV L 6, BAND 3
+    LEVEL_APV_6_1_BAND_3,                            ///< APV L 6.1, BAND 3
+    LEVEL_APV_7_BAND_3,                              ///< APV L 7, BAND 3
+    LEVEL_APV_7_1_BAND_3,                            ///< APV L 7.1, BAND 3
+
 };
 
 struct C2ProfileLevelStruct {
@@ -1185,21 +1267,114 @@ constexpr char C2_PARAMKEY_CONFIG_COUNTER[] = "algo.config.counter";
 /* ----------------------------------------- resources ----------------------------------------- */
 
 /**
- * Resources needed and resources reserved for current configuration.
- *
- * Resources are tracked as a vector of positive numbers. Available resources are defined by
- * the vendor.
- *
- * By default, no resources are reserved for a component. If resource reservation is successful,
- * the component shall be able to use those resources exclusively. If however, the component is
- * not using all of the reserved resources, those may be shared with other components.
- *
- * TODO: define some of the resources.
+ * Resource kind.
  */
-typedef C2GlobalParam<C2Tuning, C2Uint64Array, kParamIndexResourcesNeeded> C2ResourcesNeededTuning;
-typedef C2GlobalParam<C2Tuning, C2Uint64Array, kParamIndexResourcesReserved>
-        C2ResourcesReservedTuning;
+C2ENUM(C2Config::resource_kind_t, uint32_t,
+    CONST,
+    PER_FRAME,
+    PER_INPUT_BLOCK,
+    PER_OUTPUT_BLOCK
+)
+
+/**
+ * Definition of a system resource use.
+ *
+ * [PROPOSED]
+ *
+ * System resources are defined by the default component store.
+ * They represent any physical or abstract entities of limited availability
+ * that is required for a component instance to execute and process work.
+ *
+ * Each defined resource has an id.
+ * The use of a resource is specified by the amount and the kind (e.g. whether the amount
+ * of resources is required for each frame processed, or whether they are required
+ * regardless of the processing rate (const amount)).
+ *
+ * Note: implementations can shadow this structure with their own custom resource
+ * structure where a uint32_t based enum is used for id.
+ * This can be used to provide a name for each resource, via parameter descriptors.
+ */
+
+struct C2SystemResourceStruct {
+    C2SystemResourceStruct(uint32_t id_,
+                           C2Config::resource_kind_t kind_,
+                           uint64_t amount_)
+        : id(id_), kind(kind_), amount(amount_) { }
+    uint32_t id;
+    C2Config::resource_kind_t kind;
+    uint64_t amount;
+
+    DEFINE_AND_DESCRIBE_C2STRUCT(SystemResource)
+    C2FIELD(id, "id")
+    C2FIELD(kind, "kind")
+    C2FIELD(amount, "amount")
+};
+
+/**
+ * Total system resource capacity.
+ *
+ * [PROPOSED]
+ *
+ * This setting is implemented by the default component store.
+ * The total resource capacity is specified as the maximum amount for each resource ID
+ * that is supported by the device hardware or firmware.
+ * As such, the kind must be CONST for each element.
+ */
+typedef C2GlobalParam<C2Tuning,
+                      C2SimpleArrayStruct<C2SystemResourceStruct>,
+                      kParamIndexResourcesCapacity> C2ResourcesCapacityTuning;
+constexpr char C2_PARAMKEY_RESOURCES_CAPACITY[] = "resources.capacity";
+
+/**
+ * Excluded system resources.
+ *
+ * [PROPOSED]
+ *
+ * This setting is implemented by the default component store.
+ * Some system resources may be used by components and not tracked by the Codec 2.0 API.
+ * This is communicated by this tuning.
+ * Excluded resources are the total resources that are used by non-Codec 2.0 components.
+ * It is specified as the excluded amount for each resource ID that is used by
+ * a non-Codec 2.0 component. As such, the kind must be CONST for each element.
+ *
+ * The platform can calculate the available resources as total capacity minus
+ * excluded resource minus sum of needed resources for each component.
+ */
+typedef C2GlobalParam<C2Tuning,
+                      C2SimpleArrayStruct<C2SystemResourceStruct>,
+                      kParamIndexResourcesExcluded> C2ResourcesExcludedTuning;
+constexpr char C2_PARAMKEY_RESOURCES_EXCLUDED[] = "resources.excluded";
+
+/**
+ * System resources needed for the current configuration.
+ *
+ * [PROPOSED]
+ *
+ * Resources are tracked as a list of individual resource use specifications.
+ * The resource kind can be CONST, PER_FRAME, PER_INPUT_BLODCK or PER_OUTPUT_BLOCK.
+ */
+typedef C2GlobalParam<C2Tuning,
+                      C2SimpleArrayStruct<C2SystemResourceStruct>,
+                      kParamIndexResourcesNeeded> C2ResourcesNeededTuning;
 constexpr char C2_PARAMKEY_RESOURCES_NEEDED[] = "resources.needed";
+
+/**
+ * System resources reserved for this component
+ *
+ * [FUTURE]
+ *
+ * This allows the platform to set aside system resources for the component.
+ * Since this is a static resource reservation, kind must be CONST for each element.
+ * This resource reservation only considers CONST and PER_FRAME use.
+ *
+ * By default, no resources are reserved for a component.
+ * If resource reservation is successful, the component shall be able to use those
+ * resources exclusively. If however, the component is not using all of the
+ * reserved resources, those may be shared with other components.
+ */
+typedef C2GlobalParam<C2Tuning,
+                      C2SimpleArrayStruct<C2SystemResourceStruct>,
+                      kParamIndexResourcesReserved> C2ResourcesReservedTuning;
 constexpr char C2_PARAMKEY_RESOURCES_RESERVED[] = "resources.reserved";
 
 /**
@@ -2480,6 +2655,14 @@ typedef C2PortParam<C2Tuning, C2FloatValue, kParamIndexMinFrameRate> C2PortMinFr
 constexpr char C2_PARAMKEY_INPUT_SURFACE_MIN_FRAME_RATE[] = "input-surface.min-frame-rate";
 
 /**
+ * Maximum fps for input surface.
+ *
+ * Drop frame to meet this.
+ */
+typedef C2PortParam<C2Tuning, C2FloatValue, kParamIndexMaxFrameRate> C2PortMaxFrameRateTuning;
+constexpr char C2_PARAMKEY_INPUT_SURFACE_MAX_FRAME_RATE[] = "input-surface.max-frame-rate";
+
+/**
  * Timestamp adjustment (override) for input surface buffers. These control the input timestamp
  * fed to the codec, but do not impact the output timestamp.
  */
@@ -2509,8 +2692,25 @@ C2ENUM(C2TimestampGapAdjustmentStruct::mode_t, uint32_t,
 inline C2TimestampGapAdjustmentStruct::C2TimestampGapAdjustmentStruct()
     : mode(C2TimestampGapAdjustmentStruct::NONE), value(0) { }
 
-typedef C2PortParam<C2Tuning, C2TimestampGapAdjustmentStruct> C2PortTimestampGapTuning;
+typedef C2PortParam<C2Tuning, C2TimestampGapAdjustmentStruct, kParamIndexTimestampGapAdjustment>
+        C2PortTimestampGapTuning;
 constexpr char C2_PARAMKEY_INPUT_SURFACE_TIMESTAMP_ADJUSTMENT[] = "input-surface.timestamp-adjustment";
+
+/**
+ * Capture frame rate for input surface. During timelapse or slowmo encoding,
+ * this represents the frame rate of input surface.
+ */
+typedef C2PortParam<C2Tuning, C2FloatValue, kParamIndexCaptureFrameRate>
+        C2PortCaptureFrameRateTuning;
+constexpr char C2_PARAMKEY_INPUT_SURFACE_CAPTURE_FRAME_RATE[] = "input-surface.capture-frame-rate";
+
+/**
+ * Stop time offset for input surface. Stop time offset is the elapsed time
+ * offset to the last frame time from the stop time. This could be returned from
+ * IInputSurface when it is queried.
+ */
+typedef C2PortParam<C2Tuning, C2Int64Value, kParamIndexStopTimeOffset> C2PortStopTimeOffset;
+constexpr char C2_PARAMKEY_INPUT_SURFACE_STOP_TIME_OFFSET[] = "input-surface.stop-time-offset";
 
 /* ===================================== TUNNELED CODEC ==================================== */
 

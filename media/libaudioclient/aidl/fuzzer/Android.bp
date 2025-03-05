@@ -22,14 +22,13 @@ cc_defaults {
     name: "libaudioclient_aidl_fuzzer_defaults",
     static_libs: [
         "android.hardware.audio.common@7.0-enums",
-        "audiopermissioncontroller",
+        "libaudiopermission",
         "libaudiomockhal",
-        "libcgrouprc",
-        "libcgrouprc_format",
         "libfakeservicemanager",
         "libjsoncpp",
         "libmediametricsservice",
         "libprocessgroup",
+        "libprocessgroup_util",
         "shared-file-region-aidl-cpp",
     ],
     shared_libs: [

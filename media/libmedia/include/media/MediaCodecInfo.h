@@ -192,6 +192,7 @@ struct MediaCodecInfo : public RefBase {
     Attributes getAttributes() const;
     void getSupportedMediaTypes(Vector<AString> *mediaTypes) const;
     const sp<Capabilities> getCapabilitiesFor(const char *mediaType) const;
+    const std::shared_ptr<CodecCapabilities> getCodecCapsFor(const char *mediaType) const;
     const char *getCodecName() const;
 
     /**
@@ -229,14 +230,21 @@ struct MediaCodecInfo : public RefBase {
     status_t writeToParcel(Parcel *parcel) const;
 
 private:
+    /**
+     * Max supported instances setting from MediaCodecList global setting.
+     */
+    static int32_t sMaxSupportedInstances;
+
     AString mName;
     AString mOwner;
     Attributes mAttributes;
     KeyedVector<AString, sp<Capabilities> > mCaps;
+    KeyedVector<AString, std::shared_ptr<CodecCapabilities>> mCodecCaps;
     Vector<AString> mAliases;
     uint32_t mRank;
 
     ssize_t getCapabilityIndex(const char *mediaType) const;
+    ssize_t getCodecCapIndex(const char *mediaType) const;
 
     /**
      * Construct an `MediaCodecInfo` object. After the construction, its
@@ -263,6 +271,15 @@ private:
  * `MediaCodecListBuilderBase::buildMediaCodecList()`.
  */
 struct MediaCodecInfoWriter {
+    /**
+     * Get CodecCapabilities from Capabilities.
+     */
+    static std::shared_ptr<CodecCapabilities> BuildCodecCapabilities(const char *mediaType,
+            sp<MediaCodecInfo::Capabilities> caps, bool isEncoder, int maxSupportedInstances = 0);
+    /**
+     * Set the max supported instances global setting from MediaCodecList.
+     */
+    static void SetMaxSupportedInstances(int32_t maxSupportedInstances);
     /**
      * Set the name of the codec.
      *
@@ -319,6 +336,10 @@ struct MediaCodecInfoWriter {
      * @param rank The rank of the component.
      */
     void setRank(uint32_t rank);
+    /**
+     * Create CodecCapabilities map from Capabilities.
+     */
+    void createCodecCaps();
 private:
     /**
      * The associated `MediaCodecInfo`.

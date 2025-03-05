@@ -54,7 +54,13 @@ aconfig_declarations {
 cc_aconfig_library {
     name: "camera_platform_flags_c_lib",
     aconfig_declarations: "camera_platform_flags",
+}
+
+cc_aconfig_library {
+    name: "camera_platform_flags_c_lib_for_test",
+    aconfig_declarations: "camera_platform_flags",
     host_supported: true,
+    mode: "test",
 }
 
 java_aconfig_library {
@@ -76,6 +82,8 @@ cc_library {
         include_dirs: [
             "frameworks/native/aidl/gui",
             "frameworks/native/libs/permission/aidl",
+            "hardware/interfaces/common/fmq/aidl",
+            "hardware/interfaces/common/aidl",
         ],
     },
 
@@ -106,6 +114,8 @@ cc_library {
     ],
 
     shared_libs: [
+        "android.hardware.common.fmq-V1-cpp",
+        "android.hardware.common-V2-cpp",
         "camera_platform_flags_c_lib",
         "framework-permission-aidl-cpp",
         "lib-platform-compat-native-api",
@@ -130,6 +140,8 @@ cc_library {
     ],
     export_shared_lib_headers: [
         "framework-permission-aidl-cpp",
+        "android.hardware.common.fmq-V1-cpp",
+        "android.hardware.common-V2-cpp",
         "libcamera_metadata",
         "libgui",
         "libnativewindow",
@@ -181,6 +193,7 @@ filegroup {
         "aidl/android/hardware/camera2/ICameraInjectionCallback.aidl",
         "aidl/android/hardware/camera2/ICameraInjectionSession.aidl",
         "aidl/android/hardware/camera2/ICameraOfflineSession.aidl",
+        "aidl/android/hardware/camera2/CameraMetadataInfo.aidl",
     ],
     path: "aidl",
 }

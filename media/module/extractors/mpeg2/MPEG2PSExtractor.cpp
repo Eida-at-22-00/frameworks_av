@@ -161,7 +161,7 @@ uint32_t MPEG2PSExtractor::flags() const {
 }
 
 status_t MPEG2PSExtractor::feedMore() {
-    Mutex::Autolock autoLock(mLock);
+    std::lock_guard<std::mutex> autoLock(mLock);
 
     // How much data we're reading at a time
     static const size_t kChunkSize = 8192;

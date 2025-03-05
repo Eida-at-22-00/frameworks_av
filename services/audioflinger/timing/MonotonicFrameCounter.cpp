@@ -26,9 +26,9 @@ int64_t MonotonicFrameCounter::updateAndGetMonotonicFrameCount(
         int64_t newFrameCount, int64_t newTime) {
     if (newFrameCount < 0 || newTime < 0) {
         const auto result = getLastReportedFrameCount();
-        ALOGW("%s: invalid (frame, time) pair newFrameCount:%lld newFrameCount:%lld,"
+        ALOGW("%s: invalid (frame, time) pair newFrameCount:%lld newTime:%lld,"
                 " using %lld as frameCount",
-                __func__, (long long) newFrameCount, (long long)newFrameCount,
+                __func__, (long long)newFrameCount, (long long)newTime,
                 (long long)result);
         return result;
     }

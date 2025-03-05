@@ -586,6 +586,139 @@ inline static const char *asString_Dts_UHDProfile(int32_t i, const char *def = "
     }
 }
 
+// APV ProfileLevel
+inline constexpr int32_t APVProfile422_10           = 0x01;
+inline constexpr int32_t APVProfile422_10HDR10      = 0x1000;
+inline constexpr int32_t APVProfile422_10HDR10Plus  = 0x2000;
+
+inline static const char *asString_APVProfile(int32_t i, const char *def = "??") {
+    switch (i) {
+        case APVProfile422_10:           return "APVProfile422_10";
+        case APVProfile422_10HDR10:      return "APVProfile422_10HDR10";
+        case APVProfile422_10HDR10Plus:  return "APVProfile422_10HDR10Plus";
+        default:                        return def;
+    }
+}
+
+inline constexpr int32_t APVLevel1Band0 = 0x101;
+inline constexpr int32_t APVLevel1Band1 = 0x102;
+inline constexpr int32_t APVLevel1Band2 = 0x104;
+inline constexpr int32_t APVLevel1Band3 = 0x108;
+inline constexpr int32_t APVLevel11Band0 = 0x201;
+inline constexpr int32_t APVLevel11Band1 = 0x202;
+inline constexpr int32_t APVLevel11Band2 = 0x204;
+inline constexpr int32_t APVLevel11Band3 = 0x208;
+inline constexpr int32_t APVLevel2Band0 = 0x401;
+inline constexpr int32_t APVLevel2Band1 = 0x402;
+inline constexpr int32_t APVLevel2Band2 = 0x404;
+inline constexpr int32_t APVLevel2Band3 = 0x408;
+inline constexpr int32_t APVLevel21Band0 = 0x801;
+inline constexpr int32_t APVLevel21Band1 = 0x802;
+inline constexpr int32_t APVLevel21Band2 = 0x804;
+inline constexpr int32_t APVLevel21Band3 = 0x808;
+inline constexpr int32_t APVLevel3Band0 = 0x1001;
+inline constexpr int32_t APVLevel3Band1 = 0x1002;
+inline constexpr int32_t APVLevel3Band2 = 0x1004;
+inline constexpr int32_t APVLevel3Band3 = 0x1008;
+inline constexpr int32_t APVLevel31Band0 = 0x2001;
+inline constexpr int32_t APVLevel31Band1 = 0x2002;
+inline constexpr int32_t APVLevel31Band2 = 0x2004;
+inline constexpr int32_t APVLevel31Band3 = 0x2008;
+inline constexpr int32_t APVLevel4Band0 = 0x4001;
+inline constexpr int32_t APVLevel4Band1 = 0x4002;
+inline constexpr int32_t APVLevel4Band2 = 0x4004;
+inline constexpr int32_t APVLevel4Band3 = 0x4008;
+inline constexpr int32_t APVLevel41Band0 = 0x8001;
+inline constexpr int32_t APVLevel41Band1 = 0x8002;
+inline constexpr int32_t APVLevel41Band2 = 0x8004;
+inline constexpr int32_t APVLevel41Band3 = 0x8008;
+inline constexpr int32_t APVLevel5Band0 = 0x10001;
+inline constexpr int32_t APVLevel5Band1 = 0x10002;
+inline constexpr int32_t APVLevel5Band2 = 0x10004;
+inline constexpr int32_t APVLevel5Band3 = 0x10008;
+inline constexpr int32_t APVLevel51Band0 = 0x20001;
+inline constexpr int32_t APVLevel51Band1 = 0x20002;
+inline constexpr int32_t APVLevel51Band2 = 0x20004;
+inline constexpr int32_t APVLevel51Band3 = 0x20008;
+inline constexpr int32_t APVLevel6Band0 = 0x40001;
+inline constexpr int32_t APVLevel6Band1 = 0x40002;
+inline constexpr int32_t APVLevel6Band2 = 0x40004;
+inline constexpr int32_t APVLevel6Band3 = 0x40008;
+inline constexpr int32_t APVLevel61Band0 = 0x80001;
+inline constexpr int32_t APVLevel61Band1 = 0x80002;
+inline constexpr int32_t APVLevel61Band2 = 0x80004;
+inline constexpr int32_t APVLevel61Band3 = 0x80008;
+inline constexpr int32_t APVLevel7Band0 = 0x100001;
+inline constexpr int32_t APVLevel7Band1 = 0x100002;
+inline constexpr int32_t APVLevel7Band2 = 0x100004;
+inline constexpr int32_t APVLevel7Band3 = 0x100008;
+inline constexpr int32_t APVLevel71Band0 = 0x200001;
+inline constexpr int32_t APVLevel71Band1 = 0x200002;
+inline constexpr int32_t APVLevel71Band2 = 0x200004;
+inline constexpr int32_t APVLevel71Band3 = 0x200008;
+
+inline static const char *asString_APVBandLevel(int32_t i, const char *def = "??") {
+    switch (i) {
+        case APVLevel1Band0:     return "Level 1, Band 0";
+        case APVLevel1Band1:     return "Level 1, Band 1";
+        case APVLevel1Band2:     return "Level 1, Band 2";
+        case APVLevel1Band3:     return "Level 1, Band 3";
+        case APVLevel11Band0:     return "Level 1.1, Band 0";
+        case APVLevel11Band1:     return "Level 1.1, Band 1";
+        case APVLevel11Band2:     return "Level 1.1, Band 2";
+        case APVLevel11Band3:     return "Level 1.1, Band 3";
+        case APVLevel2Band0:     return "Level 2, Band 0";
+        case APVLevel2Band1:     return "Level 2, Band 1";
+        case APVLevel2Band2:     return "Level 2, Band 2";
+        case APVLevel2Band3:     return "Level 2, Band 3";
+        case APVLevel21Band0:     return "Level 2.1, Band 0";
+        case APVLevel21Band1:     return "Level 2.1, Band 1";
+        case APVLevel21Band2:     return "Level 2.1, Band 2";
+        case APVLevel21Band3:     return "Level 2.1, Band 3";
+        case APVLevel3Band0:     return "Level 3, Band 0";
+        case APVLevel3Band1:     return "Level 3, Band 1";
+        case APVLevel3Band2:     return "Level 3, Band 2";
+        case APVLevel3Band3:     return "Level 3, Band 3";
+        case APVLevel31Band0:     return "Level 3.1, Band 0";
+        case APVLevel31Band1:     return "Level 3.1, Band 1";
+        case APVLevel31Band2:     return "Level 3.1, Band 2";
+        case APVLevel31Band3:     return "Level 3.1, Band 3";
+        case APVLevel4Band0:     return "Level 4, Band 0";
+        case APVLevel4Band1:     return "Level 4, Band 1";
+        case APVLevel4Band2:     return "Level 4, Band 2";
+        case APVLevel4Band3:     return "Level 4, Band 3";
+        case APVLevel41Band0:     return "Level 4.1, Band 0";
+        case APVLevel41Band1:     return "Level 4.1, Band 1";
+        case APVLevel41Band2:     return "Level 4.1, Band 2";
+        case APVLevel41Band3:     return "Level 4.1, Band 3";
+        case APVLevel5Band0:     return "Level 5, Band 0";
+        case APVLevel5Band1:     return "Level 5, Band 1";
+        case APVLevel5Band2:     return "Level 5, Band 2";
+        case APVLevel5Band3:     return "Level 5, Band 3";
+        case APVLevel51Band0:     return "Level 5.1, Band 0";
+        case APVLevel51Band1:     return "Level 5.1, Band 1";
+        case APVLevel51Band2:     return "Level 5.1, Band 2";
+        case APVLevel51Band3:     return "Level 5.1, Band 3";
+        case APVLevel6Band0:     return "Level 6, Band 0";
+        case APVLevel6Band1:     return "Level 6, Band 1";
+        case APVLevel6Band2:     return "Level 6, Band 2";
+        case APVLevel6Band3:     return "Level 6, Band 3";
+        case APVLevel61Band0:     return "Level 6.1, Band 0";
+        case APVLevel61Band1:     return "Level 6.1, Band 1";
+        case APVLevel61Band2:     return "Level 6.1, Band 2";
+        case APVLevel61Band3:     return "Level 6.1, Band 3";
+        case APVLevel7Band0:     return "Level 7, Band 0";
+        case APVLevel7Band1:     return "Level 7, Band 1";
+        case APVLevel7Band2:     return "Level 7, Band 2";
+        case APVLevel7Band3:     return "Level 7, Band 3";
+        case APVLevel71Band0:     return "Level 7.1, Band 0";
+        case APVLevel71Band1:     return "Level 7.1, Band 1";
+        case APVLevel71Band2:     return "Level 7.1, Band 2";
+        case APVLevel71Band3:     return "Level 7.1, Band 3";
+        default:                return def;
+    }
+}
+
 inline constexpr int32_t BITRATE_MODE_CBR = 2;
 inline constexpr int32_t BITRATE_MODE_CBR_FD = 3;
 inline constexpr int32_t BITRATE_MODE_CQ = 0;
@@ -654,6 +787,7 @@ inline constexpr int32_t COLOR_FormatYUV422SemiPlanar        = 24;
 inline constexpr int32_t COLOR_FormatYUV444Flexible          = 0x7F444888;
 inline constexpr int32_t COLOR_FormatYUV444Interleaved       = 29;
 inline constexpr int32_t COLOR_FormatYUVP010                 = 54;
+inline constexpr int32_t COLOR_FormatYUVP210                 = 60;
 inline constexpr int32_t COLOR_QCOM_FormatYUV420SemiPlanar   = 0x7fa30c00;
 inline constexpr int32_t COLOR_TI_FormatYUV420PackedSemiPlanar = 0x7f000100;
 
@@ -712,6 +846,7 @@ inline static const char *asString_ColorFormat(int32_t i, const char *def = "??"
         case COLOR_FormatYUV444Flexible:            return "YUV444Flexible";
         case COLOR_FormatYUV444Interleaved:         return "YUV444Interleaved";
         case COLOR_FormatYUVP010:                   return "YUVP010";
+        case COLOR_FormatYUVP210:                   return "YUVP210";
         case COLOR_QCOM_FormatYUV420SemiPlanar:     return "QCOM_YUV420SemiPlanar";
         case COLOR_TI_FormatYUV420PackedSemiPlanar: return "TI_YUV420PackedSemiPlanar";
         default:                                    return def;
@@ -719,18 +854,24 @@ inline static const char *asString_ColorFormat(int32_t i, const char *def = "??"
 }
 
 inline constexpr char FEATURE_AdaptivePlayback[]       = "adaptive-playback";
+inline constexpr char FEATURE_DynamicTimestamp[]       = "dynamic-timestamp";
 inline constexpr char FEATURE_EncodingStatistics[]     = "encoding-statistics";
+inline constexpr char FEATURE_FrameParsing[]           = "frame-parsing";
+inline constexpr char FEATURE_HdrEditing[]             = "hdr-editing";
 inline constexpr char FEATURE_IntraRefresh[] = "intra-refresh";
+inline constexpr char FEATURE_LowLatency[]             = "low-latency";
 inline constexpr char FEATURE_MultipleFrames[] = "multiple-frames";
 inline constexpr char FEATURE_PartialFrame[] = "partial-frame";
 inline constexpr char FEATURE_QpBounds[] = "qp-bounds";
 inline constexpr char FEATURE_SecurePlayback[]         = "secure-playback";
+inline constexpr char FEATURE_SpecialCodec[]           = "special-codec";
 inline constexpr char FEATURE_TunneledPlayback[]       = "tunneled-playback";
 
 // from MediaFormat.java
 inline constexpr char MIMETYPE_VIDEO_VP8[] = "video/x-vnd.on2.vp8";
 inline constexpr char MIMETYPE_VIDEO_VP9[] = "video/x-vnd.on2.vp9";
 inline constexpr char MIMETYPE_VIDEO_AV1[] = "video/av01";
+inline constexpr char MIMETYPE_VIDEO_APV[] = "video/apv";
 inline constexpr char MIMETYPE_VIDEO_AVC[] = "video/avc";
 inline constexpr char MIMETYPE_VIDEO_HEVC[] = "video/hevc";
 inline constexpr char MIMETYPE_VIDEO_MPEG4[] = "video/mp4v-es";
@@ -847,6 +988,7 @@ inline constexpr char KEY_MAX_OUTPUT_CHANNEL_COUNT[] = "max-output-channel-count
 inline constexpr char KEY_MAX_PTS_GAP_TO_ENCODER[] = "max-pts-gap-to-encoder";
 inline constexpr char KEY_MAX_WIDTH[] = "max-width";
 inline constexpr char KEY_MIME[] = "mime";
+inline constexpr char KEY_NUM_SLOTS[] = "num-slots";
 inline constexpr char KEY_OPERATING_RATE[] = "operating-rate";
 inline constexpr char KEY_OUTPUT_REORDER_DEPTH[] = "output-reorder-depth";
 inline constexpr char KEY_PCM_ENCODING[] = "pcm-encoding";

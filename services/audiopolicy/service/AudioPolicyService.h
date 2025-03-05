@@ -58,6 +58,8 @@ using media::audio::common::AudioConfigBase;
 using media::audio::common::AudioDevice;
 using media::audio::common::AudioDeviceDescription;
 using media::audio::common::AudioFormatDescription;
+using media::audio::common::AudioMMapPolicyInfo;
+using media::audio::common::AudioMMapPolicyType;
 using media::audio::common::AudioMode;
 using media::audio::common::AudioSource;
 using media::audio::common::AudioStreamType;
@@ -106,16 +108,16 @@ public:
             const std::string& deviceName,
             const AudioFormatDescription& encodedFormat) override;
     binder::Status setPhoneState(AudioMode state, int32_t uid) override;
-    binder::Status setForceUse(android::media::audio::common::AudioPolicyForceUse usage,
-            android::media::audio::common::AudioPolicyForcedConfig config) override;
-    binder::Status getForceUse(android::media::audio::common::AudioPolicyForceUse usage,
-            android::media::audio::common::AudioPolicyForcedConfig* _aidl_return) override;
+    binder::Status setForceUse(media::AudioPolicyForceUse usage,
+                               media::AudioPolicyForcedConfig config) override;
+    binder::Status getForceUse(media::AudioPolicyForceUse usage,
+                               media::AudioPolicyForcedConfig* _aidl_return) override;
     binder::Status getOutput(AudioStreamType stream, int32_t* _aidl_return) override;
     binder::Status getOutputForAttr(const media::audio::common::AudioAttributes& attr,
                                     int32_t session,
                                     const AttributionSourceState &attributionSource,
                                     const AudioConfig& config,
-                                    int32_t flags, int32_t selectedDeviceId,
+                                    int32_t flags, const std::vector<int32_t>& selectedDeviceIds,
                                     media::GetOutputForAttrResponse* _aidl_return) override;
     binder::Status startOutput(int32_t portId) override;
     binder::Status stopOutput(int32_t portId) override;
@@ -136,13 +138,13 @@ public:
                                     int32_t indexMax) override;
     binder::Status setStreamVolumeIndex(AudioStreamType stream,
                                         const AudioDeviceDescription& device,
-                                        int32_t index) override;
+                                        int32_t index, bool muted) override;
     binder::Status getStreamVolumeIndex(AudioStreamType stream,
                                         const AudioDeviceDescription& device,
                                         int32_t* _aidl_return) override;
     binder::Status setVolumeIndexForAttributes(const media::audio::common::AudioAttributes& attr,
                                                const AudioDeviceDescription& device,
-                                               int32_t index) override;
+                                               int32_t index, bool muted) override;
     binder::Status getVolumeIndexForAttributes(const media::audio::common::AudioAttributes& attr,
                                                const AudioDeviceDescription& device,
                                                int32_t* _aidl_return) override;
@@ -328,6 +330,13 @@ public:
     // Should only be called by AudioService to push permission data down to audioserver
     binder::Status getPermissionController(sp<INativePermissionController>* out) override;
 
+    binder::Status getMmapPolicyInfos(
+            AudioMMapPolicyType policyType,
+            std::vector<AudioMMapPolicyInfo>* _aidl_return) override;
+    binder::Status getMmapPolicyForDevice(
+            AudioMMapPolicyType policyType,
+            AudioMMapPolicyInfo* policyInfo) override;
+
     status_t onTransact(uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags) override;
 
     // -- IAudioPolicyLocal methods
@@ -353,6 +362,7 @@ public:
 
     virtual status_t setStreamVolume(audio_stream_type_t stream,
                                      float volume,
+                                     bool muted,
                                      audio_io_handle_t output,
                                      int delayMs = 0);
 
@@ -364,12 +374,13 @@ public:
      *
      * @param ports to consider
      * @param volume to set
+     * @param muted to set
      * @param output to consider
      * @param delayMs to use
      * @return NO_ERROR if successful
      */
     virtual status_t setPortsVolume(const std::vector<audio_port_handle_t> &ports, float volume,
-            audio_io_handle_t output, int delayMs = 0);
+            bool muted, audio_io_handle_t output, int delayMs = 0);
     virtual status_t setVoiceVolume(float volume, int delayMs = 0);
 
     void doOnNewAudioModulesAvailable();
@@ -462,6 +473,8 @@ private:
     status_t printHelp(int out);
 
     std::string getDeviceTypeStrForPortId(audio_port_handle_t portId);
+
+    std::string getDeviceTypeStrForPortIds(DeviceIdVector portIds);
 
     status_t getAudioPolicyEffects(sp<AudioPolicyEffects>& audioPolicyEffects);
 
@@ -625,10 +638,10 @@ private:
         virtual     bool        threadLoop();
 
                     void        exit();
-                    status_t    volumeCommand(audio_stream_type_t stream, float volume,
+                    status_t    volumeCommand(audio_stream_type_t stream, float volume, bool muted,
                                             audio_io_handle_t output, int delayMs = 0);
                     status_t    volumePortsCommand(const std::vector<audio_port_handle_t> &ports,
-                            float volume, audio_io_handle_t output, int delayMs = 0);
+                            float volume, bool muted, audio_io_handle_t output, int delayMs = 0);
                     status_t    parametersCommand(audio_io_handle_t ioHandle,
                                             const char *keyValuePairs, int delayMs = 0);
                     status_t    voiceVolumeCommand(float volume, int delayMs = 0);
@@ -700,6 +713,7 @@ private:
         public:
             audio_stream_type_t mStream;
             float mVolume;
+            bool mIsMuted;
             audio_io_handle_t mIO;
         };
 
@@ -707,13 +721,15 @@ private:
         public:
             std::vector<audio_port_handle_t> mPorts;
             float mVolume;
+            bool mMuted;
             audio_io_handle_t mIO;
             std::string dumpPorts() {
-                return std::string("volume ") + std::to_string(mVolume) + " on IO " +
-                        std::to_string(mIO) + " and ports " +
-                        std::accumulate(std::begin(mPorts), std::end(mPorts), std::string{},
-                                       [] (const std::string& ls, int rs) {
-                                return ls + std::to_string(rs) + " "; });
+                return std::string("volume ") + std::to_string(mVolume) + std::string("muted ") +
+                       std::to_string(mMuted) + " on IO " + std::to_string(mIO) + " and ports " +
+                       std::accumulate(std::begin(mPorts), std::end(mPorts), std::string{},
+                                       [](const std::string &ls, int rs) {
+                                           return ls + std::to_string(rs) + " ";
+                                       });
             }
         };
 
@@ -823,7 +839,7 @@ private:
                                     audio_config_base_t *mixerConfig,
                                     const sp<DeviceDescriptorBase>& device,
                                     uint32_t *latencyMs,
-                                    audio_output_flags_t flags,
+                                    audio_output_flags_t *flags,
                                     audio_attributes_t attributes);
         // creates a special output that is duplicated to the two outputs passed as arguments. The duplication is performed by
         // a special mixer thread in the AudioFlinger.
@@ -854,9 +870,10 @@ private:
         // misc control functions
         //
 
-        // set a stream volume for a particular output. For the same user setting, a given stream type can have different volumes
-        // for each output (destination device) it is attached to.
-        virtual status_t setStreamVolume(audio_stream_type_t stream, float volume, audio_io_handle_t output, int delayMs = 0);
+        // set a stream volume for a particular output. For the same user setting, a given stream
+        // type can have different volumes for each output (destination device) it is attached to.
+        virtual status_t setStreamVolume(audio_stream_type_t stream, float volume, bool muted,
+                audio_io_handle_t output, int delayMs = 0);
         /**
          * Set a volume on port(s) for a particular output. For the same user setting, a volume
          * group (and associated given port of the client's track) can have different volumes for
@@ -864,12 +881,13 @@ private:
          *
          * @param ports to consider
          * @param volume to set
+         * @param muted to set
          * @param output to consider
          * @param delayMs to use
          * @return NO_ERROR if successful
          */
         status_t setPortsVolume(const std::vector<audio_port_handle_t> &ports, float volume,
-                audio_io_handle_t output, int delayMs = 0) override;
+                bool muted, audio_io_handle_t output, int delayMs = 0) override;
 
         // function enabling to send proprietary informations directly from audio policy manager to audio hardware interface.
         virtual void setParameters(audio_io_handle_t ioHandle, const String8& keyValuePairs, int delayMs = 0);
@@ -938,6 +956,13 @@ private:
         status_t setTracksInternalMute(
                 const std::vector<media::TrackInternalMuteInfo>& tracksInternalMute) override;
 
+        status_t getMmapPolicyInfos(
+                media::audio::common::AudioMMapPolicyType policyType,
+                std::vector<media::audio::common::AudioMMapPolicyInfo> *policyInfos) override;
+
+        error::BinderResult<bool> checkPermissionForInput(const AttributionSourceState& attr,
+                const PermissionReqs& req) override;
+
      private:
         AudioPolicyService *mAudioPolicyService;
     };
@@ -995,10 +1020,10 @@ private:
                             const audio_io_handle_t io,
                             const AttributionSourceState& attributionSource,
                             const audio_session_t session,  audio_port_handle_t portId,
-                            const audio_port_handle_t deviceId) :
+                            const DeviceIdVector deviceIds) :
                                 attributes(attributes), io(io), attributionSource(
                                 attributionSource), session(session), portId(portId),
-                                deviceId(deviceId), active(false) {}
+                                deviceIds(deviceIds), active(false) {}
                 ~AudioClient() override = default;
 
 
@@ -1007,7 +1032,7 @@ private:
         const AttributionSourceState attributionSource; //client attributionsource
         const audio_session_t session;       // audio session ID
         const audio_port_handle_t portId;
-        const audio_port_handle_t deviceId;  // selected input device port ID
+        const DeviceIdVector deviceIds;  // selected input device port IDs
               bool active;                   // Playback/Capture is active or inactive
     };
     private:
@@ -1022,10 +1047,10 @@ private:
                 AudioPlaybackClient(const audio_attributes_t attributes,
                       const audio_io_handle_t io, AttributionSourceState attributionSource,
                             const audio_session_t session, audio_port_handle_t portId,
-                            audio_port_handle_t deviceId, audio_stream_type_t stream,
+                            DeviceIdVector deviceIds, audio_stream_type_t stream,
                             bool isSpatialized, audio_channel_mask_t channelMask) :
                     AudioClient(attributes, io, attributionSource, session, portId,
-                        deviceId), stream(stream), isSpatialized(isSpatialized),
+                        deviceIds), stream(stream), isSpatialized(isSpatialized),
                         channelMask(channelMask) {}
                 ~AudioPlaybackClient() override = default;
 

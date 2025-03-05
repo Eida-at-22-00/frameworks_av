@@ -22,7 +22,7 @@ To test 32-bit binary push binaries from nativetest.
 adb push ${OUT}/data/nativetest/AmrwbEncoderTest/AmrwbEncoderTest /data/local/tmp/
 ```
 
-The resource file for the tests is taken from [here](https://dl.google.com/android-unittest/media/frameworks/av/media/module/codecs/amrwb/enc/test/AmrwbEncoderTest-1.0.zip). Download, unzip and push these files into device for testing.
+The resource file for the tests is taken from [here](https://dl.google.com/android-unittest/media/frameworks/av/media/module/codecs/amrwb/enc/test/AmrwbEncoderTest-2.0.zip). Download, unzip and push these files into device for testing.
 
 ```
 adb push AmrwbEncoderTest-1.0 /data/local/tmp/
@@ -30,7 +30,7 @@ adb push AmrwbEncoderTest-1.0 /data/local/tmp/
 
 usage: AmrwbEncoderTest -P \<path_to_folder\>
 ```
-adb shell /data/local/tmp/AmrwbEncoderTest -P /data/local/tmp/AmrwbEncoderTest-1.0/
+adb shell /data/local/tmp/AmrwbEncoderTest -P /data/local/tmp/AmrwbEncoderTest-2.0/
 ```
 Alternatively, the test can also be run using atest command.
 

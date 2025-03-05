@@ -23,7 +23,10 @@ namespace android {
 class VolumePortInterface : public virtual RefBase {
 public:
     virtual void setPortVolume(float volume) = 0;
+    virtual void setPortMute(bool mute) = 0;
     virtual float getPortVolume() const = 0;
+    /** Returns the muted state defined by the volume group which is playing on this port. */
+    virtual bool getPortMute() const = 0;
 };
 
 }  // namespace android

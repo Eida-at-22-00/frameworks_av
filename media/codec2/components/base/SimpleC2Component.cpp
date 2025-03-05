@@ -463,6 +463,19 @@ void convertP010ToYUV420Planar16(uint16_t *dstY, uint16_t *dstU, uint16_t *dstV,
     }
 }
 
+void convertP010ToP210(uint16_t *dstY, uint16_t *dstUV, const uint16_t *srcY, const uint16_t *srcUV,
+                       size_t srcUVStride, size_t dstUVStride, size_t width, size_t height) {
+    std::memcpy(dstY, srcY, width * height * sizeof(uint16_t));
+
+    int32_t offsetTop, offsetBot;
+    for (size_t y = 0; y < (height + 1) / 2; ++y) {
+        offsetTop = (y * 2) * dstUVStride;
+        offsetBot = (y * 2 + 1) * dstUVStride;
+        std::memcpy(dstUV + offsetTop, srcUV + (y * srcUVStride), srcUVStride * sizeof(uint16_t));
+        std::memcpy(dstUV + offsetBot, srcUV + (y * srcUVStride), srcUVStride * sizeof(uint16_t));
+    }
+}
+
 static const int16_t bt709Matrix_10bit[2][3][3] = {
     { { 218, 732, 74 }, { -117, -395, 512 }, { 512, -465, -47 } }, /* RANGE_FULL */
     { { 186, 627, 63 }, { -103, -345, 448 }, { 448, -407, -41 } }, /* RANGE_LIMITED */
@@ -514,6 +527,45 @@ void convertRGBA1010102ToYUV420Planar16(uint16_t* dstY, uint16_t* dstU, uint16_t
             dstU += width / 2;
             dstV += width / 2;
         }
+    }
+}
+
+void convertRGBA1010102ToP210(uint16_t* dstY, uint16_t* dstUV, const uint32_t* srcRGBA,
+                              size_t srcRGBStride, size_t width, size_t height,
+                              C2Color::matrix_t colorMatrix, C2Color::range_t colorRange) {
+    uint16_t r, g, b;
+    int32_t i32Y, i32U, i32V;
+    uint16_t zeroLvl =  colorRange == C2Color::RANGE_FULL ? 0 : 64;
+    uint16_t maxLvlLuma =  colorRange == C2Color::RANGE_FULL ? 1023 : 940;
+    uint16_t maxLvlChroma =  colorRange == C2Color::RANGE_FULL ? 1023 : 960;
+    // set default range as limited
+    if (colorRange != C2Color::RANGE_FULL) {
+        colorRange = C2Color::RANGE_LIMITED;
+    }
+    const int16_t(*weights)[3] = (colorMatrix == C2Color::MATRIX_BT709)
+                                         ? bt709Matrix_10bit[colorRange - 1]
+                                         : bt2020Matrix_10bit[colorRange - 1];
+
+    for (size_t y = 0; y < height; ++y) {
+        for (size_t x = 0; x < width; ++x) {
+            b = (srcRGBA[x]  >> 20) & 0x3FF;
+            g = (srcRGBA[x]  >> 10) & 0x3FF;
+            r = srcRGBA[x] & 0x3FF;
+
+            i32Y = ((r * weights[0][0] + g * weights[0][1] + b * weights[0][2] + 512) >> 10) +
+                   zeroLvl;
+            dstY[x] = (CLIP3(zeroLvl, i32Y, maxLvlLuma) << 6) & 0xFFC0;
+            if (x % 2 == 0) {
+                i32U = ((r * weights[1][0] + g * weights[1][1] + b * weights[1][2] + 512) >> 10) +
+                       512;
+                i32V = ((r * weights[2][0] + g * weights[2][1] + b * weights[2][2] + 512) >> 10) +
+                       512;
+                dstUV[x] = (CLIP3(zeroLvl, i32U, maxLvlChroma) << 6) & 0xFFC0;
+                dstUV[x + 1] = (CLIP3(zeroLvl, i32V, maxLvlChroma) << 6) & 0xFFC0;
+            }
+        }
+        srcRGBA += srcRGBStride;
+        dstY += width;
     }
 }
 
@@ -631,6 +683,69 @@ void convertPlanar8ToYV12(uint8_t* dstY, uint8_t* dstU, uint8_t* dstV, const uin
                                    isMonochrome);
     }
 }
+
+void convertSemiPlanar8ToP210(uint16_t *dstY, uint16_t *dstUV,
+                              const uint8_t *srcY, const uint8_t *srcUV,
+                              size_t srcYStride, size_t srcUVStride,
+                              size_t dstYStride, size_t dstUVStride,
+                              uint32_t width, uint32_t height,
+                              CONV_FORMAT_T format) {
+  if (format != CONV_FORMAT_I420) {
+    ALOGE("No support for semi-planar8 to P210. format is %d", format);
+    return;
+  }
+
+  for (int32_t y = 0; y < height; ++y) {
+    for (int32_t x = 0; x < width; ++x) {
+      dstY[x] = ((uint16_t)((double)srcY[x] * 1023 / 255 + 0.5) << 6) & 0xFFC0;
+    }
+    dstY += dstYStride;
+    srcY += srcYStride;
+  }
+
+  for (int32_t y = 0; y < height / 2; ++y) {
+    for (int32_t x = 0; x < width; ++x) {
+      dstUV[x] = dstUV[dstUVStride + x] =
+          ((uint16_t)((double)srcUV[x] * 1023 / 255 + 0.5) << 6) & 0xFFC0;
+    }
+    srcUV += srcUVStride;
+    dstUV += dstUVStride << 1;
+  }
+}
+
+void convertPlanar8ToP210(uint16_t *dstY, uint16_t *dstUV,
+                              const uint8_t *srcY, const uint8_t *srcU, const uint8_t *srcV,
+                              size_t srcYStride, size_t srcUStride, size_t srcVStride,
+                              size_t dstYStride, size_t dstUVStride,
+                              uint32_t width, uint32_t height,
+                              CONV_FORMAT_T format) {
+  if (format != CONV_FORMAT_I420) {
+    ALOGE("No support for planar8 to P210. format is %d", format);
+    return;
+  }
+
+  for (int32_t y = 0; y < height; ++y) {
+    for (int32_t x = 0; x < width; ++x) {
+      dstY[x] = ((uint16_t)((double)srcY[x] * 1023 / 255 + 0.5) << 6) & 0xFFC0;
+    }
+    dstY += dstYStride;
+    srcY += srcYStride;
+  }
+
+  for (int32_t y = 0; y < height / 2; ++y) {
+    for (int32_t x = 0; x < width / 2; ++x) {
+      dstUV[x<<1] = dstUV[(x<<1) + dstUVStride] =
+                ((uint16_t)((double)srcU[x] * 1023 / 255 + 0.5) << 6) & 0xFFC0;
+      dstUV[(x<<1) + 1] = dstUV[(x<<1) + dstUVStride + 1] =
+                ((uint16_t)((double)srcV[x] * 1023 / 255 + 0.5) << 6) & 0xFFC0;
+    }
+    dstUV += dstUVStride << 1;
+    srcU += srcUStride;
+    srcV += srcVStride;
+  }
+}
+
+
 std::unique_ptr<C2Work> SimpleC2Component::WorkQueue::pop_front() {
     std::unique_ptr<C2Work> work = std::move(mQueue.front().work);
     mQueue.pop_front();

@@ -102,24 +102,6 @@ const NuPlayer::Renderer::PcmInfo NuPlayer::Renderer::AUDIO_PCMINFO_INITIALIZER 
 // static
 const int64_t NuPlayer::Renderer::kMinPositionUpdateDelayUs = 100000ll;
 
-static audio_format_t constexpr audioFormatFromEncoding(int32_t pcmEncoding) {
-    switch (pcmEncoding) {
-    case kAudioEncodingPcmFloat:
-        return AUDIO_FORMAT_PCM_FLOAT;
-    case kAudioEncodingPcm32bit:
-        return AUDIO_FORMAT_PCM_32_BIT;
-    case kAudioEncodingPcm24bitPacked:
-        return AUDIO_FORMAT_PCM_24_BIT_PACKED;
-    case kAudioEncodingPcm16bit:
-        return AUDIO_FORMAT_PCM_16_BIT;
-    case kAudioEncodingPcm8bit:
-        return AUDIO_FORMAT_PCM_8_BIT; // TODO: do we want to support this?
-    default:
-        ALOGE("%s: Invalid encoding: %d", __func__, pcmEncoding);
-        return AUDIO_FORMAT_INVALID;
-    }
-}
-
 NuPlayer::Renderer::Renderer(
         const sp<MediaPlayerBase::AudioSink> &sink,
         const sp<MediaClock> &mediaClock,
@@ -912,12 +894,15 @@ void NuPlayer::Renderer::notifyIfMediaRenderingStarted_l() {
 
 // static
 size_t NuPlayer::Renderer::AudioSinkCallback(
-        MediaPlayerBase::AudioSink * /* audioSink */,
+        const sp<MediaPlayerBase::AudioSink>& /* audioSink */,
         void *buffer,
         size_t size,
-        void *cookie,
+        const wp<RefBase>& cookie,
         MediaPlayerBase::AudioSink::cb_event_t event) {
-    NuPlayer::Renderer *me = (NuPlayer::Renderer *)cookie;
+    if (cookie == nullptr) return 0;
+    const auto ref = cookie.promote();
+    if (!ref) return 0;
+    const auto me = static_cast<NuPlayer::Renderer*>(ref.get()); // we already hold a sp.
 
     switch (event) {
         case MediaPlayerBase::AudioSink::CB_EVENT_FILL_BUFFER:

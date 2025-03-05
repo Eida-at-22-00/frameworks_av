@@ -17,6 +17,9 @@
 #ifndef ANDROID_SERVERS_CAMERA_CAMERA3_HEIC_COMPOSITE_STREAM_H
 #define ANDROID_SERVERS_CAMERA_CAMERA3_HEIC_COMPOSITE_STREAM_H
 
+#include <algorithm>
+#include <android/data_space.h>
+#include <memory>
 #include <queue>
 
 #include <gui/CpuConsumer.h>
@@ -27,6 +30,8 @@
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/MediaCodec.h>
 #include <media/stagefright/MediaMuxer.h>
+#include <ultrahdr/ultrahdrcommon.h>
+#include <ultrahdr/gainmapmetadata.h>
 
 #include "CompositeStream.h"
 
@@ -43,7 +48,7 @@ public:
     static bool isHeicCompositeStream(const sp<Surface> &surface);
     static bool isHeicCompositeStreamInfo(const OutputStreamInfo& streamInfo);
 
-    status_t createInternalStreams(const std::vector<sp<Surface>>& consumers,
+    status_t createInternalStreams(const std::vector<SurfaceHolder>& consumers,
             bool hasDeferredConsumer, uint32_t width, uint32_t height, int format,
             camera_stream_rotation_t rotation, int *id, const std::string& physicalCameraId,
             const std::unordered_set<int32_t> &sensorPixelModesUsed,
@@ -79,8 +84,13 @@ public:
     void getStreamStats(hardware::CameraStreamStats*) override {};
 
     static bool isSizeSupportedByHeifEncoder(int32_t width, int32_t height,
-            bool* useHeic, bool* useGrid, int64_t* stall, AString* hevcName = nullptr);
+            bool* useHeic, bool* useGrid, int64_t* stall, AString* hevcName = nullptr,
+            bool allowSWCodec = false);
     static bool isInMemoryTempFileSupported();
+
+    // HDR Gainmap subsampling
+    static const size_t kGainmapScale = 4;
+
 protected:
 
     bool threadLoop() override;
@@ -108,12 +118,12 @@ private:
 
     class CodecCallbackHandler : public AHandler {
     public:
-        explicit CodecCallbackHandler(wp<HeicCompositeStream> parent) {
-            mParent = parent;
-        }
+        explicit CodecCallbackHandler(wp<HeicCompositeStream> parent, bool isGainmap = false) :
+            mParent(parent), mIsGainmap(isGainmap) {}
         virtual void onMessageReceived(const sp<AMessage> &msg);
     private:
         wp<HeicCompositeStream> mParent;
+        bool mIsGainmap;
     };
 
     enum {
@@ -122,30 +132,34 @@ private:
 
     bool              mUseHeic;
     sp<MediaCodec>    mCodec;
-    sp<ALooper>       mCodecLooper, mCallbackLooper;
-    sp<CodecCallbackHandler> mCodecCallbackHandler;
-    sp<AMessage>      mAsyncNotify;
-    sp<AMessage>      mFormat;
-    size_t            mNumOutputTiles;
+    sp<MediaCodec>    mGainmapCodec;
+    sp<ALooper>       mCodecLooper, mCallbackLooper, mGainmapCallbackLooper;
+    sp<CodecCallbackHandler> mCodecCallbackHandler, mGainmapCodecCallbackHandler;
+    sp<AMessage>      mAsyncNotify, mGainmapAsyncNotify;
+    sp<AMessage>      mFormat, mGainmapFormat;
+    size_t            mNumOutputTiles, mNumGainmapOutputTiles;
 
-    int32_t           mOutputWidth, mOutputHeight;
+    int32_t           mOutputWidth, mOutputHeight, mGainmapOutputWidth, mGainmapOutputHeight;
     size_t            mMaxHeicBufferSize;
-    int32_t           mGridWidth, mGridHeight;
-    size_t            mGridRows, mGridCols;
-    bool              mUseGrid; // Whether to use framework YUV frame tiling.
+    int32_t           mGridWidth, mGridHeight, mGainmapGridWidth, mGainmapGridHeight;
+    size_t            mGridRows, mGridCols, mGainmapGridRows, mGainmapGridCols;
+    bool              mUseGrid, mGainmapUseGrid; // Whether to use framework YUV frame tiling.
 
     static const int64_t kNoFrameDropMaxPtsGap = -1000000;
     static const int32_t kNoGridOpRate = 30;
     static const int32_t kGridOpRate = 120;
 
-    void onHeicOutputFrameAvailable(const CodecOutputBufferInfo& bufferInfo);
-    void onHeicInputFrameAvailable(int32_t index);  // Only called for YUV input mode.
-    void onHeicFormatChanged(sp<AMessage>& newFormat);
+    void onHeicOutputFrameAvailable(const CodecOutputBufferInfo& bufferInfo, bool isGainmap);
+    void onHeicInputFrameAvailable(int32_t index, bool isGainmap);// Only called for YUV input mode.
+    void onHeicFormatChanged(sp<AMessage>& newFormat, bool isGainmap);
+    void onHeicGainmapFormatChanged(sp<AMessage>& newFormat);
     void onHeicCodecError();
 
     status_t initializeCodec(uint32_t width, uint32_t height,
             const sp<CameraDeviceBase>& cameraDevice);
     void deinitCodec();
+    status_t initializeGainmapCodec();
+    void deinitGainmapCodec();
 
     //
     // Composite stream related structures, utility functions and callbacks.
@@ -155,33 +169,51 @@ private:
         int32_t                   quality;
 
         CpuConsumer::LockedBuffer          appSegmentBuffer;
-        std::vector<CodecOutputBufferInfo> codecOutputBuffers;
+        std::vector<CodecOutputBufferInfo> codecOutputBuffers, gainmapCodecOutputBuffers;
         std::unique_ptr<CameraMetadata>    result;
 
         // Fields that are only applicable to HEVC tiling.
         CpuConsumer::LockedBuffer          yuvBuffer;
-        std::vector<CodecInputBufferInfo>  codecInputBuffers;
+        std::vector<CodecInputBufferInfo>  codecInputBuffers, gainmapCodecInputBuffers;
 
         bool                      error;     // Main input image buffer error
         bool                      exifError; // Exif/APP_SEGMENT buffer error
         int64_t                   timestamp;
         int32_t                   requestId;
 
-        sp<AMessage>              format;
+        sp<AMessage>              format, gainmapFormat;
         sp<MediaMuxer>            muxer;
         int                       fenceFd;
         int                       fileFd;
-        ssize_t                   trackIndex;
+        ssize_t                   trackIndex, gainmapTrackIndex;
         ANativeWindowBuffer       *anb;
 
         bool                      appSegmentWritten;
-        size_t                    pendingOutputTiles;
-        size_t                    codecInputCounter;
+        size_t                    pendingOutputTiles, gainmapPendingOutputTiles;
+        size_t                    codecInputCounter, gainmapCodecInputCounter;
 
-        InputFrame() : orientation(0), quality(kDefaultJpegQuality), error(false),
-                       exifError(false), timestamp(-1), requestId(-1), fenceFd(-1),
-                       fileFd(-1), trackIndex(-1), anb(nullptr), appSegmentWritten(false),
-                       pendingOutputTiles(0), codecInputCounter(0) { }
+        std::unique_ptr<CpuConsumer::LockedBuffer> baseImage, gainmapImage;
+        std::unique_ptr<ultrahdr::uhdr_raw_image_ext> baseBuffer, gainmap;
+        std::unique_ptr<uint8_t[]> gainmapChroma;
+        std::vector<uint8_t> isoGainmapMetadata;
+
+        InputFrame()
+            : orientation(0),
+              quality(kDefaultJpegQuality),
+              error(false),
+              exifError(false),
+              timestamp(-1),
+              requestId(-1),
+              fenceFd(-1),
+              fileFd(-1),
+              trackIndex(-1),
+              gainmapTrackIndex(-1),
+              anb(nullptr),
+              appSegmentWritten(false),
+              pendingOutputTiles(0),
+              gainmapPendingOutputTiles(0),
+              codecInputCounter(0),
+              gainmapCodecInputCounter(0) {}
     };
 
     void compilePendingInputLocked();
@@ -192,9 +224,11 @@ private:
 
     status_t processInputFrame(int64_t frameNumber, InputFrame &inputFrame);
     status_t processCodecInputFrame(InputFrame &inputFrame);
+    status_t processCodecGainmapInputFrame(InputFrame &inputFrame);
     status_t startMuxerForInputFrame(int64_t frameNumber, InputFrame &inputFrame);
     status_t processAppSegment(int64_t frameNumber, InputFrame &inputFrame);
     status_t processOneCodecOutputFrame(int64_t frameNumber, InputFrame &inputFrame);
+    status_t processOneCodecGainmapOutputFrame(int64_t frameNumber, InputFrame &inputFrame);
     status_t processCompletedInputFrame(int64_t frameNumber, InputFrame &inputFrame);
 
     void releaseInputFrameLocked(int64_t frameNumber, InputFrame *inputFrame /*out*/);
@@ -216,6 +250,7 @@ private:
             static_cast<android_dataspace>(HAL_DATASPACE_JPEG_APP_SEGMENTS);
     static const android_dataspace kHeifDataSpace =
             static_cast<android_dataspace>(HAL_DATASPACE_HEIF);
+    android_dataspace mInternalDataSpace = kHeifDataSpace;
     // Use the limit of pipeline depth in the API sepc as maximum number of acquired
     // app segment buffers.
     static const uint32_t kMaxAcquiredAppSegment = 8;
@@ -260,15 +295,15 @@ private:
     std::vector<int64_t> mInputAppSegmentBuffers;
 
     // Keep all incoming HEIC blob buffer pending further processing.
-    std::vector<CodecOutputBufferInfo> mCodecOutputBuffers;
-    std::queue<int64_t> mCodecOutputBufferFrameNumbers;
-    size_t mCodecOutputCounter;
+    std::vector<CodecOutputBufferInfo> mCodecOutputBuffers, mGainmapCodecOutputBuffers;
+    std::queue<int64_t> mCodecOutputBufferFrameNumbers, mCodecGainmapOutputBufferFrameNumbers;
+    size_t mCodecOutputCounter, mCodecGainmapOutputCounter;
     int32_t mQuality;
 
     // Keep all incoming Yuv buffer pending tiling and encoding (for HEVC YUV tiling only)
     std::vector<int64_t> mInputYuvBuffers;
     // Keep all codec input buffers ready to be filled out (for HEVC YUV tiling only)
-    std::vector<int32_t> mCodecInputBuffers;
+    std::vector<int32_t> mCodecInputBuffers, mGainmapCodecInputBuffers;
 
     // Artificial strictly incremental YUV grid timestamp to make encoder happy.
     int64_t mGridTimestampUs;
@@ -286,6 +321,50 @@ private:
     // The status id for tracking the active/idle status of this composite stream
     int mStatusId;
     void markTrackerIdle();
+
+    //APP_SEGMENT stream supported
+    bool mAppSegmentSupported = false;
+
+    bool mHDRGainmapEnabled = false;
+
+    // UltraHDR tonemap color and format aspects
+    static const uhdr_img_fmt_t kUltraHdrInputFmt = UHDR_IMG_FMT_24bppYCbCrP010;
+    static const uhdr_color_gamut kUltraHdrInputGamut = UHDR_CG_BT_2100;
+    static const uhdr_color_transfer kUltraHdrInputTransfer = UHDR_CT_HLG;
+    static const uhdr_color_range kUltraHdrInputRange = UHDR_CR_FULL_RANGE;
+
+    static const uhdr_img_fmt_t kUltraHdrOutputFmt = UHDR_IMG_FMT_12bppYCbCr420;
+    static const uhdr_color_gamut kUltraHdrOutputGamut = UHDR_CG_DISPLAY_P3;
+    static const uhdr_color_transfer kUltraHdrOutputTransfer = UHDR_CT_SRGB;
+    static const uhdr_color_range kUltraHdrOutputRange = UHDR_CR_FULL_RANGE;
+
+    static const auto kUltraHDRDataSpace =
+        aidl::android::hardware::graphics::common::Dataspace::HEIF_ULTRAHDR;
+
+    // MediaMuxer/Codec color and format aspects for base image and gainmap metadata
+    static const int32_t kCodecColorFormat = COLOR_FormatYUV420Flexible;
+    static const ColorAspects::Primaries kCodecColorPrimaries =
+        ColorAspects::Primaries::PrimariesEG432;
+    static const ColorAspects::MatrixCoeffs kCodecColorMatrix =
+        ColorAspects::MatrixCoeffs::MatrixUnspecified;
+    static const ColorAspects::Transfer kCodecColorTransfer =
+        ColorAspects::Transfer::TransferSRGB;
+    static const ColorAspects::Range kCodecColorRange =
+        ColorAspects::Range::RangeFull;
+
+    // MediaMuxer/Codec color and format aspects for gainmap as per ISO 23008-12:2024
+    static const int32_t kCodecGainmapColorFormat = COLOR_FormatYUV420Flexible;
+    static const ColorAspects::Primaries kCodecGainmapColorPrimaries =
+        ColorAspects::Primaries::PrimariesUnspecified;
+    static const ColorAspects::MatrixCoeffs kCodecGainmapColorMatrix =
+        ColorAspects::MatrixCoeffs::MatrixUnspecified;
+    static const ColorAspects::Transfer kCodecGainmapColorTransfer =
+        ColorAspects::Transfer::TransferUnspecified;
+    static const ColorAspects::Range kCodecGainmapColorRange =
+        ColorAspects::Range::RangeFull;
+
+
+    status_t generateBaseImageAndGainmap(InputFrame &inputFrame);
 };
 
 }; // namespace camera3

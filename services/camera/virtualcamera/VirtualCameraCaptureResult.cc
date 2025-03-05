@@ -16,6 +16,7 @@
 #include "VirtualCameraCaptureResult.h"
 
 #include <cstdint>
+#include <memory>
 
 #include "VirtualCameraCaptureRequest.h"
 #include "aidl/android/hardware/camera/device/CameraMetadata.h"
@@ -34,7 +35,7 @@ static constexpr uint8_t kPipelineDepth = 2;
 
 }  // namespace
 
-CameraMetadata createCaptureResultMetadata(
+std::unique_ptr<CameraMetadata> createCaptureResultMetadata(
     const std::chrono::nanoseconds timestamp,
     const RequestSettings& requestSettings,
     const Resolution reportedSensorSize) {
@@ -109,9 +110,9 @@ CameraMetadata createCaptureResultMetadata(
 
   if (metadata == nullptr) {
     ALOGE("%s: Failed to build capture result metadata", __func__);
-    return CameraMetadata();
+    return std::make_unique<CameraMetadata>();
   }
-  return std::move(*metadata);
+  return metadata;
 }
 
 }  // namespace virtualcamera

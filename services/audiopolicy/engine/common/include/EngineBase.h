@@ -117,9 +117,10 @@ public:
             AudioDeviceTypeAddrVector &devices) const override;
 
     engineConfig::ParsingResult loadAudioPolicyEngineConfig(
-            const media::audio::common::AudioHalEngineConfig& aidlConfig);
+            const media::audio::common::AudioHalEngineConfig& aidlConfig, bool);
 
-    engineConfig::ParsingResult loadAudioPolicyEngineConfig(const std::string& xmlFilePath = "");
+    engineConfig::ParsingResult loadAudioPolicyEngineConfig(
+            const std::string& xmlFilePath = "", bool isConfigurable = false);
 
     const ProductStrategyMap &getProductStrategies() const { return mProductStrategies; }
 

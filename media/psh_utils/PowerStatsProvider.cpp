@@ -15,17 +15,17 @@
  */
 
 #include "PowerStatsProvider.h"
-#include <aidl/android/hardware/power/stats/IPowerStats.h>
+#include <android/hardware/power/stats/IPowerStats.h>
 #include <android-base/logging.h>
-#include <psh_utils/ServiceSingleton.h>
+#include <mediautils/ServiceSingleton.h>
 #include <unordered_map>
 
-using ::aidl::android::hardware::power::stats::IPowerStats;
+using ::android::hardware::power::stats::IPowerStats;
 
 namespace android::media::psh_utils {
 
 static auto getPowerStatsService() {
-    return getServiceSingleton<IPowerStats>();
+    return mediautils::getService<IPowerStats>();
 }
 
 status_t RailEnergyDataProvider::fill(PowerStats *stat) const {
@@ -35,9 +35,9 @@ status_t RailEnergyDataProvider::fill(PowerStats *stat) const {
         return NO_INIT;
     }
 
-    std::unordered_map<int32_t, ::aidl::android::hardware::power::stats::Channel> channelMap;
+    std::unordered_map<int32_t, ::android::hardware::power::stats::Channel> channelMap;
     {
-        std::vector<::aidl::android::hardware::power::stats::Channel> channels;
+        std::vector<::android::hardware::power::stats::Channel> channels;
         if (!powerStatsService->getEnergyMeterInfo(&channels).isOk()) {
             LOG(ERROR) << "unable to get energy meter info";
             return INVALID_OPERATION;
@@ -47,7 +47,7 @@ status_t RailEnergyDataProvider::fill(PowerStats *stat) const {
         }
     }
 
-    std::vector<::aidl::android::hardware::power::stats::EnergyMeasurement> measurements;
+    std::vector<::android::hardware::power::stats::EnergyMeasurement> measurements;
     if (!powerStatsService->readEnergyMeter({}, &measurements).isOk()) {
         LOG(ERROR) << "unable to get energy measurements";
         return INVALID_OPERATION;
@@ -86,7 +86,7 @@ status_t PowerEntityResidencyDataProvider::fill(PowerStats* stat) const {
     std::vector<int32_t> powerEntityIds; // ids to use
 
     {
-        std::vector<::aidl::android::hardware::power::stats::PowerEntity> entities;
+        std::vector<::android::hardware::power::stats::PowerEntity> entities;
         if (!powerStatsService->getPowerEntityInfo(&entities).isOk()) {
             LOG(ERROR) << __func__ << ": unable to get entity info";
             return INVALID_OPERATION;
@@ -108,7 +108,7 @@ status_t PowerEntityResidencyDataProvider::fill(PowerStats* stat) const {
         }
     }
 
-    std::vector<::aidl::android::hardware::power::stats::StateResidencyResult> results;
+    std::vector<::android::hardware::power::stats::StateResidencyResult> results;
     if (!powerStatsService->getStateResidency(powerEntityIds, &results).isOk()) {
         LOG(ERROR) << __func__ << ": Unable to get state residency";
         return INVALID_OPERATION;

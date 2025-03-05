@@ -10,7 +10,7 @@ package {
 // libraries that are included whole_static for test apps
 ndk_libs = [
     "android.hardware.health-V3-ndk",
-    "android.hardware.power.stats-V1-ndk",
+    "android.hardware.power.stats-V1-cpp",
 ]
 
 // Power, System, Health utils
@@ -32,6 +32,7 @@ cc_library {
         "com.android.media.audio-aconfig-cc",
         "libaudioutils",
         "libbase",
+        "libbinder",
         "libbinder_ndk",
         "libcutils",
         "liblog",

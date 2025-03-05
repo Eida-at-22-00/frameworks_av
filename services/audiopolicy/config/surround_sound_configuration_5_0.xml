@@ -27,5 +27,6 @@
     <format name="AUDIO_FORMAT_DTS_HD" />
     <format name="AUDIO_FORMAT_AAC_LC" subformats="AUDIO_FORMAT_AAC_HE_V1 AUDIO_FORMAT_AAC_HE_V2 AUDIO_FORMAT_AAC_ELD AUDIO_FORMAT_AAC_XHE" />
     <format name="AUDIO_FORMAT_AC4" />
+    <format name="AUDIO_FORMAT_AC4_L4" />
   </formats>
 </surroundSound>

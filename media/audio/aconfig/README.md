@@ -126,11 +126,13 @@ included in the Sdk, and the @FlaggedApi annotation is stripped.
 
 
 ### TestApis
-TestApis do not require flagging, since their existence in the tree implies that they should
-be accessible to callers (xTS not building on trunk enables this).
-
+TestApis do not require flagging, unless they are API additions associated with new features.
+For testing existing features, we have full control over the set of callers.
 
 ### Api Changes
-Currently, the flag infra does not support any type of Api modification (arguments, annotation,
-renaming, deletion, etc.) In any of these cases (including for SystemApi), exceptions will need to
-be granted.
+There is partial (work ongoing) support for modifying API surfaces. 
+ - SystemApi -> public is supported
+ - UAU -> SystemApi is supported, but the @UAU must remain until the flag is in next
+Other modifications involving moving between surfaces, or annotation changes may not be supported:
+check the [FAQ](https://g3doc.corp.google.com/company/teams/android-api-council/guidelines/faq.md?cl=head#i-cannot-use-flaggedapi-with-data-classes-generated-by-codegen)
+for the up to date list of support.

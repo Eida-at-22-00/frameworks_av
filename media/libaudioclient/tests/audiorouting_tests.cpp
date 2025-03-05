@@ -64,8 +64,8 @@ TEST(AudioTrackTest, TestPerformanceMode) {
         EXPECT_EQ(OK, ap->start()) << "audio track start failed";
         EXPECT_EQ(OK, ap->onProcess());
         EXPECT_EQ(OK, cb->waitForAudioDeviceCb());
-        const auto [audioIo, deviceId] = cb->getLastPortAndDevice();
-        EXPECT_TRUE(checkPatchPlayback(audioIo, deviceId));
+        const auto [audioIo, deviceIds] = cb->getLastPortAndDevices();
+        EXPECT_TRUE(checkPatchPlayback(audioIo, deviceIds));
         EXPECT_NE(0, ap->getAudioTrackHandle()->getFlags() & output_flags[i]);
         audio_patch patch;
         EXPECT_EQ(OK, getPatchForOutputMix(audioIo, patch));
@@ -86,7 +86,18 @@ TEST(AudioTrackTest, TestPerformanceMode) {
     }
 }
 
-TEST(AudioTrackTest, DefaultRoutingTest) {
+class AudioTrackTest
+        : public ::testing::TestWithParam<int> {
+
+public:
+    AudioTrackTest()
+            : mSampleRate(GetParam()){};
+
+    const uint32_t mSampleRate;
+
+};
+
+TEST_P(AudioTrackTest, DefaultRoutingTest) {
     audio_port_v7 port;
     if (OK != getPortByAttributes(AUDIO_PORT_ROLE_SOURCE, AUDIO_PORT_TYPE_DEVICE,
                                   AUDIO_DEVICE_IN_REMOTE_SUBMIX, "0", port)) {
@@ -95,7 +106,8 @@ TEST(AudioTrackTest, DefaultRoutingTest) {
 
     // create record instance
     sp<AudioCapture> capture = sp<AudioCapture>::make(
-            AUDIO_SOURCE_REMOTE_SUBMIX, 48000, AUDIO_FORMAT_PCM_16_BIT, AUDIO_CHANNEL_IN_STEREO);
+            AUDIO_SOURCE_REMOTE_SUBMIX, mSampleRate, AUDIO_FORMAT_PCM_16_BIT,
+            AUDIO_CHANNEL_IN_STEREO);
     ASSERT_NE(nullptr, capture);
     ASSERT_EQ(OK, capture->create()) << "record creation failed";
     sp<OnAudioDeviceUpdateNotifier> cbCapture = sp<OnAudioDeviceUpdateNotifier>::make();
@@ -103,7 +115,7 @@ TEST(AudioTrackTest, DefaultRoutingTest) {
 
     // create playback instance
     sp<AudioPlayback> playback = sp<AudioPlayback>::make(
-            48000 /* sampleRate */, AUDIO_FORMAT_PCM_16_BIT, AUDIO_CHANNEL_OUT_STEREO,
+            mSampleRate, AUDIO_FORMAT_PCM_16_BIT, AUDIO_CHANNEL_OUT_STEREO,
             AUDIO_OUTPUT_FLAG_NONE, AUDIO_SESSION_NONE);
     ASSERT_NE(nullptr, playback);
     ASSERT_EQ(OK, playback->loadResource("/data/local/tmp/bbb_2ch_24kHz_s16le.raw"))
@@ -115,8 +127,8 @@ TEST(AudioTrackTest, DefaultRoutingTest) {
     // capture should be routed to submix in port
     EXPECT_EQ(OK, capture->start()) << "start recording failed";
     EXPECT_EQ(OK, cbCapture->waitForAudioDeviceCb());
-    EXPECT_EQ(port.id, capture->getAudioRecordHandle()->getRoutedDeviceId())
-            << "Capture NOT routed on expected port";
+    DeviceIdVector routedDeviceIds = capture->getAudioRecordHandle()->getRoutedDeviceIds();
+    EXPECT_EQ(port.id, routedDeviceIds[0]) << "Capture NOT routed on expected port";
 
     // capture start should create submix out port
     status_t status = getPortByAttributes(AUDIO_PORT_ROLE_SINK, AUDIO_PORT_TYPE_DEVICE,
@@ -126,12 +138,18 @@ TEST(AudioTrackTest, DefaultRoutingTest) {
     // playback should be routed to submix out as long as capture is active
     EXPECT_EQ(OK, playback->start()) << "audio track start failed";
     EXPECT_EQ(OK, cbPlayback->waitForAudioDeviceCb());
-    EXPECT_EQ(port.id, playback->getAudioTrackHandle()->getRoutedDeviceId())
-            << "Playback NOT routed on expected port";
+    routedDeviceIds = playback->getAudioTrackHandle()->getRoutedDeviceIds();
+    EXPECT_EQ(port.id, routedDeviceIds[0]) << "Playback NOT routed on expected port";
 
     capture->stop();
     playback->stop();
 }
+
+INSTANTIATE_TEST_SUITE_P(
+        AudioTrackParameterizedTest,
+        AudioTrackTest,
+        ::testing::Values(44100, 48000)
+);
 
 class AudioRoutingTest : public ::testing::Test {
   public:
@@ -217,13 +235,13 @@ TEST_F(AudioRoutingTest, ConcurrentDynamicRoutingTest) {
     // launch
     EXPECT_EQ(OK, captureA->start()) << "start recording failed";
     EXPECT_EQ(OK, cbCaptureA->waitForAudioDeviceCb());
-    EXPECT_EQ(port.id, captureA->getAudioRecordHandle()->getRoutedDeviceId())
-            << "Capture NOT routed on expected port";
+    DeviceIdVector routedDeviceIds = captureA->getAudioRecordHandle()->getRoutedDeviceIds();
+    EXPECT_EQ(port.id, routedDeviceIds[0]) << "Capture NOT routed on expected port";
 
     EXPECT_EQ(OK, captureB->start()) << "start recording failed";
     EXPECT_EQ(OK, cbCaptureB->waitForAudioDeviceCb());
-    EXPECT_EQ(port_mix.id, captureB->getAudioRecordHandle()->getRoutedDeviceId())
-            << "Capture NOT routed on expected port";
+    routedDeviceIds = captureB->getAudioRecordHandle()->getRoutedDeviceIds();
+    EXPECT_EQ(port_mix.id, routedDeviceIds[0]) << "Capture NOT routed on expected port";
 
     // as record started, expect submix out ports to be connected
     status = getPortByAttributes(AUDIO_PORT_ROLE_SINK, AUDIO_PORT_TYPE_DEVICE,
@@ -237,8 +255,8 @@ TEST_F(AudioRoutingTest, ConcurrentDynamicRoutingTest) {
     // check if playback routed to desired port
     EXPECT_EQ(OK, playback->start());
     EXPECT_EQ(OK, cbPlayback->waitForAudioDeviceCb());
-    EXPECT_EQ(port_mix.id, playback->getAudioTrackHandle()->getRoutedDeviceId())
-            << "Playback NOT routed on expected port";
+    routedDeviceIds = playback->getAudioTrackHandle()->getRoutedDeviceIds();
+    EXPECT_EQ(port_mix.id, routedDeviceIds[0]) << "Playback NOT routed on expected port";
 
     captureB->stop();
 
@@ -264,8 +282,8 @@ TEST_F(AudioRoutingTest, ConcurrentDynamicRoutingTest) {
     playback->onProcess();
     // as captureA is active, it should re route to legacy submix
     EXPECT_EQ(OK, cbPlayback->waitForAudioDeviceCb(port.id));
-    EXPECT_EQ(port.id, playback->getAudioTrackHandle()->getRoutedDeviceId())
-            << "Playback NOT routed on expected port";
+    routedDeviceIds = playback->getAudioTrackHandle()->getRoutedDeviceIds();
+    EXPECT_EQ(port.id, routedDeviceIds[0]) << "Playback NOT routed on expected port";
 
     captureA->stop();
     playback->stop();

@@ -49,6 +49,11 @@ protected:
     aaudio_result_t requestPause_l() REQUIRES(mStreamLock) override;
     aaudio_result_t requestFlush_l() REQUIRES(mStreamLock) override;
     aaudio_result_t requestStop_l() REQUIRES(mStreamLock) override;
+    aaudio_result_t systemStopInternal_l() REQUIRES(mStreamLock) final;
+
+    bool collidesWithCallback() const final;
+
+    void onStreamEnd() final;
 
 public:
     bool isFlushSupported() const override {
@@ -89,6 +94,26 @@ public:
 
     void registerPlayerBase() override;
 
+    // Offload begin --------------------------------------
+    aaudio_result_t setOffloadDelayPadding(int32_t delayInFrames, int32_t paddingInFrames) final;
+
+    int32_t getOffloadDelay() final;
+
+    int32_t getOffloadPadding() final;
+
+    aaudio_result_t setOffloadEndOfStream() EXCLUDES(mStreamLock) final;
+
+    void setPresentationEndCallbackProc(AAudioStream_presentationEndCallback proc) final {
+        mPresentationEndCallbackProc = proc;
+    }
+
+    virtual void setPresentationEndCallbackUserData(void *userData) final {
+        mPresentationEndCallbackUserData = userData;
+    }
+
+    void maybeCallPresentationEndCallback();
+    // Offload end ----------------------------------------
+
 #if AAUDIO_USE_VOLUME_SHAPER
     virtual android::binder::Status applyVolumeShaper(
             const android::media::VolumeShaper::Configuration& configuration,
@@ -110,6 +135,15 @@ private:
 
     // TODO add 64-bit position reporting to AudioTrack and use it.
     aaudio_wrapping_frames_t         mPositionWhenPausing = 0;
+
+    // Offload --------------------------------------------
+    std::atomic<int32_t>        mOffloadDelayFrames = 0;
+    std::atomic<int32_t>        mOffloadPaddingFrames = 0;
+    bool                        mOffloadEosPending GUARDED_BY(mStreamLock) = false;
+
+    AAudioStream_presentationEndCallback mPresentationEndCallbackProc = nullptr;
+    void                                *mPresentationEndCallbackUserData = nullptr;
+    std::atomic<pid_t>                   mPresentationEndCallbackThread{CALLBACK_THREAD_NONE};
 };
 
 } /* namespace aaudio */

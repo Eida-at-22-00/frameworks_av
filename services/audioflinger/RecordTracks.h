@@ -73,7 +73,7 @@ public:
     bool isDirect() const final
                                 { return (mFlags & AUDIO_INPUT_FLAG_DIRECT) != 0; }
 
-    void setSilenced(bool silenced) final { if (!isPatchTrack()) mSilenced = silenced; }
+    void setSilenced(bool silenced) final;
     bool isSilenced() const final { return mSilenced; }
 
     status_t getActiveMicrophones(
@@ -97,6 +97,8 @@ public:
     ResamplerBufferProvider* resamplerBufferProvider() const final {
         return mResamplerBufferProvider;
     }
+
+    std::string trackFlagsAsString() const final { return toString(mFlags); }
 
 private:
     DISALLOW_COPY_AND_ASSIGN(RecordTrack);

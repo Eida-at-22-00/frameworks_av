@@ -78,6 +78,8 @@ cc_library {
         "Configurable.cpp",
         "InputBufferManager.cpp",
         "ParamTypes.cpp",
+        "inputsurface/InputSurface.cpp",
+        "inputsurface/InputSurfaceConnection.cpp",
     ],
 
     header_libs: [
@@ -98,6 +100,7 @@ cc_library {
         "libhidlbase",
         "liblog",
         "libnativewindow",
+        "libmediandk",
         "libstagefright_aidl_bufferpool2",
         "libstagefright_bufferpool@2.0.1",
         "libui",

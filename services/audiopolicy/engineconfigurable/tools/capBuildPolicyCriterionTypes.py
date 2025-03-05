@@ -102,7 +102,6 @@ def generateXmlCriterionTypesFile(criterionTypes, addressCriteria, criterionType
                 ordered_values = OrderedDict(sorted(values_dict.items(), key=lambda x: x[1]))
                 for key, value in ordered_values.items():
                     value_node = ET.SubElement(values_node, "value")
-                    value_node.set('numerical', str(value))
                     value_node.set('literal', key)
 
                     if criterion_type.get('name') == "OutputDevicesMaskType":
@@ -114,20 +113,14 @@ def generateXmlCriterionTypesFile(criterionTypes, addressCriteria, criterionType
         for criterion_name, values_list in addressCriteria.items():
             for criterion_type in criterion_types_root.findall('criterion_type'):
                 if criterion_type.get('name') == criterion_name:
-                    index = 0
                     existing_values_node = criterion_type.find("values")
                     if existing_values_node is not None:
-                        for existing_value in existing_values_node.findall('value'):
-                            if existing_value.get('numerical') == str(1 << index):
-                                index += 1
                         values_node = existing_values_node
                     else:
                         values_node = ET.SubElement(criterion_type, "values")
 
                     for value in values_list:
                         value_node = ET.SubElement(values_node, "value", literal=value)
-                        value_node.set('numerical', str(1 << index))
-                        index += 1
 
     xmlstr = ET.tostring(criterion_types_root, encoding='utf8', method='xml')
     reparsed = MINIDOM.parseString(xmlstr)

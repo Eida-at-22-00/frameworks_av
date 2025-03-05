@@ -27,6 +27,7 @@ extern const char *MEDIA_MIMETYPE_IMAGE_AVIF;
 extern const char *MEDIA_MIMETYPE_VIDEO_VP8;
 extern const char *MEDIA_MIMETYPE_VIDEO_VP9;
 extern const char *MEDIA_MIMETYPE_VIDEO_AV1;
+extern const char *MEDIA_MIMETYPE_VIDEO_APV;
 extern const char *MEDIA_MIMETYPE_VIDEO_AVC;
 extern const char *MEDIA_MIMETYPE_VIDEO_HEVC;
 extern const char *MEDIA_MIMETYPE_VIDEO_MPEG4;
@@ -118,6 +119,7 @@ extern const char *MEDIA_MIMETYPE_AUDIO_AAC_LATM_HE_V1;
 extern const char *MEDIA_MIMETYPE_AUDIO_AAC_LATM_HE_V2;
 extern const char *MEDIA_MIMETYPE_AUDIO_IEC61937;
 extern const char *MEDIA_MIMETYPE_AUDIO_IEC60958;
+extern const char *MEDIA_MIMETYPE_AUDIO_IAMF;
 
 extern const char *MEDIA_MIMETYPE_CONTAINER_MPEG4;
 extern const char *MEDIA_MIMETYPE_CONTAINER_WAV;

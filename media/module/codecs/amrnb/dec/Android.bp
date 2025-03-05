@@ -1,4 +1,5 @@
 package {
+    default_team: "trendy_team_media_codec_framework",
     default_applicable_licenses: [
         "frameworks_av_media_codecs_amrnb_dec_license",
     ],
@@ -47,12 +48,12 @@ cc_library_static {
         "src/b_cn_cod.cpp",
         "src/bgnscd.cpp",
         "src/c_g_aver.cpp",
-        "src/d1035pf.cpp",
-        "src/d2_11pf.cpp",
         "src/d2_9pf.cpp",
+        "src/d2_11pf.cpp",
         "src/d3_14pf.cpp",
         "src/d4_17pf.cpp",
         "src/d8_31pf.cpp",
+        "src/d1035pf.cpp",
         "src/d_gain_c.cpp",
         "src/d_gain_p.cpp",
         "src/d_plsf.cpp",
@@ -81,8 +82,8 @@ cc_library_static {
     export_include_dirs: ["src"],
 
     cflags: [
-        "-DOSCL_UNUSED_ARG(x)=(void)(x)",
         "-DOSCL_IMPORT_REF=",
+        "-DOSCL_UNUSED_ARG(x)=(void)(x)",
 
         "-Werror",
     ],
@@ -94,8 +95,8 @@ cc_library_static {
     //},
 
     shared_libs: [
-        "libstagefright_amrnb_common",
         "liblog",
+        "libstagefright_amrnb_common",
     ],
 
     target: {
@@ -113,19 +114,22 @@ cc_test {
 
     srcs: ["test/amrnbdec_test.cpp"],
 
-    cflags: ["-Wall", "-Werror"],
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
 
     local_include_dirs: ["src"],
 
     static_libs: [
-        "libstagefright_amrnbdec",
         "libsndfile",
+        "libstagefright_amrnbdec",
     ],
 
     shared_libs: [
-        "libstagefright_amrnb_common",
         "libaudioutils",
         "liblog",
+        "libstagefright_amrnb_common",
     ],
 
     target: {

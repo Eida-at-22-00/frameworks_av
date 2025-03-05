@@ -42,15 +42,14 @@ IOProfile::CompatibilityScore IOProfile::getCompatibilityScore(
         audio_channel_mask_t channelMask,
         audio_channel_mask_t *updatedChannelMask,
         // FIXME type punning here
-        uint32_t flags,
-        bool exactMatchRequiredForInputFlags) const {
+        uint32_t flags) const {
     const bool isPlaybackThread =
             getType() == AUDIO_PORT_TYPE_MIX && getRole() == AUDIO_PORT_ROLE_SOURCE;
     const bool isRecordThread =
             getType() == AUDIO_PORT_TYPE_MIX && getRole() == AUDIO_PORT_ROLE_SINK;
     ALOG_ASSERT(isPlaybackThread != isRecordThread);
-    if (!areAllDevicesSupported(devices) ||
-            !isCompatibleProfileForFlags(flags, exactMatchRequiredForInputFlags)) {
+    const auto flagsCompatibleScore = getFlagsCompatibleScore(flags);
+    if (!areAllDevicesSupported(devices) || flagsCompatibleScore == NO_MATCH) {
         return NO_MATCH;
     }
 
@@ -81,7 +80,11 @@ IOProfile::CompatibilityScore IOProfile::getCompatibilityScore(
             result = EXACT_MATCH;
         } else if (checkCompatibleAudioProfile(
                 myUpdatedSamplingRate, myUpdatedChannelMask, myUpdatedFormat) == NO_ERROR) {
-            result = PARTIAL_MATCH;
+            if (flagsCompatibleScore == EXACT_MATCH) {
+                result = PARTIAL_MATCH_WITH_FLAG;
+            } else {
+                result = PARTIAL_MATCH;
+            }
         } else {
             return result;
         }
@@ -118,32 +121,8 @@ bool IOProfile::areAllDevicesSupported(const DeviceVector &devices) const {
     return mSupportedDevices.containsAllDevices(devices);
 }
 
-bool IOProfile::isCompatibleProfileForFlags(uint32_t flags,
-                                            bool exactMatchRequiredForInputFlags) const {
-    const bool isPlaybackThread =
-            getType() == AUDIO_PORT_TYPE_MIX && getRole() == AUDIO_PORT_ROLE_SOURCE;
-    const bool isRecordThread =
-            getType() == AUDIO_PORT_TYPE_MIX && getRole() == AUDIO_PORT_ROLE_SINK;
-    ALOG_ASSERT(isPlaybackThread != isRecordThread);
-
-    const uint32_t mustMatchOutputFlags =
-            AUDIO_OUTPUT_FLAG_DIRECT|AUDIO_OUTPUT_FLAG_HW_AV_SYNC|AUDIO_OUTPUT_FLAG_MMAP_NOIRQ;
-    if (isPlaybackThread &&
-        !audio_output_flags_is_subset((audio_output_flags_t)getFlags(),
-                                      (audio_output_flags_t)flags,
-                                      mustMatchOutputFlags)) {
-        return false;
-    }
-    // The only input flag that is allowed to be different is the fast flag.
-    // An existing fast stream is compatible with a normal track request.
-    // An existing normal stream is compatible with a fast track request,
-    // but the fast request will be denied by AudioFlinger and converted to normal track.
-    if (isRecordThread && ((getFlags() ^ flags) &
-            ~(exactMatchRequiredForInputFlags ? AUDIO_INPUT_FLAG_NONE : AUDIO_INPUT_FLAG_FAST))) {
-        return false;
-    }
-
-    return true;
+bool IOProfile::isCompatibleProfileForFlags(uint32_t flags) const {
+    return getFlagsCompatibleScore(flags) != NO_MATCH;
 }
 
 bool IOProfile::containsSingleDeviceSupportingEncodedFormats(
@@ -226,6 +205,39 @@ void IOProfile::importAudioPort(const audio_port_v7 &port) {
             }
         }
     }
+}
+
+IOProfile::CompatibilityScore IOProfile::getFlagsCompatibleScore(uint32_t flags) const {
+    const bool isPlaybackThread =
+            getType() == AUDIO_PORT_TYPE_MIX && getRole() == AUDIO_PORT_ROLE_SOURCE;
+    const bool isRecordThread =
+            getType() == AUDIO_PORT_TYPE_MIX && getRole() == AUDIO_PORT_ROLE_SINK;
+    ALOG_ASSERT(isPlaybackThread != isRecordThread);
+
+    const uint32_t mustMatchOutputFlags =
+            AUDIO_OUTPUT_FLAG_DIRECT|AUDIO_OUTPUT_FLAG_HW_AV_SYNC|AUDIO_OUTPUT_FLAG_MMAP_NOIRQ;
+    if (isPlaybackThread &&
+        !audio_output_flags_is_subset((audio_output_flags_t)getFlags(),
+                                      (audio_output_flags_t)flags,
+                                      mustMatchOutputFlags)) {
+        return NO_MATCH;
+    }
+    // The only input flag that is allowed to be different is the fast flag.
+    // An existing fast stream is compatible with a normal track request.
+    // An existing normal stream is compatible with a fast track request,
+    // but the fast request will be denied by AudioFlinger and converted to normal track.
+    if (isRecordThread) {
+        const auto unmatchedFlag = getFlags() ^ flags;
+        if (unmatchedFlag == AUDIO_INPUT_FLAG_NONE) {
+            return EXACT_MATCH;
+        } else if (unmatchedFlag == AUDIO_INPUT_FLAG_FAST) {
+            return PARTIAL_MATCH;
+        } else {
+            return NO_MATCH;
+        }
+    }
+
+    return EXACT_MATCH;
 }
 
 void IOProfile::dump(String8 *dst, int spaces) const

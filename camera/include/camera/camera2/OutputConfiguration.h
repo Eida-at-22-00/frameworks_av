@@ -19,7 +19,12 @@
 
 #include <string>
 
+#include <gui/Flags.h>  // remove with WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+#include <gui/view/Surface.h>
+#else
 #include <gui/IGraphicBufferProducer.h>
+#endif
 #include <binder/Parcelable.h>
 
 namespace android {
@@ -33,6 +38,7 @@ namespace params {
 class OutputConfiguration : public android::Parcelable {
 public:
 
+    static const int ROTATION_0;
     static const int INVALID_ROTATION;
     static const int INVALID_SET_ID;
     enum SurfaceType {
@@ -58,7 +64,7 @@ public:
         MIRROR_MODE_V = 3,
     };
 
-    const std::vector<sp<IGraphicBufferProducer>>& getGraphicBufferProducers() const;
+    const std::vector<ParcelableSurfaceType>& getSurfaces() const;
     int                        getRotation() const;
     int                        getSurfaceSetID() const;
     int                        getSurfaceType() const;
@@ -72,6 +78,7 @@ public:
     bool                       isMultiResolution() const;
     int64_t                    getStreamUseCase() const;
     int                        getTimestampBase() const;
+    int                        getMirrorMode(ParcelableSurfaceType surface) const;
     int                        getMirrorMode() const;
     bool                       useReadoutTimestamp() const;
     int                        getFormat() const;
@@ -98,15 +105,18 @@ public:
     // getSurfaceSetID will be INVALID_SET_ID if error occurred
     OutputConfiguration(const android::Parcel& parcel);
 
-    OutputConfiguration(sp<IGraphicBufferProducer>& gbp, int rotation,
+    OutputConfiguration(ParcelableSurfaceType& surface, int rotation,
             const std::string& physicalCameraId,
             int surfaceSetID = INVALID_SET_ID, bool isShared = false);
 
-    OutputConfiguration(const std::vector<sp<IGraphicBufferProducer>>& gbps,
+    OutputConfiguration(const std::vector<ParcelableSurfaceType>& surfaces,
                         int rotation, const std::string& physicalCameraId,
                         int surfaceSetID = INVALID_SET_ID,
                         int surfaceType = SURFACE_TYPE_UNKNOWN, int width = 0,
                         int height = 0, bool isShared = false);
+    OutputConfiguration(int surfaceType, int width, int height, int format, int32_t colorSpace,
+            int mirrorMode, bool useReadoutTimestamp,int timestampBase, int dataspace,
+            int64_t usage, int64_t streamusecase, std::string physicalCamId);
 
     bool operator == (const OutputConfiguration& other) const {
         return ( mRotation == other.mRotation &&
@@ -116,7 +126,7 @@ public:
                 mHeight == other.mHeight &&
                 mIsDeferred == other.mIsDeferred &&
                 mIsShared == other.mIsShared &&
-                gbpsEqual(other) &&
+                surfacesEqual(other) &&
                 mPhysicalCameraId == other.mPhysicalCameraId &&
                 mIsMultiResolution == other.mIsMultiResolution &&
                 sensorPixelModesUsedEqual(other) &&
@@ -125,6 +135,7 @@ public:
                 mStreamUseCase == other.mStreamUseCase &&
                 mTimestampBase == other.mTimestampBase &&
                 mMirrorMode == other.mMirrorMode &&
+                mirrorModesEqual(other) &&
                 mUseReadoutTimestamp == other.mUseReadoutTimestamp &&
                 mFormat == other.mFormat &&
                 mDataspace == other.mDataspace &&
@@ -180,6 +191,9 @@ public:
         if (mMirrorMode != other.mMirrorMode) {
             return mMirrorMode < other.mMirrorMode;
         }
+        if (!mirrorModesEqual(other)) {
+            return mirrorModesLessThan(other);
+        }
         if (mUseReadoutTimestamp != other.mUseReadoutTimestamp) {
             return mUseReadoutTimestamp < other.mUseReadoutTimestamp;
         }
@@ -192,20 +206,48 @@ public:
         if (mUsage != other.mUsage) {
             return mUsage < other.mUsage;
         }
-        return gbpsLessThan(other);
+        return surfacesLessThan(other);
     }
 
     bool operator > (const OutputConfiguration& other) const {
         return (*this != other && !(*this < other));
     }
 
-    bool gbpsEqual(const OutputConfiguration& other) const;
+    bool surfacesEqual(const OutputConfiguration& other) const;
     bool sensorPixelModesUsedEqual(const OutputConfiguration& other) const;
     bool sensorPixelModesUsedLessThan(const OutputConfiguration& other) const;
-    bool gbpsLessThan(const OutputConfiguration& other) const;
-    void addGraphicProducer(sp<IGraphicBufferProducer> gbp) {mGbps.push_back(gbp);}
+    bool surfacesLessThan(const OutputConfiguration& other) const;
+    void addSurface(ParcelableSurfaceType surface) { mSurfaces.push_back(surface); }
+#if not WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+    void addGraphicProducer(sp<IGraphicBufferProducer> gbp) {addSurface(gbp);}
+#endif
+    bool mirrorModesEqual(const OutputConfiguration& other) const;
+    bool mirrorModesLessThan(const OutputConfiguration& other) const;
+    const std::vector<int32_t>& getMirrorModes() const {return mMirrorModeForProducers;}
+    bool sharedConfigEqual(const OutputConfiguration& other) const {
+        return (mRotation == other.mRotation &&
+                mSurfaceSetID == other.mSurfaceSetID &&
+                mSurfaceType == other.mSurfaceType &&
+                mWidth == other.mWidth &&
+                mHeight == other.mHeight &&
+                mIsDeferred == other.mIsDeferred &&
+                mIsShared == other.mIsShared &&
+                mPhysicalCameraId == other.mPhysicalCameraId &&
+                mIsMultiResolution == other.mIsMultiResolution &&
+                sensorPixelModesUsedEqual(other) &&
+                mDynamicRangeProfile == other.mDynamicRangeProfile &&
+                mColorSpace == other.mColorSpace &&
+                mStreamUseCase == other.mStreamUseCase &&
+                mTimestampBase == other.mTimestampBase &&
+                mMirrorMode == other.mMirrorMode &&
+                mUseReadoutTimestamp == other.mUseReadoutTimestamp &&
+                mFormat == other.mFormat &&
+                mDataspace == other.mDataspace &&
+                mUsage == other.mUsage);
+    }
+
 private:
-    std::vector<sp<IGraphicBufferProducer>> mGbps;
+    std::vector<ParcelableSurfaceType>  mSurfaces;
     int                        mRotation;
     int                        mSurfaceSetID;
     int                        mSurfaceType;
@@ -221,6 +263,7 @@ private:
     int64_t                    mStreamUseCase;
     int                        mTimestampBase;
     int                        mMirrorMode;
+    std::vector<int>           mMirrorModeForProducers; // 1:1 mapped with mGbps
     bool                       mUseReadoutTimestamp;
     int                        mFormat;
     int                        mDataspace;

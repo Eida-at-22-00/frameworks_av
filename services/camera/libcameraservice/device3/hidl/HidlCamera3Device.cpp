@@ -929,7 +929,7 @@ status_t HidlCamera3Device::HidlHalInterface::configureStreams(
         switch (src->stream_type) {
             case CAMERA_STREAM_OUTPUT:
                 streamType = StreamType::OUTPUT;
-                if (flags::session_hal_buf_manager() && mUseHalBufManager) {
+                if (mUseHalBufManager) {
                     mHalBufManagedStreamIds.insert(streamId);
                 }
                 break;

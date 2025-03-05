@@ -37,21 +37,21 @@ struct AudioCapabilities {
     /**
      * Returns the range of supported bitrates in bits/second.
      */
-    const Range<int>& getBitrateRange() const;
+    const Range<int32_t>& getBitrateRange() const;
 
     /**
      * Returns the array of supported sample rates if the codec
      * supports only discrete values. Otherwise, it returns an empty array.
      * The array is sorted in ascending order.
      */
-    const std::vector<int>& getSupportedSampleRates() const;
+    const std::vector<int32_t>& getSupportedSampleRates() const;
 
     /**
      * Returns the array of supported sample rate ranges.  The
      * array is sorted in ascending order, and the ranges are
      * distinct.
      */
-    const std::vector<Range<int>>& getSupportedSampleRateRanges() const;
+    const std::vector<Range<int32_t>>& getSupportedSampleRateRanges() const;
 
     /**
      * Returns the maximum number of input channels supported.
@@ -68,7 +68,7 @@ struct AudioCapabilities {
      * The {@link #getMaxInputChannelCount} method will return the highest value
      * in the ranges returned by {@link #getInputChannelCountRanges}
      */
-    int getMaxInputChannelCount() const;
+    int32_t getMaxInputChannelCount() const;
 
     /**
      * Returns the minimum number of input channels supported.
@@ -77,7 +77,7 @@ struct AudioCapabilities {
      * This returns the lowest channel count in the ranges returned by
      * {@link #getInputChannelCountRanges}.
      */
-    int getMinInputChannelCount() const;
+    int32_t getMinInputChannelCount() const;
 
     /**
      * Returns an array of ranges representing the number of input channels supported.
@@ -89,12 +89,12 @@ struct AudioCapabilities {
      *
      * The returned array cannot be empty.
      */
-    const std::vector<Range<int>>& getInputChannelCountRanges() const;
+    const std::vector<Range<int32_t>>& getInputChannelCountRanges() const;
 
     /**
      * Query whether the sample rate is supported by the codec.
      */
-    bool isSampleRateSupported(int sampleRate);
+    bool isSampleRateSupported(int32_t sampleRate);
 
     /* For internal use only. Not exposed as a public API */
     void getDefaultFormat(sp<AMessage> &format);
@@ -103,31 +103,31 @@ struct AudioCapabilities {
     bool supportsFormat(const sp<AMessage> &format);
 
 private:
-    static constexpr int MAX_INPUT_CHANNEL_COUNT = 30;
+    static constexpr int32_t MAX_INPUT_CHANNEL_COUNT = 30;
     static constexpr uint32_t MAX_NUM_CHANNELS = FCC_LIMIT;
 
     int mError;
     std::string mMediaType;
     std::vector<ProfileLevel> mProfileLevels;
 
-    Range<int> mBitrateRange;
+    Range<int32_t> mBitrateRange;
 
-    std::vector<int> mSampleRates;
-    std::vector<Range<int>> mSampleRateRanges;
-    std::vector<Range<int>> mInputChannelRanges;
+    std::vector<int32_t> mSampleRates;
+    std::vector<Range<int32_t>> mSampleRateRanges;
+    std::vector<Range<int32_t>> mInputChannelRanges;
 
     /* no public constructor */
     AudioCapabilities() {}
     void init(std::string mediaType, std::vector<ProfileLevel> profLevs,
             const sp<AMessage> &format);
     void initWithPlatformLimits();
-    bool supports(int sampleRate, int inputChannels);
-    void limitSampleRates(std::vector<int> rates);
+    bool supports(std::optional<int32_t> sampleRate, std::optional<int32_t> inputChannels);
+    void limitSampleRates(std::vector<int32_t> rates);
     void createDiscreteSampleRates();
-    void limitSampleRates(std::vector<Range<int>> rateRanges);
+    void limitSampleRates(std::vector<Range<int32_t>> rateRanges);
     void applyLevelLimits();
-    void applyLimits(const std::vector<Range<int>> &inputChannels,
-            const std::optional<Range<int>> &bitRates);
+    void applyLimits(const std::vector<Range<int32_t>> &inputChannels,
+            const std::optional<Range<int32_t>> &bitRates);
     void parseFromInfo(const sp<AMessage> &format);
 
     friend struct CodecCapabilities;

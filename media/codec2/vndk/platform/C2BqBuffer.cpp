@@ -997,7 +997,7 @@ int C2BufferQueueBlockPoolData::migrate(
         return -1;
     }
 
-    if (toUsage != graphicBuffer->getUsage()) {
+    if ((toUsage & graphicBuffer->getUsage()) != toUsage) {
         sp<GraphicBuffer> newBuffer = new GraphicBuffer(
             graphicBuffer->handle, GraphicBuffer::CLONE_HANDLE,
             graphicBuffer->width, graphicBuffer->height, graphicBuffer->format,

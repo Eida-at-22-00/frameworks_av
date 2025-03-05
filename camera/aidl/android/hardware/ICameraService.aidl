@@ -157,6 +157,7 @@ interface ICameraService
      *                     policy for default device context). Only virtual cameras would be exposed
      *                     only for custom policy and only real cameras would be exposed for default
      *                     policy.
+     * @param sharedMode Parameter specifying if the camera should be opened in shared mode.
      */
     ICameraDeviceUser connectDevice(ICameraDeviceCallbacks callbacks,
             @utf8InCpp String cameraId,
@@ -164,7 +165,8 @@ interface ICameraService
             int targetSdkVersion,
             int rotationOverride,
             in AttributionSourceState clientAttribution,
-            int devicePolicy);
+            int devicePolicy,
+            boolean sharedMode);
 
     /**
      * Add listener for changes to camera device and flashlight state.

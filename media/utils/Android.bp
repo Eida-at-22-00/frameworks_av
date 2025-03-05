@@ -53,6 +53,7 @@ filegroup {
         "Process.cpp",
         "ProcessInfo.cpp",
         "SchedulingPolicyService.cpp",
+        "ServiceSingleton.cpp",
         "ServiceUtilities.cpp",
         "ThreadSnapshot.cpp",
         "TimeCheck.cpp",
@@ -89,6 +90,7 @@ cc_library {
         "libaudioutils", // for clock.h, Statistics.h
         "libbase",
         "libbinder",
+        "libbinder_ndk",
         "libcutils",
         "libhidlbase",
         "liblog",
@@ -112,6 +114,8 @@ cc_library {
     ],
 
     export_shared_lib_headers: [
+        "libaudioutils",
+        "libbinder_ndk",
         "libpermission",
         "packagemanager_aidl-cpp",
     ],

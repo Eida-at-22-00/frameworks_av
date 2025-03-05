@@ -28,6 +28,8 @@ LIBCAMERA2NDK {
     ACameraManager_getCameraCharacteristics;
     ACameraManager_getCameraIdList;
     ACameraManager_openCamera;
+    ACameraManager_openSharedCamera; # systemapi introduced=36
+    ACameraManager_isCameraDeviceSharingSupported; # systemapi introduced=36
     ACameraManager_registerAvailabilityCallback;
     ACameraManager_unregisterAvailabilityCallback;
     ACameraManager_registerExtendedAvailabilityCallback; # introduced=29
@@ -72,6 +74,9 @@ LIBCAMERA2NDK {
     ACaptureSessionSharedOutput_remove; # introduced=28
     ACaptureSessionPhysicalOutput_create; # introduced=29
     ACaptureSessionOutput_free;
+    ACameraCaptureSessionShared_startStreaming; # systemapi introduced=36
+    ACameraCaptureSessionShared_logicalCamera_startStreaming; # systemapi introduced=36
+    ACameraCaptureSessionShared_stopStreaming; # systemapi introduced=36
   local:
     *;
 };

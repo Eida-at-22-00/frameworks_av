@@ -122,6 +122,10 @@ private:
     static sp<IMediaPlayerService>            sService;
 
     Mutex                                     mLock;
+    // Static lock was added to the client in order to consume at most
+    // one service thread from image extraction requests of the same
+    // client process(See also b/21277449).
+    static Mutex                              sLock;
     sp<IMediaMetadataRetriever>               mRetriever;
 
 };

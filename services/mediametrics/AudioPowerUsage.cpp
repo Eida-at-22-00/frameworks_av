@@ -25,6 +25,7 @@
 #include <sstream>
 #include <string>
 #include <audio_utils/clock.h>
+#include <audio_utils/StringUtils.h>
 #include <cutils/properties.h>
 #include <stats_media_metrics.h>
 #include <sys/timerfd.h>
@@ -131,7 +132,7 @@ bool AudioPowerUsage::deviceFromString(const std::string& device_string, int32_t
 
 int32_t AudioPowerUsage::deviceFromStringPairs(const std::string& device_strings) {
     int32_t deviceMask = 0;
-    const auto devaddrvec = stringutils::getDeviceAddressPairs(device_strings);
+    const auto devaddrvec = audio_utils::stringutils::getDeviceAddressPairs(device_strings);
     for (const auto &[device, addr] : devaddrvec) {
         int32_t combo_device = 0;
         deviceFromString(device, combo_device);

@@ -17,6 +17,7 @@
 #include "AudioTypes.h"
 #include "MediaMetricsConstants.h"
 #include "StringUtils.h"
+#include <audio_utils/StringUtils.h>
 #include <media/TypeConverter.h> // requires libmedia_helper to get the Audio code.
 #include <stats_media_metrics.h>            // statsd
 
@@ -349,7 +350,7 @@ const std::unordered_map<std::string, int32_t>& getStatusMap() {
 template <typename Traits>
 int32_t int32FromFlags(const std::string &flags)
 {
-    const auto result = stringutils::split(flags, "|");
+    const auto result = audio_utils::stringutils::split(flags, "|");
     int32_t intFlags = 0;
     for (const auto& flag : result) {
         typename Traits::Type value;
@@ -364,7 +365,7 @@ int32_t int32FromFlags(const std::string &flags)
 template <typename Traits>
 std::string stringFromFlags(const std::string &flags, size_t len)
 {
-    const auto result = stringutils::split(flags, "|");
+    const auto result = audio_utils::stringutils::split(flags, "|");
     std::string sFlags;
     for (const auto& flag : result) {
         typename Traits::Type value;
@@ -383,7 +384,7 @@ std::string validateStringFromMap(const std::string &str, const M& map)
 {
     if (str.empty()) return {};
 
-    const auto result = stringutils::split(str, "|");
+    const auto result = audio_utils::stringutils::split(str, "|");
     std::stringstream ss;
     for (const auto &s : result) {
         if (map.count(s) > 0) {
@@ -399,7 +400,7 @@ typename M::mapped_type flagsFromMap(const std::string &str, const M& map)
 {
     if (str.empty()) return {};
 
-    const auto result = stringutils::split(str, "|");
+    const auto result = audio_utils::stringutils::split(str, "|");
     typename M::mapped_type value{};
     for (const auto &s : result) {
         auto it = map.find(s);
@@ -416,7 +417,7 @@ std::vector<int32_t> vectorFromMap(
 
     if (str.empty()) return v;
 
-    const auto result = stringutils::split(str, "|");
+    const auto result = audio_utils::stringutils::split(str, "|");
     for (const auto &s : result) {
         auto it = map.find(s);
         if (it == map.end()) continue;
@@ -429,7 +430,7 @@ std::vector<int64_t> channelMaskVectorFromString(const std::string &s)
 {
     std::vector<int64_t> v;
 
-    const auto result = stringutils::split(s, "|");
+    const auto result = audio_utils::stringutils::split(s, "|");
     for (const auto &mask : result) {
         // 0 if undetected or if actually 0.
         int64_t int64Mask = strtoll(mask.c_str(), nullptr, 0);

@@ -19,12 +19,13 @@
 
 #define MPEG2_TS_EXTRACTOR_H_
 
+#include <mutex>
+
 #include <media/stagefright/foundation/ABase.h>
 #include <media/MediaExtractorPluginApi.h>
 #include <media/MediaExtractorPluginHelper.h>
 #include <media/stagefright/MetaDataBase.h>
 #include <mpeg2ts/ATSParser.h>
-#include <utils/threads.h>
 #include <utils/KeyedVector.h>
 #include <utils/Vector.h>
 
@@ -57,7 +58,7 @@ protected:
 private:
     friend struct MPEG2TSSource;
 
-    mutable Mutex mLock;
+    std::mutex mLock;
 
     DataSourceHelper *mDataSource;
 

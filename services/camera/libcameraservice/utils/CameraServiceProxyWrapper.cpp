@@ -18,13 +18,14 @@
 #define ATRACE_TAG ATRACE_TAG_CAMERA
 //#define LOG_NDEBUG 0
 
+#include <binder/IServiceManager.h>
+#include <camera/StringUtils.h>
+#include <gui/Flags.h>  // remove with WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
 #include <gui/Surface.h>
 #include <inttypes.h>
+#include <system/window.h>
 #include <utils/Log.h>
 #include <utils/String16.h>
-#include <camera/StringUtils.h>
-#include <binder/IServiceManager.h>
-#include <system/window.h>
 
 #include "aidl/android/hardware/graphics/common/Dataspace.h"
 
@@ -265,16 +266,24 @@ int64_t CameraServiceProxyWrapper::encodeSessionConfiguration(
             }
 
             // Check 4K
-            const auto& gbps = config.getGraphicBufferProducers();
+            const std::vector<ParcelableSurfaceType>& surfaces = config.getSurfaces();
             int32_t width = 0, height = 0;
-            if (gbps.size() > 0) {
-                if (gbps[0] == nullptr) {
+            if (surfaces.size() > 0) {
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+                if (surfaces[0].isEmpty()) {
+#else
+                if (surfaces[0] == nullptr) {
+#endif
                     ALOGE("%s: Failed to query size due to abandoned surface.",
                             __FUNCTION__);
                     return CameraFeatureCombinationStats::CAMERA_FEATURE_UNKNOWN;
                 }
 
-                sp<Surface> surface = new Surface(gbps[0], /*useAsync*/false);
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+                sp<Surface> surface = surfaces[0].toSurface();
+#else
+                sp<Surface> surface = new Surface(surfaces[0], /*useAsync*/false);
+#endif
                 ANativeWindow *anw = surface.get();
 
                 width = ANativeWindow_getWidth(anw);

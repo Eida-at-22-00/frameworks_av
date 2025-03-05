@@ -25,6 +25,7 @@
 #include <media/AidlConversionNdk.h>
 #include <media/AidlConversionEffect.h>
 #include <system/audio_effect.h>
+#include <system/audio_effects/aidl_effects_utils.h>
 #include <system/audio_effects/effect_dynamicsprocessing.h>
 #include <Utils.h>
 #include <utils/Log.h>
@@ -38,8 +39,10 @@ using ::aidl::android::convertIntegral;
 using ::aidl::android::getParameterSpecificField;
 using ::aidl::android::aidl_utils::statusTFromBinderStatus;
 using ::aidl::android::hardware::audio::effect::Capability;
+using ::aidl::android::hardware::audio::effect::clampParameter;
 using ::aidl::android::hardware::audio::effect::DynamicsProcessing;
 using ::aidl::android::hardware::audio::effect::Parameter;
+using ::aidl::android::hardware::audio::effect::Range;
 using ::aidl::android::hardware::audio::effect::toString;
 using ::aidl::android::hardware::audio::effect::VendorExtension;
 using ::android::status_t;
@@ -126,7 +129,14 @@ status_t AidlConversionDp::setParameter(EffectParamReader& param) {
         }
     }
 
-    return statusTFromBinderStatus(mEffect->setParameter(aidlParam));
+    std::optional<Parameter> clamped =
+            clampParameter<Range::dynamicsProcessing, Parameter::Specific::dynamicsProcessing>(
+                    aidlParam, getDescriptor().capability);
+    if (!clamped) {
+        ALOGE("%s failed to clamp parameters: %s", __func__, aidlParam.toString().c_str());
+        return BAD_VALUE;
+    }
+    return statusTFromBinderStatus(mEffect->setParameter(clamped.value()));
 }
 
 status_t AidlConversionDp::getParameter(EffectParamWriter& param) {

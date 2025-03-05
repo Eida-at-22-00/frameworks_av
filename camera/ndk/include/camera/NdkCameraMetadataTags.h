@@ -91,6 +91,8 @@ typedef enum acamera_metadata_section {
     ACAMERA_AUTOMOTIVE_LENS,
     ACAMERA_EXTENSION,
     ACAMERA_JPEGR,
+    ACAMERA_SHARED_SESSION,
+    ACAMERA_DESKTOP_EFFECTS,
     ACAMERA_SECTION_COUNT,
 
     ACAMERA_VENDOR = 0x8000
@@ -138,6 +140,8 @@ typedef enum acamera_metadata_section_start {
     ACAMERA_AUTOMOTIVE_LENS_START  = ACAMERA_AUTOMOTIVE_LENS   << 16,
     ACAMERA_EXTENSION_START        = ACAMERA_EXTENSION         << 16,
     ACAMERA_JPEGR_START            = ACAMERA_JPEGR             << 16,
+    ACAMERA_SHARED_SESSION_START   = ACAMERA_SHARED_SESSION    << 16,
+    ACAMERA_DESKTOP_EFFECTS_START  = ACAMERA_DESKTOP_EFFECTS   << 16,
     ACAMERA_VENDOR_START           = ACAMERA_VENDOR            << 16
 } acamera_metadata_section_start_t;
 
@@ -307,6 +311,100 @@ typedef enum acamera_metadata_tag {
      */
     ACAMERA_COLOR_CORRECTION_AVAILABLE_ABERRATION_MODES =       // byte[n]
             ACAMERA_COLOR_CORRECTION_START + 4,
+    /**
+     * <p>Specifies the color temperature for CCT mode in Kelvin
+     * to adjust the white balance of the image.</p>
+     *
+     * <p>Type: int32</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraCaptureSession_captureCallback_result callbacks</li>
+     *   <li>ACaptureRequest</li>
+     * </ul></p>
+     *
+     * <p>Sets the color temperature in Kelvin units for when
+     * ACAMERA_COLOR_CORRECTION_MODE is CCT to adjust the
+     * white balance of the image.</p>
+     * <p>If CCT mode is enabled without a requested color temperature,
+     * a default value will be set by the camera device. The default value can be
+     * retrieved by checking the corresponding capture result. Color temperatures
+     * requested outside the advertised ACAMERA_COLOR_CORRECTION_COLOR_TEMPERATURE_RANGE
+     * will be clamped.</p>
+     *
+     * @see ACAMERA_COLOR_CORRECTION_COLOR_TEMPERATURE_RANGE
+     * @see ACAMERA_COLOR_CORRECTION_MODE
+     */
+    ACAMERA_COLOR_CORRECTION_COLOR_TEMPERATURE =                // int32
+            ACAMERA_COLOR_CORRECTION_START + 5,
+    /**
+     * <p>Specifies the color tint for CCT mode to adjust the white
+     * balance of the image.</p>
+     *
+     * <p>Type: int32</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraCaptureSession_captureCallback_result callbacks</li>
+     *   <li>ACaptureRequest</li>
+     * </ul></p>
+     *
+     * <p>Sets the color tint for when ACAMERA_COLOR_CORRECTION_MODE
+     * is CCT to adjust the white balance of the image.</p>
+     * <p>If CCT mode is enabled without a requested color tint,
+     * a default value will be set by the camera device. The default value can be
+     * retrieved by checking the corresponding capture result. Color tints requested
+     * outside the supported range will be clamped to the nearest limit (-50 or +50).</p>
+     *
+     * @see ACAMERA_COLOR_CORRECTION_MODE
+     */
+    ACAMERA_COLOR_CORRECTION_COLOR_TINT =                       // int32
+            ACAMERA_COLOR_CORRECTION_START + 6,
+    /**
+     * <p>The range of supported color temperature values for
+     * ACAMERA_COLOR_CORRECTION_COLOR_TEMPERATURE.</p>
+     *
+     * @see ACAMERA_COLOR_CORRECTION_COLOR_TEMPERATURE
+     *
+     * <p>Type: int32[2]</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraManager_getCameraCharacteristics</li>
+     * </ul></p>
+     *
+     * <p>This key lists the valid range of color temperature values for
+     * ACAMERA_COLOR_CORRECTION_COLOR_TEMPERATURE supported by this camera device.</p>
+     * <p>This key will be null on devices that do not support CCT mode for
+     * ACAMERA_COLOR_CORRECTION_MODE.</p>
+     *
+     * @see ACAMERA_COLOR_CORRECTION_COLOR_TEMPERATURE
+     * @see ACAMERA_COLOR_CORRECTION_MODE
+     */
+    ACAMERA_COLOR_CORRECTION_COLOR_TEMPERATURE_RANGE =          // int32[2]
+            ACAMERA_COLOR_CORRECTION_START + 7,
+    /**
+     * <p>List of color correction modes for ACAMERA_COLOR_CORRECTION_MODE that are
+     * supported by this camera device.</p>
+     *
+     * @see ACAMERA_COLOR_CORRECTION_MODE
+     *
+     * <p>Type: byte[n]</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraManager_getCameraCharacteristics</li>
+     * </ul></p>
+     *
+     * <p>This key lists the valid modes for ACAMERA_COLOR_CORRECTION_MODE. If no
+     * color correction modes are available for a device, this key will be null.</p>
+     * <p>Camera devices that have a FULL hardware level will always include at least
+     * FAST, HIGH_QUALITY, and TRANSFORM_MATRIX modes.</p>
+     *
+     * @see ACAMERA_COLOR_CORRECTION_MODE
+     */
+    ACAMERA_COLOR_CORRECTION_AVAILABLE_MODES =                  // byte[n]
+            ACAMERA_COLOR_CORRECTION_START + 8,
     ACAMERA_COLOR_CORRECTION_END,
 
     /**
@@ -469,7 +567,9 @@ typedef enum acamera_metadata_tag {
      * application's selected exposure time, sensor sensitivity,
      * and frame duration (ACAMERA_SENSOR_EXPOSURE_TIME,
      * ACAMERA_SENSOR_SENSITIVITY, and
-     * ACAMERA_SENSOR_FRAME_DURATION). If one of the FLASH modes
+     * ACAMERA_SENSOR_FRAME_DURATION). If ACAMERA_CONTROL_AE_PRIORITY_MODE is
+     * enabled, the relevant priority CaptureRequest settings will not be overridden.
+     * See ACAMERA_CONTROL_AE_PRIORITY_MODE for more details. If one of the FLASH modes
      * is selected, the camera device's flash unit controls are
      * also overridden.</p>
      * <p>The FLASH modes are only available if the camera device
@@ -480,10 +580,22 @@ typedef enum acamera_metadata_tag {
      * camera device auto-exposure routine for the overridden
      * fields for a given capture will be available in its
      * CaptureResult.</p>
+     * <p>When ACAMERA_CONTROL_AE_MODE is AE_MODE_ON and if the device
+     * supports manual flash strength control, i.e.,
+     * if ACAMERA_FLASH_SINGLE_STRENGTH_MAX_LEVEL and
+     * ACAMERA_FLASH_TORCH_STRENGTH_MAX_LEVEL are greater than 1, then
+     * the auto-exposure (AE) precapture metering sequence should be
+     * triggered to avoid the image being incorrectly exposed at
+     * different ACAMERA_FLASH_STRENGTH_LEVEL.</p>
      *
+     * @see ACAMERA_CONTROL_AE_MODE
+     * @see ACAMERA_CONTROL_AE_PRIORITY_MODE
      * @see ACAMERA_CONTROL_MODE
      * @see ACAMERA_FLASH_INFO_AVAILABLE
      * @see ACAMERA_FLASH_MODE
+     * @see ACAMERA_FLASH_SINGLE_STRENGTH_MAX_LEVEL
+     * @see ACAMERA_FLASH_STRENGTH_LEVEL
+     * @see ACAMERA_FLASH_TORCH_STRENGTH_MAX_LEVEL
      * @see ACAMERA_SENSOR_EXPOSURE_TIME
      * @see ACAMERA_SENSOR_FRAME_DURATION
      * @see ACAMERA_SENSOR_SENSITIVITY
@@ -562,7 +674,7 @@ typedef enum acamera_metadata_tag {
      * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR">CameraMetadata#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR</a>
      * capability or devices where
      * <a href="https://developer.android.com/reference/CameraCharacteristics.html#getAvailableCaptureRequestKeys">CameraCharacteristics#getAvailableCaptureRequestKeys</a>
-     * lists <a href="https://developer.android.com/reference/CaptureRequest.html#SENSOR_PIXEL_MODE">ACAMERA_SENSOR_PIXEL_MODE</a>
+     * lists ACAMERA_SENSOR_PIXEL_MODE,
      * ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE_MAXIMUM_RESOLUTION /
      * ACAMERA_SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE_MAXIMUM_RESOLUTION must be used as the
      * coordinate system for requests where ACAMERA_SENSOR_PIXEL_MODE is set to
@@ -791,7 +903,7 @@ typedef enum acamera_metadata_tag {
      * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR">CameraMetadata#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR</a>
      * capability or devices where
      * <a href="https://developer.android.com/reference/CameraCharacteristics.html#getAvailableCaptureRequestKeys">CameraCharacteristics#getAvailableCaptureRequestKeys</a>
-     * lists <a href="https://developer.android.com/reference/CaptureRequest.html#SENSOR_PIXEL_MODE">ACAMERA_SENSOR_PIXEL_MODE</a>,
+     * lists ACAMERA_SENSOR_PIXEL_MODE,
      * ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE_MAXIMUM_RESOLUTION /
      * ACAMERA_SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE_MAXIMUM_RESOLUTION must be used as the
      * coordinate system for requests where ACAMERA_SENSOR_PIXEL_MODE is set to
@@ -997,7 +1109,7 @@ typedef enum acamera_metadata_tag {
      * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR">CameraMetadata#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR</a>
      * capability or devices where
      * <a href="https://developer.android.com/reference/CameraCharacteristics.html#getAvailableCaptureRequestKeys">CameraCharacteristics#getAvailableCaptureRequestKeys</a>
-     * lists <a href="https://developer.android.com/reference/CaptureRequest.html#SENSOR_PIXEL_MODE">ACAMERA_SENSOR_PIXEL_MODE</a>,
+     * lists ACAMERA_SENSOR_PIXEL_MODE,
      * ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE_MAXIMUM_RESOLUTION /
      * ACAMERA_SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE_MAXIMUM_RESOLUTION must be used as the
      * coordinate system for requests where ACAMERA_SENSOR_PIXEL_MODE is set to
@@ -2296,6 +2408,95 @@ typedef enum acamera_metadata_tag {
      */
     ACAMERA_CONTROL_LOW_LIGHT_BOOST_STATE =                     // byte (acamera_metadata_enum_android_control_low_light_boost_state_t)
             ACAMERA_CONTROL_START + 59,
+    /**
+     * <p>Whether the application uses ACAMERA_SCALER_CROP_REGION or ACAMERA_CONTROL_ZOOM_RATIO
+     * to control zoom levels.</p>
+     *
+     * @see ACAMERA_CONTROL_ZOOM_RATIO
+     * @see ACAMERA_SCALER_CROP_REGION
+     *
+     * <p>Type: byte (acamera_metadata_enum_android_control_zoom_method_t)</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraCaptureSession_captureCallback_result callbacks</li>
+     *   <li>ACaptureRequest</li>
+     * </ul></p>
+     *
+     * <p>If set to AUTO, the camera device detects which capture request key the application uses
+     * to do zoom, ACAMERA_SCALER_CROP_REGION or ACAMERA_CONTROL_ZOOM_RATIO. If
+     * the application doesn't set android.scaler.zoomRatio or sets it to 1.0 in the capture
+     * request, the effective zoom level is reflected in ACAMERA_SCALER_CROP_REGION in capture
+     * results. If ACAMERA_CONTROL_ZOOM_RATIO is set to values other than 1.0, the effective
+     * zoom level is reflected in ACAMERA_CONTROL_ZOOM_RATIO. AUTO is the default value
+     * for this control, and also the behavior of the OS before Android version
+     * <a href="https://developer.android.com/reference/android/os/Build.VERSION_CODES.html#BAKLAVA">BAKLAVA</a>.</p>
+     * <p>If set to ZOOM_RATIO, the application explicitly specifies zoom level be controlled
+     * by ACAMERA_CONTROL_ZOOM_RATIO, and the effective zoom level is reflected in
+     * ACAMERA_CONTROL_ZOOM_RATIO in capture results. This addresses an ambiguity with AUTO,
+     * with which the camera device cannot know if the application is using cropRegion or
+     * zoomRatio at 1.0x.</p>
+     *
+     * @see ACAMERA_CONTROL_ZOOM_RATIO
+     * @see ACAMERA_SCALER_CROP_REGION
+     */
+    ACAMERA_CONTROL_ZOOM_METHOD =                               // byte (acamera_metadata_enum_android_control_zoom_method_t)
+            ACAMERA_CONTROL_START + 60,
+    /**
+     * <p>Turn on AE priority mode.</p>
+     *
+     * <p>Type: byte (acamera_metadata_enum_android_control_ae_priority_mode_t)</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraCaptureSession_captureCallback_result callbacks</li>
+     *   <li>ACaptureRequest</li>
+     * </ul></p>
+     *
+     * <p>This control is only effective if ACAMERA_CONTROL_MODE is
+     * AUTO and ACAMERA_CONTROL_AE_MODE is set to one of its
+     * ON modes, with the exception of ON_LOW_LIGHT_BOOST_BRIGHTNESS_PRIORITY.</p>
+     * <p>When a priority mode is enabled, the camera device's
+     * auto-exposure routine will maintain the application's
+     * selected parameters relevant to the priority mode while overriding
+     * the remaining exposure parameters
+     * (ACAMERA_SENSOR_EXPOSURE_TIME, ACAMERA_SENSOR_SENSITIVITY, and
+     * ACAMERA_SENSOR_FRAME_DURATION). For example, if
+     * SENSOR_SENSITIVITY_PRIORITY mode is enabled, the camera device will
+     * maintain the application-selected ACAMERA_SENSOR_SENSITIVITY
+     * while adjusting ACAMERA_SENSOR_EXPOSURE_TIME
+     * and ACAMERA_SENSOR_FRAME_DURATION. The overridden fields for a
+     * given capture will be available in its CaptureResult.</p>
+     *
+     * @see ACAMERA_CONTROL_AE_MODE
+     * @see ACAMERA_CONTROL_MODE
+     * @see ACAMERA_SENSOR_EXPOSURE_TIME
+     * @see ACAMERA_SENSOR_FRAME_DURATION
+     * @see ACAMERA_SENSOR_SENSITIVITY
+     */
+    ACAMERA_CONTROL_AE_PRIORITY_MODE =                          // byte (acamera_metadata_enum_android_control_ae_priority_mode_t)
+            ACAMERA_CONTROL_START + 61,
+    /**
+     * <p>List of auto-exposure priority modes for ACAMERA_CONTROL_AE_PRIORITY_MODE
+     * that are supported by this camera device.</p>
+     *
+     * @see ACAMERA_CONTROL_AE_PRIORITY_MODE
+     *
+     * <p>Type: byte[n]</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraManager_getCameraCharacteristics</li>
+     * </ul></p>
+     *
+     * <p>This entry lists the valid modes for
+     * ACAMERA_CONTROL_AE_PRIORITY_MODE for this camera device.
+     * If no AE priority modes are available for a device, this will only list OFF.</p>
+     *
+     * @see ACAMERA_CONTROL_AE_PRIORITY_MODE
+     */
+    ACAMERA_CONTROL_AE_AVAILABLE_PRIORITY_MODES =               // byte[n]
+            ACAMERA_CONTROL_START + 62,
     ACAMERA_CONTROL_END,
 
     /**
@@ -4041,8 +4242,8 @@ typedef enum acamera_metadata_tag {
      * <p>For camera devices with the
      * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR">CameraMetadata#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR</a>
      * capability or devices where <a href="https://developer.android.com/reference/CameraCharacteristics.html#getAvailableCaptureRequestKeys">CameraCharacteristics#getAvailableCaptureRequestKeys</a>
-     * lists <a href="https://developer.android.com/reference/CaptureRequest.html#SENSOR_PIXEL_MODE">ACAMERA_SENSOR_PIXEL_MODE</a></p>
-     * <p>ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE_MAXIMUM_RESOLUTION /
+     * lists ACAMERA_SENSOR_PIXEL_MODE,
+     * ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE_MAXIMUM_RESOLUTION /
      * ACAMERA_SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE_MAXIMUM_RESOLUTION must be used as the
      * coordinate system for requests where ACAMERA_SENSOR_PIXEL_MODE is set to
      * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION">CameraMetadata#SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION</a>.</p>
@@ -4782,9 +4983,12 @@ typedef enum acamera_metadata_tag {
      * duration exposed to the nearest possible value (rather than expose longer).
      * The final exposure time used will be available in the output capture result.</p>
      * <p>This control is only effective if ACAMERA_CONTROL_AE_MODE or ACAMERA_CONTROL_MODE is set to
-     * OFF; otherwise the auto-exposure algorithm will override this value.</p>
+     * OFF; otherwise the auto-exposure algorithm will override this value. However, in the
+     * case that ACAMERA_CONTROL_AE_PRIORITY_MODE is set to SENSOR_EXPOSURE_TIME_PRIORITY, this
+     * control will be effective and not controlled by the auto-exposure algorithm.</p>
      *
      * @see ACAMERA_CONTROL_AE_MODE
+     * @see ACAMERA_CONTROL_AE_PRIORITY_MODE
      * @see ACAMERA_CONTROL_MODE
      */
     ACAMERA_SENSOR_EXPOSURE_TIME =                              // int64
@@ -4893,7 +5097,9 @@ typedef enum acamera_metadata_tag {
      * value. The final sensitivity used will be available in the
      * output capture result.</p>
      * <p>This control is only effective if ACAMERA_CONTROL_AE_MODE or ACAMERA_CONTROL_MODE is set to
-     * OFF; otherwise the auto-exposure algorithm will override this value.</p>
+     * OFF; otherwise the auto-exposure algorithm will override this value. However, in the
+     * case that ACAMERA_CONTROL_AE_PRIORITY_MODE is set to SENSOR_SENSITIVITY_PRIORITY, this
+     * control will be effective and not controlled by the auto-exposure algorithm.</p>
      * <p>Note that for devices supporting postRawSensitivityBoost, the total sensitivity applied
      * to the final processed image is the combination of ACAMERA_SENSOR_SENSITIVITY and
      * ACAMERA_CONTROL_POST_RAW_SENSITIVITY_BOOST. In case the application uses the sensor
@@ -4902,6 +5108,7 @@ typedef enum acamera_metadata_tag {
      * set postRawSensitivityBoost.</p>
      *
      * @see ACAMERA_CONTROL_AE_MODE
+     * @see ACAMERA_CONTROL_AE_PRIORITY_MODE
      * @see ACAMERA_CONTROL_MODE
      * @see ACAMERA_CONTROL_POST_RAW_SENSITIVITY_BOOST
      * @see ACAMERA_SENSOR_INFO_SENSITIVITY_RANGE
@@ -5988,7 +6195,7 @@ typedef enum acamera_metadata_tag {
      * This key will only be present for devices which advertise the
      * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR">CameraMetadata#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR</a>
      * capability or devices where <a href="https://developer.android.com/reference/CameraCharacteristics.html#getAvailableCaptureRequestKeys">CameraCharacteristics#getAvailableCaptureRequestKeys</a>
-     * lists <a href="https://developer.android.com/reference/CaptureRequest.html#SENSOR_PIXEL_MODE">ACAMERA_SENSOR_PIXEL_MODE</a></p>
+     * lists ACAMERA_SENSOR_PIXEL_MODE.</p>
      * <p>The data representation is <code>int[4]</code>, which maps to <code>(left, top, width, height)</code>.</p>
      *
      * @see ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE
@@ -6021,7 +6228,7 @@ typedef enum acamera_metadata_tag {
      * This key will only be present for devices which advertise the
      * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR">CameraMetadata#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR</a>
      * capability or devices where <a href="https://developer.android.com/reference/CameraCharacteristics.html#getAvailableCaptureRequestKeys">CameraCharacteristics#getAvailableCaptureRequestKeys</a>
-     * lists <a href="https://developer.android.com/reference/CaptureRequest.html#SENSOR_PIXEL_MODE">ACAMERA_SENSOR_PIXEL_MODE</a></p>
+     * lists ACAMERA_SENSOR_PIXEL_MODE.</p>
      *
      * @see ACAMERA_SENSOR_INFO_PHYSICAL_SIZE
      * @see ACAMERA_SENSOR_PIXEL_MODE
@@ -6050,7 +6257,7 @@ typedef enum acamera_metadata_tag {
      * This key will only be present for devices which advertise the
      * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR">CameraMetadata#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR</a>
      * capability or devices where <a href="https://developer.android.com/reference/CameraCharacteristics.html#getAvailableCaptureRequestKeys">CameraCharacteristics#getAvailableCaptureRequestKeys</a>
-     * lists <a href="https://developer.android.com/reference/CaptureRequest.html#SENSOR_PIXEL_MODE">ACAMERA_SENSOR_PIXEL_MODE</a></p>
+     * lists ACAMERA_SENSOR_PIXEL_MODE.</p>
      * <p>The data representation is <code>int[4]</code>, which maps to <code>(left, top, width, height)</code>.</p>
      *
      * @see ACAMERA_SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE
@@ -6089,7 +6296,7 @@ typedef enum acamera_metadata_tag {
      * <ul>
      * <li>This key will be present if
      *   <a href="https://developer.android.com/reference/CameraCharacteristics.html#getAvailableCaptureRequestKeys">CameraCharacteristics#getAvailableCaptureRequestKeys</a>
-     *   lists <a href="https://developer.android.com/reference/CaptureRequest.html#SENSOR_PIXEL_MODE">ACAMERA_SENSOR_PIXEL_MODE</a>, since RAW
+     *   lists ACAMERA_SENSOR_PIXEL_MODE, since RAW
      *   images may not necessarily have a regular bayer pattern when
      *   <a href="https://developer.android.com/reference/CaptureRequest.html#SENSOR_PIXEL_MODE">ACAMERA_SENSOR_PIXEL_MODE</a> is set to
      *   <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION">CameraMetadata#SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION</a>.</li>
@@ -6459,9 +6666,19 @@ typedef enum acamera_metadata_tag {
      * height dimensions are given in ACAMERA_SENSOR_INFO_PIXEL_ARRAY_SIZE.
      * This may include hot pixels that lie outside of the active array
      * bounds given by ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE.</p>
+     * <p>For camera devices with the
+     * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR">CameraMetadata#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR</a>
+     * capability or devices where
+     * <a href="https://developer.android.com/reference/CameraCharacteristics.html#getAvailableCaptureRequestKeys">CameraCharacteristics#getAvailableCaptureRequestKeys</a>
+     * lists ACAMERA_SENSOR_PIXEL_MODE,
+     * ACAMERA_SENSOR_INFO_PIXEL_ARRAY_SIZE_MAXIMUM_RESOLUTION will be used as the
+     * pixel array size if the corresponding request sets ACAMERA_SENSOR_PIXEL_MODE to
+     * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION">CameraMetadata#SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION</a>.</p>
      *
      * @see ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE
      * @see ACAMERA_SENSOR_INFO_PIXEL_ARRAY_SIZE
+     * @see ACAMERA_SENSOR_INFO_PIXEL_ARRAY_SIZE_MAXIMUM_RESOLUTION
+     * @see ACAMERA_SENSOR_PIXEL_MODE
      */
     ACAMERA_STATISTICS_HOT_PIXEL_MAP =                          // int32[2*n]
             ACAMERA_STATISTICS_START + 15,
@@ -7611,8 +7828,8 @@ typedef enum acamera_metadata_tag {
      * <p>For camera devices with the
      * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR">CameraMetadata#REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR</a>
      * capability or devices where <a href="https://developer.android.com/reference/CameraCharacteristics.html#getAvailableCaptureRequestKeys">CameraCharacteristics#getAvailableCaptureRequestKeys</a>
-     * lists <a href="https://developer.android.com/reference/CaptureRequest.html#SENSOR_PIXEL_MODE">ACAMERA_SENSOR_PIXEL_MODE</a>
-     * , the current active physical device
+     * lists ACAMERA_SENSOR_PIXEL_MODE,
+     * the current active physical device
      * ACAMERA_SENSOR_INFO_ACTIVE_ARRAY_SIZE_MAXIMUM_RESOLUTION /
      * ACAMERA_SENSOR_INFO_PRE_CORRECTION_ACTIVE_ARRAY_SIZE_MAXIMUM_RESOLUTION must be used as the
      * coordinate system for requests where ACAMERA_SENSOR_PIXEL_MODE is set to
@@ -7844,6 +8061,145 @@ typedef enum acamera_metadata_tag {
     ACAMERA_HEIC_AVAILABLE_HEIC_STALL_DURATIONS_MAXIMUM_RESOLUTION = 
                                                                 // int64[4*n]
             ACAMERA_HEIC_START + 5,
+    /**
+     * <p>The available HEIC (ISO/IEC 23008-12/24) UltraHDR stream
+     * configurations that this camera device supports
+     * (i.e. format, width, height, output/input stream).</p>
+     *
+     * <p>Type: int32[n*4] (acamera_metadata_enum_android_heic_available_heic_ultra_hdr_stream_configurations_t)</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraManager_getCameraCharacteristics</li>
+     * </ul></p>
+     *
+     * <p>The configurations are listed as <code>(format, width, height, input?)</code> tuples.</p>
+     * <p>All the static, control, and dynamic metadata tags related to JPEG apply to HEIC formats.
+     * Configuring JPEG and HEIC streams at the same time is not supported.</p>
+     * <p>All the configuration tuples <code>(format, width, height, input?)</code> will contain
+     * AIMAGE_FORMAT_HEIC format as OUTPUT only.</p>
+     */
+    ACAMERA_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STREAM_CONFIGURATIONS = 
+                                                                // int32[n*4] (acamera_metadata_enum_android_heic_available_heic_ultra_hdr_stream_configurations_t)
+            ACAMERA_HEIC_START + 6,
+    /**
+     * <p>This lists the minimum frame duration for each
+     * format/size combination for HEIC UltraHDR output formats.</p>
+     *
+     * <p>Type: int64[4*n]</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraManager_getCameraCharacteristics</li>
+     * </ul></p>
+     *
+     * <p>This should correspond to the frame duration when only that
+     * stream is active, with all processing (typically in android.*.mode)
+     * set to either OFF or FAST.</p>
+     * <p>When multiple streams are used in a request, the minimum frame
+     * duration will be max(individual stream min durations).</p>
+     * <p>See ACAMERA_SENSOR_FRAME_DURATION and
+     * ACAMERA_SCALER_AVAILABLE_STALL_DURATIONS for more details about
+     * calculating the max frame rate.</p>
+     *
+     * @see ACAMERA_SCALER_AVAILABLE_STALL_DURATIONS
+     * @see ACAMERA_SENSOR_FRAME_DURATION
+     */
+    ACAMERA_HEIC_AVAILABLE_HEIC_ULTRA_HDR_MIN_FRAME_DURATIONS = // int64[4*n]
+            ACAMERA_HEIC_START + 7,
+    /**
+     * <p>This lists the maximum stall duration for each
+     * output format/size combination for HEIC UltraHDR streams.</p>
+     *
+     * <p>Type: int64[4*n]</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraManager_getCameraCharacteristics</li>
+     * </ul></p>
+     *
+     * <p>A stall duration is how much extra time would get added
+     * to the normal minimum frame duration for a repeating request
+     * that has streams with non-zero stall.</p>
+     * <p>This functions similarly to
+     * ACAMERA_SCALER_AVAILABLE_STALL_DURATIONS for HEIC UltraHDR
+     * streams.</p>
+     * <p>All HEIC output stream formats may have a nonzero stall
+     * duration.</p>
+     *
+     * @see ACAMERA_SCALER_AVAILABLE_STALL_DURATIONS
+     */
+    ACAMERA_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STALL_DURATIONS =     // int64[4*n]
+            ACAMERA_HEIC_START + 8,
+    /**
+     * <p>The available HEIC (ISO/IEC 23008-12/24) UltraHDR stream
+     * configurations that this camera device supports
+     * (i.e. format, width, height, output/input stream) for CaptureRequests where
+     * ACAMERA_SENSOR_PIXEL_MODE is set to
+     * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION">CameraMetadata#SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION</a>.</p>
+     *
+     * @see ACAMERA_SENSOR_PIXEL_MODE
+     *
+     * <p>Type: int32[n*4] (acamera_metadata_enum_android_heic_available_heic_ultra_hdr_stream_configurations_maximum_resolution_t)</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraManager_getCameraCharacteristics</li>
+     * </ul></p>
+     *
+     * <p>Refer to ACAMERA_HEIC_AVAILABLE_HEIC_STREAM_CONFIGURATIONS for details.</p>
+     * <p>All the configuration tuples <code>(format, width, height, input?)</code> will contain
+     * AIMAGE_FORMAT_HEIC format as OUTPUT only.</p>
+     *
+     * @see ACAMERA_HEIC_AVAILABLE_HEIC_STREAM_CONFIGURATIONS
+     */
+    ACAMERA_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STREAM_CONFIGURATIONS_MAXIMUM_RESOLUTION = 
+                                                                // int32[n*4] (acamera_metadata_enum_android_heic_available_heic_ultra_hdr_stream_configurations_maximum_resolution_t)
+            ACAMERA_HEIC_START + 9,
+    /**
+     * <p>This lists the minimum frame duration for each
+     * format/size combination for HEIC UltraHDR output formats for CaptureRequests where
+     * ACAMERA_SENSOR_PIXEL_MODE is set to
+     * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION">CameraMetadata#SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION</a>.</p>
+     *
+     * @see ACAMERA_SENSOR_PIXEL_MODE
+     *
+     * <p>Type: int64[4*n]</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraManager_getCameraCharacteristics</li>
+     * </ul></p>
+     *
+     * <p>Refer to ACAMERA_HEIC_AVAILABLE_HEIC_MIN_FRAME_DURATIONS for details.</p>
+     *
+     * @see ACAMERA_HEIC_AVAILABLE_HEIC_MIN_FRAME_DURATIONS
+     */
+    ACAMERA_HEIC_AVAILABLE_HEIC_ULTRA_HDR_MIN_FRAME_DURATIONS_MAXIMUM_RESOLUTION = 
+                                                                // int64[4*n]
+            ACAMERA_HEIC_START + 10,
+    /**
+     * <p>This lists the maximum stall duration for each
+     * output format/size combination for HEIC UltraHDR streams for CaptureRequests where
+     * ACAMERA_SENSOR_PIXEL_MODE is set to
+     * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraMetadata.html#SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION">CameraMetadata#SENSOR_PIXEL_MODE_MAXIMUM_RESOLUTION</a>.</p>
+     *
+     * @see ACAMERA_SENSOR_PIXEL_MODE
+     *
+     * <p>Type: int64[4*n]</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraManager_getCameraCharacteristics</li>
+     * </ul></p>
+     *
+     * <p>Refer to ACAMERA_HEIC_AVAILABLE_HEIC_STALL_DURATIONS for details.</p>
+     *
+     * @see ACAMERA_HEIC_AVAILABLE_HEIC_STALL_DURATIONS
+     */
+    ACAMERA_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STALL_DURATIONS_MAXIMUM_RESOLUTION = 
+                                                                // int64[4*n]
+            ACAMERA_HEIC_START + 11,
     ACAMERA_HEIC_END,
 
     /**
@@ -7926,6 +8282,33 @@ typedef enum acamera_metadata_tag {
     ACAMERA_AUTOMOTIVE_LENS_FACING =                            // byte[n] (acamera_metadata_enum_android_automotive_lens_facing_t)
             ACAMERA_AUTOMOTIVE_LENS_START,
     ACAMERA_AUTOMOTIVE_LENS_END,
+
+    /**
+     * <p>Indicates when to activate Night Mode Camera Extension for high-quality
+     * still captures in low-light conditions.</p>
+     *
+     * <p>Type: int32 (acamera_metadata_enum_android_extension_night_mode_indicator_t)</p>
+     *
+     * <p>This tag may appear in:
+     * <ul>
+     *   <li>ACameraMetadata from ACameraCaptureSession_captureCallback_result callbacks</li>
+     * </ul></p>
+     *
+     * <p>Provides awareness to the application when the current scene can benefit from using a
+     * Night Mode Camera Extension to take a high-quality photo.</p>
+     * <p>Support for this capture result can be queried via
+     * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraCharacteristics.html#getAvailableCaptureResultKeys">CameraCharacteristics#getAvailableCaptureResultKeys</a>.</p>
+     * <p>If the device supports this capability then it will also support
+     * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraExtensionCharacteristics.html#EXTENSION_NIGHT">NIGHT</a>
+     * and will be available in both
+     * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraCaptureSession.html">sessions</a> and
+     * <a href="https://developer.android.com/reference/android/hardware/camera2/CameraExtensionSession.html">sessions</a>.</p>
+     * <p>The value will be {@code UNKNOWN} in the following auto exposure modes: ON_AUTO_FLASH,
+     * ON_ALWAYS_FLASH, ON_AUTO_FLASH_REDEYE, or ON_EXTERNAL_FLASH.</p>
+     */
+    ACAMERA_EXTENSION_NIGHT_MODE_INDICATOR =                    // int32 (acamera_metadata_enum_android_extension_night_mode_indicator_t)
+            ACAMERA_EXTENSION_START + 2,
+    ACAMERA_EXTENSION_END,
 
     /**
      * <p>The available Jpeg/R stream
@@ -8116,6 +8499,20 @@ typedef enum acamera_metadata_enum_acamera_color_correction_mode {
      */
     ACAMERA_COLOR_CORRECTION_MODE_HIGH_QUALITY                       = 2,
 
+    /**
+     * <p>Use
+     * ACAMERA_COLOR_CORRECTION_COLOR_TEMPERATURE and
+     * ACAMERA_COLOR_CORRECTION_COLOR_TINT to adjust the white balance based
+     * on correlated color temperature.</p>
+     * <p>If AWB is enabled with <code>ACAMERA_CONTROL_AWB_MODE != OFF</code>, then
+     * CCT is ignored.</p>
+     *
+     * @see ACAMERA_COLOR_CORRECTION_COLOR_TEMPERATURE
+     * @see ACAMERA_COLOR_CORRECTION_COLOR_TINT
+     * @see ACAMERA_CONTROL_AWB_MODE
+     */
+    ACAMERA_COLOR_CORRECTION_MODE_CCT                                = 3,
+
 } acamera_metadata_enum_android_color_correction_mode_t;
 
 // ACAMERA_COLOR_CORRECTION_ABERRATION_MODE
@@ -8233,7 +8630,17 @@ typedef enum acamera_metadata_enum_acamera_control_ae_mode {
      * ACAMERA_SENSOR_FRAME_DURATION are ignored. The
      * application has control over the various
      * ACAMERA_FLASH_* fields.</p>
+     * <p>If the device supports manual flash strength control, i.e.,
+     * if ACAMERA_FLASH_SINGLE_STRENGTH_MAX_LEVEL and
+     * ACAMERA_FLASH_TORCH_STRENGTH_MAX_LEVEL are greater than 1, then
+     * the auto-exposure (AE) precapture metering sequence should be
+     * triggered for the configured flash mode and strength to avoid
+     * the image being incorrectly exposed at different
+     * ACAMERA_FLASH_STRENGTH_LEVEL.</p>
      *
+     * @see ACAMERA_FLASH_SINGLE_STRENGTH_MAX_LEVEL
+     * @see ACAMERA_FLASH_STRENGTH_LEVEL
+     * @see ACAMERA_FLASH_TORCH_STRENGTH_MAX_LEVEL
      * @see ACAMERA_SENSOR_EXPOSURE_TIME
      * @see ACAMERA_SENSOR_FRAME_DURATION
      * @see ACAMERA_SENSOR_SENSITIVITY
@@ -9346,6 +9753,64 @@ typedef enum acamera_metadata_enum_acamera_control_low_light_boost_state {
     ACAMERA_CONTROL_LOW_LIGHT_BOOST_STATE_ACTIVE                     = 1,
 
 } acamera_metadata_enum_android_control_low_light_boost_state_t;
+
+// ACAMERA_CONTROL_ZOOM_METHOD
+typedef enum acamera_metadata_enum_acamera_control_zoom_method {
+    /**
+     * <p>The camera device automatically detects whether the application does zoom with
+     * ACAMERA_SCALER_CROP_REGION or ACAMERA_CONTROL_ZOOM_RATIO, and in turn decides which
+     * metadata tag reflects the effective zoom level.</p>
+     *
+     * @see ACAMERA_CONTROL_ZOOM_RATIO
+     * @see ACAMERA_SCALER_CROP_REGION
+     */
+    ACAMERA_CONTROL_ZOOM_METHOD_AUTO                                 = 0,
+
+    /**
+     * <p>The application intends to control zoom via ACAMERA_CONTROL_ZOOM_RATIO, and
+     * the effective zoom level is reflected by ACAMERA_CONTROL_ZOOM_RATIO in capture results.</p>
+     *
+     * @see ACAMERA_CONTROL_ZOOM_RATIO
+     */
+    ACAMERA_CONTROL_ZOOM_METHOD_ZOOM_RATIO                           = 1,
+
+} acamera_metadata_enum_android_control_zoom_method_t;
+
+// ACAMERA_CONTROL_AE_PRIORITY_MODE
+typedef enum acamera_metadata_enum_acamera_control_ae_priority_mode {
+    /**
+     * <p>Disable AE priority mode. This is the default value.</p>
+     */
+    ACAMERA_CONTROL_AE_PRIORITY_MODE_OFF                             = 0,
+
+    /**
+     * <p>The camera device's auto-exposure routine is active and
+     * prioritizes the application-selected ISO (ACAMERA_SENSOR_SENSITIVITY).</p>
+     * <p>The application has control over ACAMERA_SENSOR_SENSITIVITY while
+     * the application's values for ACAMERA_SENSOR_EXPOSURE_TIME and
+     * ACAMERA_SENSOR_FRAME_DURATION are ignored.</p>
+     *
+     * @see ACAMERA_SENSOR_EXPOSURE_TIME
+     * @see ACAMERA_SENSOR_FRAME_DURATION
+     * @see ACAMERA_SENSOR_SENSITIVITY
+     */
+    ACAMERA_CONTROL_AE_PRIORITY_MODE_SENSOR_SENSITIVITY_PRIORITY     = 1,
+
+    /**
+     * <p>The camera device's auto-exposure routine is active and
+     * prioritizes the application-selected exposure time
+     * (ACAMERA_SENSOR_EXPOSURE_TIME).</p>
+     * <p>The application has control over ACAMERA_SENSOR_EXPOSURE_TIME while
+     * the application's values for ACAMERA_SENSOR_SENSITIVITY and
+     * ACAMERA_SENSOR_FRAME_DURATION are ignored.</p>
+     *
+     * @see ACAMERA_SENSOR_EXPOSURE_TIME
+     * @see ACAMERA_SENSOR_FRAME_DURATION
+     * @see ACAMERA_SENSOR_SENSITIVITY
+     */
+    ACAMERA_CONTROL_AE_PRIORITY_MODE_SENSOR_EXPOSURE_TIME_PRIORITY   = 2,
+
+} acamera_metadata_enum_android_control_ae_priority_mode_t;
 
 
 
@@ -11387,6 +11852,26 @@ typedef enum acamera_metadata_enum_acamera_heic_available_heic_stream_configurat
 
 } acamera_metadata_enum_android_heic_available_heic_stream_configurations_maximum_resolution_t;
 
+// ACAMERA_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STREAM_CONFIGURATIONS
+typedef enum acamera_metadata_enum_acamera_heic_available_heic_ultra_hdr_stream_configurations {
+    ACAMERA_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STREAM_CONFIGURATIONS_OUTPUT
+                                                                      = 0,
+
+    ACAMERA_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STREAM_CONFIGURATIONS_INPUT
+                                                                      = 1,
+
+} acamera_metadata_enum_android_heic_available_heic_ultra_hdr_stream_configurations_t;
+
+// ACAMERA_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STREAM_CONFIGURATIONS_MAXIMUM_RESOLUTION
+typedef enum acamera_metadata_enum_acamera_heic_available_heic_ultra_hdr_stream_configurations_maximum_resolution {
+    ACAMERA_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STREAM_CONFIGURATIONS_MAXIMUM_RESOLUTION_OUTPUT
+                                                                      = 0,
+
+    ACAMERA_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STREAM_CONFIGURATIONS_MAXIMUM_RESOLUTION_INPUT
+                                                                      = 1,
+
+} acamera_metadata_enum_android_heic_available_heic_ultra_hdr_stream_configurations_maximum_resolution_t;
+
 
 
 // ACAMERA_AUTOMOTIVE_LOCATION
@@ -11550,6 +12035,33 @@ typedef enum acamera_metadata_enum_acamera_automotive_lens_facing {
 } acamera_metadata_enum_android_automotive_lens_facing_t;
 
 
+// ACAMERA_EXTENSION_NIGHT_MODE_INDICATOR
+typedef enum acamera_metadata_enum_acamera_extension_night_mode_indicator {
+    /**
+     * <p>The camera can't accurately assess the scene's lighting to determine if a Night Mode
+     * Camera Extension capture would improve the photo. This can happen when the current
+     * camera configuration doesn't support night mode indicator detection, such as when
+     * the auto exposure mode is ON_AUTO_FLASH, ON_ALWAYS_FLASH, ON_AUTO_FLASH_REDEYE, or
+     * ON_EXTERNAL_FLASH.</p>
+     */
+    ACAMERA_EXTENSION_NIGHT_MODE_INDICATOR_UNKNOWN                   = 0,
+
+    /**
+     * <p>The camera has detected lighting conditions that are sufficiently bright. Night
+     * Mode Camera Extensions is available but may not be able to optimize the camera
+     * settings to take a higher quality photo.</p>
+     */
+    ACAMERA_EXTENSION_NIGHT_MODE_INDICATOR_OFF                       = 1,
+
+    /**
+     * <p>The camera has detected low-light conditions. It is recommended to use Night Mode
+     * Camera Extension to optimize the camera settings to take a high-quality photo in
+     * the dark.</p>
+     */
+    ACAMERA_EXTENSION_NIGHT_MODE_INDICATOR_ON                        = 2,
+
+} acamera_metadata_enum_android_extension_night_mode_indicator_t;
+
 
 // ACAMERA_JPEGR_AVAILABLE_JPEG_R_STREAM_CONFIGURATIONS
 typedef enum acamera_metadata_enum_acamera_jpegr_available_jpeg_r_stream_configurations {
@@ -11568,6 +12080,8 @@ typedef enum acamera_metadata_enum_acamera_jpegr_available_jpeg_r_stream_configu
                                                                       = 1,
 
 } acamera_metadata_enum_android_jpegr_available_jpeg_r_stream_configurations_maximum_resolution_t;
+
+
 
 
 

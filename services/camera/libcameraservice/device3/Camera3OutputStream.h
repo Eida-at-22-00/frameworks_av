@@ -134,7 +134,6 @@ class Camera3OutputStream :
             int64_t streamUseCase = ANDROID_SCALER_AVAILABLE_STREAM_USE_CASES_DEFAULT,
             bool deviceTimeBaseIsRealtime = false,
             int timestampBase = OutputConfiguration::TIMESTAMP_BASE_DEFAULT,
-            int mirrorMode = OutputConfiguration::MIRROR_MODE_AUTO,
             int32_t colorSpace = ANDROID_REQUEST_AVAILABLE_COLOR_SPACE_PROFILES_MAP_UNSPECIFIED,
             bool useReadoutTimestamp = false);
 
@@ -150,7 +149,7 @@ class Camera3OutputStream :
      * Set the transform on the output stream; one of the
      * HAL_TRANSFORM_* / NATIVE_WINDOW_TRANSFORM_* constants.
      */
-    status_t         setTransform(int transform, bool mayChangeMirror);
+    virtual status_t setTransform(int transform, bool mayChangeMirror, int surfaceId = 0);
 
     /**
      * Return if this output stream is for video encoding.
@@ -179,7 +178,7 @@ class Camera3OutputStream :
     /**
      * Set the consumer surfaces to the output stream.
      */
-    virtual status_t setConsumers(const std::vector<sp<Surface>>& consumers);
+    virtual status_t setConsumers(const std::vector<SurfaceHolder>& consumers);
 
     class BufferProducerListener : public SurfaceListener {
         public:
@@ -236,7 +235,7 @@ class Camera3OutputStream :
     /**
      * Update the stream output surfaces.
      */
-    virtual status_t updateStream(const std::vector<sp<Surface>> &outputSurfaces,
+    virtual status_t updateStream(const std::vector<SurfaceHolder> &outputSurfaces,
             const std::vector<OutputStreamInfo> &outputInfo,
             const std::vector<size_t> &removedSurfaceIds,
             KeyedVector<sp<Surface>, size_t> *outputMap/*out*/);
@@ -286,7 +285,6 @@ class Camera3OutputStream :
             int64_t streamUseCase = ANDROID_SCALER_AVAILABLE_STREAM_USE_CASES_DEFAULT,
             bool deviceTimeBaseIsRealtime = false,
             int timestampBase = OutputConfiguration::TIMESTAMP_BASE_DEFAULT,
-            int mirrorMode = OutputConfiguration::MIRROR_MODE_AUTO,
             int32_t colorSpace = ANDROID_REQUEST_AVAILABLE_COLOR_SPACE_PROFILES_MAP_UNSPECIFIED,
             bool useReadoutTimestamp = false);
 
@@ -322,8 +320,6 @@ class Camera3OutputStream :
   private:
 
     int               mTransform;
-
-    virtual status_t  setTransformLocked(int transform);
 
     bool mTraceFirstBuffer;
 
@@ -383,7 +379,7 @@ class Camera3OutputStream :
     std::vector<Surface::BatchBuffer> mBatchedBuffers;
     // ---- End of mBatchLock protected scope ----
 
-    const int mMirrorMode;
+    int mMirrorMode;
 
     /**
      * Internal Camera3Stream interface

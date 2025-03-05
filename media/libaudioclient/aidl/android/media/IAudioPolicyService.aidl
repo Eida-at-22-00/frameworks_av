@@ -25,6 +25,8 @@ import android.media.AudioMixerAttributesInternal;
 import android.media.AudioOffloadMode;
 import android.media.AudioPatchFw;
 import android.media.AudioPolicyDeviceState;
+import android.media.AudioPolicyForcedConfig;
+import android.media.AudioPolicyForceUse;
 import android.media.AudioPortFw;
 import android.media.AudioPortConfigFw;
 import android.media.AudioPortRole;
@@ -46,9 +48,9 @@ import android.media.audio.common.AudioConfigBase;
 import android.media.audio.common.AudioDevice;
 import android.media.audio.common.AudioDeviceDescription;
 import android.media.audio.common.AudioFormatDescription;
+import android.media.audio.common.AudioMMapPolicyInfo;
+import android.media.audio.common.AudioMMapPolicyType;
 import android.media.audio.common.AudioMode;
-import android.media.audio.common.AudioPolicyForcedConfig;
-import android.media.audio.common.AudioPolicyForceUse;
 import android.media.audio.common.AudioProfile;
 import android.media.audio.common.AudioOffloadInfo;
 import android.media.audio.common.AudioPort;
@@ -92,7 +94,7 @@ interface IAudioPolicyService {
                                               in AttributionSourceState attributionSource,
                                               in AudioConfig config,
                                               int /* Bitmask, indexed by AudioOutputFlags */ flags,
-                                              int /* audio_port_handle_t */ selectedDeviceId);
+                                              in int[] /* audio_port_handle_t */ selectedDeviceIds);
 
     void startOutput(int /* audio_port_handle_t */ portId);
 
@@ -126,14 +128,14 @@ interface IAudioPolicyService {
 
     void setStreamVolumeIndex(AudioStreamType stream,
                               in AudioDeviceDescription device,
-                              int index);
+                              int index, boolean muted);
 
     int getStreamVolumeIndex(AudioStreamType stream,
                              in AudioDeviceDescription device);
 
     void setVolumeIndexForAttributes(in AudioAttributes attr,
                                      in AudioDeviceDescription device,
-                                     int index);
+                                     int index, boolean muted);
 
     int getVolumeIndexForAttributes(in AudioAttributes attr,
                                     in AudioDeviceDescription device);
@@ -482,6 +484,17 @@ interface IAudioPolicyService {
      * required to control audio access.
      */
     INativePermissionController getPermissionController();
+
+    /**
+     * Query mmap policy information.
+     */
+    AudioMMapPolicyInfo[] getMmapPolicyInfos(AudioMMapPolicyType policyType);
+
+    /**
+     * Get all devices that support AAudio MMAP.
+     */
+    void getMmapPolicyForDevice(AudioMMapPolicyType policyType,
+                                inout AudioMMapPolicyInfo policyInfo);
     // When adding a new method, please review and update
     // AudioPolicyService.cpp AudioPolicyService::onTransact()
     // AudioPolicyService.cpp IAUDIOPOLICYSERVICE_BINDER_METHOD_MACRO_LIST

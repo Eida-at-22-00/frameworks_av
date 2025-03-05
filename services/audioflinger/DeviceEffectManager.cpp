@@ -22,7 +22,7 @@
 
 #include "EffectConfiguration.h"
 
-#include <afutils/DumpTryLock.h>
+#include <afutils/FallibleLockGuard.h>
 #include <audio_utils/primitives.h>
 #include <media/audiohal/EffectsFactoryHalInterface.h>
 #include <utils/Log.h>
@@ -208,10 +208,9 @@ status_t DeviceEffectManager::createEffectHal(
 }
 
 void DeviceEffectManager::dump(int fd)
-NO_THREAD_SAFETY_ANALYSIS  // conditional try lock
 {
-    const bool locked = afutils::dumpTryLock(mutex());
-    if (!locked) {
+    afutils::FallibleLockGuard l{mutex()};
+    if (!l) {
         String8 result("DeviceEffectManager may be deadlocked\n");
         write(fd, result.c_str(), result.size());
     }
@@ -226,10 +225,6 @@ NO_THREAD_SAFETY_ANALYSIS  // conditional try lock
             write(fd, outStr.c_str(), outStr.size());
             effect->dump2(fd, 4);
         }
-    }
-
-    if (locked) {
-        mutex().unlock();
     }
 }
 

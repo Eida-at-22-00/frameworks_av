@@ -212,8 +212,7 @@ void processOneCaptureResultLockedT(
         bool noBufferReturned = false;
         buffer_handle_t *buffer = nullptr;
         if (states.useHalBufManager ||
-                (flags::session_hal_buf_manager() &&
-                        contains(states.halBufManagedStreamIds, bSrc.streamId))) {
+                contains(states.halBufManagedStreamIds, bSrc.streamId)) {
             // This is suspicious most of the time but can be correct during flush where HAL
             // has to return capture result before a buffer is requested
             if (bSrc.bufferId == BUFFER_ID_NO_BUFFER) {
@@ -303,8 +302,7 @@ void returnStreamBuffersT(ReturnBufferStates& states,
 
     for (const auto& buf : buffers) {
         if (!states.useHalBufManager &&
-            !(flags::session_hal_buf_manager() &&
-             contains(states.halBufManagedStreamIds, buf.streamId))) {
+            !contains(states.halBufManagedStreamIds, buf.streamId)) {
             ALOGE("%s: Camera %s does not support HAL buffer management for stream id %d",
                   __FUNCTION__, states.cameraId.c_str(), buf.streamId);
             return;

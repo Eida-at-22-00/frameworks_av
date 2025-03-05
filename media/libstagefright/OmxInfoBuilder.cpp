@@ -21,6 +21,8 @@
 #define OMX_ANDROID_COMPILE_AS_32BIT_ON_64BIT_PLATFORMS
 #endif
 
+#include <cstdlib>
+
 #include <android-base/properties.h>
 #include <utils/Log.h>
 
@@ -131,6 +133,10 @@ status_t OmxInfoBuilder::buildMediaCodecList(MediaCodecListWriter* writer) {
     for (const auto& p : serviceAttributes) {
         writer->addGlobalSetting(
                 p.key.c_str(), p.value.c_str());
+        if (p.key == "max-concurrent-instances") {
+            MediaCodecInfoWriter::SetMaxSupportedInstances(
+                    (int32_t)strtol(p.value.c_str(), NULL, 10));
+        }
     }
 
     // Convert roles to lists of codecs
@@ -217,6 +223,8 @@ status_t OmxInfoBuilder::buildMediaCodecList(MediaCodecListWriter* writer) {
                 ALOGW("Fail to add media type %s to codec %s",
                         typeName.c_str(), nodeName.c_str());
                 info->removeMediaType(typeName.c_str());
+            } else {
+                info->createCodecCaps();
             }
         }
     }

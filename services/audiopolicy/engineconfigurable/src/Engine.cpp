@@ -112,7 +112,7 @@ status_t Engine::loadFromXmlConfigWithFallback(const std::string& xmlFilePath)
 
 template<typename T>
 status_t Engine::loadWithFallback(const T& configSource) {
-    auto result = EngineBase::loadAudioPolicyEngineConfig(configSource);
+    auto result = EngineBase::loadAudioPolicyEngineConfig(configSource, true /*isConfigurable*/);
     ALOGE_IF(result.nbSkippedElement != 0,
              "Policy Engine configuration is partially invalid, skipped %zu elements",
              result.nbSkippedElement);

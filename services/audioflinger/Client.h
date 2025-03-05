@@ -42,13 +42,14 @@ public:
 
 class Client : public RefBase {
 public:
-    Client(const sp<IAfClientCallback>& audioFlinger, pid_t pid);
+    Client(const sp<IAfClientCallback>& audioFlinger, pid_t pid, uid_t uid);
 
     // TODO(b/289139675) make Client container.
     // Client destructor must be called with AudioFlinger::mClientLock held
     ~Client() override;
     AllocatorFactory::ClientAllocator& allocator();
     pid_t pid() const { return mPid; }
+    uid_t uid() const { return mUid; }
     const auto& afClientCallback() const { return mAfClientCallback; }
 
 private:
@@ -56,6 +57,7 @@ private:
 
     const sp<IAfClientCallback> mAfClientCallback;
     const pid_t mPid;
+    const uid_t mUid;
     AllocatorFactory::ClientAllocator mClientAllocator;
 };
 

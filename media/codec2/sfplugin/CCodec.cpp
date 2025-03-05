@@ -2877,6 +2877,7 @@ void CCodec::onMessageReceived(const sp<AMessage> &msg) {
 
             // handle configuration changes in work done
             std::shared_ptr<const C2StreamInitDataInfo::output> initData;
+            sp<AMessage> inputFormat = nullptr;
             sp<AMessage> outputFormat = nullptr;
             {
                 Mutexed<std::unique_ptr<Config>>::Locked configLocked(mConfig);
@@ -2964,10 +2965,12 @@ void CCodec::onMessageReceived(const sp<AMessage> &msg) {
                             initData->m.value, initData->flexCount(), config->mCodingMediaType,
                             config->mOutputFormat);
                 }
+                inputFormat = config->mInputFormat;
                 outputFormat = config->mOutputFormat;
             }
             mChannel->onWorkDone(
-                    std::move(work), outputFormat, initData ? initData.get() : nullptr);
+                    std::move(work), inputFormat, outputFormat,
+                    initData ? initData.get() : nullptr);
             // log metrics to MediaCodec
             if (mMetrics->countEntries() == 0) {
                 Mutexed<std::unique_ptr<Config>>::Locked configLocked(mConfig);

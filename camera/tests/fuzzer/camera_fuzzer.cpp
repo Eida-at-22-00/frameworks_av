@@ -20,6 +20,7 @@
 #include <android/content/AttributionSourceState.h>
 #include <binder/MemoryDealer.h>
 #include <fuzzer/FuzzedDataProvider.h>
+#include <gui/Flags.h>
 #include <gui/Surface.h>
 #include <gui/SurfaceComposerClient.h>
 #include "camera2common.h"
@@ -210,7 +211,11 @@ void CameraFuzzer::invokeCamera() {
         auto callCameraAPIs = mFDP->PickValueInArray<const std::function<void()>>({
                 [&]() {
                     if (surfaceControl) {
-                        mCamera->setPreviewTarget(surface->getIGraphicBufferProducer());
+                        mCamera->setPreviewTarget(surface
+#if !WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+                                                          ->getIGraphicBufferProducer()
+#endif
+                        );
                     }
                 },
                 [&]() {
@@ -267,7 +272,11 @@ void CameraFuzzer::invokeCamera() {
                 },
                 [&]() {
                     if (surfaceControl) {
-                        mCamera->setVideoTarget(surface->getIGraphicBufferProducer());
+                        mCamera->setVideoTarget(surface
+#if !WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+                                                        ->getIGraphicBufferProducer()
+#endif
+                        );
                     }
                 },
                 [&]() {
@@ -283,7 +292,11 @@ void CameraFuzzer::invokeCamera() {
                 },
                 [&]() {
                     if (surfaceControl) {
-                        mCamera->setPreviewCallbackTarget(surface->getIGraphicBufferProducer());
+                        mCamera->setPreviewCallbackTarget(surface
+#if !WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+                                                                  ->getIGraphicBufferProducer()
+#endif
+                        );
                     }
                 },
                 [&]() { mCamera->getRecordingProxy(); },

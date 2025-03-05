@@ -56,6 +56,7 @@
 using namespace android::camera3;
 using namespace android::camera3::SessionConfigurationUtils;
 using namespace android::hardware::camera;
+using CameraMetadataInfo = android::hardware::camera2::CameraMetadataInfo;
 namespace flags = com::android::internal::camera::flags;
 
 namespace android {
@@ -231,11 +232,12 @@ void insertResultLocked(CaptureOutputStates& states, CaptureResult *result, uint
 
     // Update vendor tag id for physical metadata
     for (auto& physicalMetadata : result->mPhysicalMetadatas) {
-        camera_metadata_t *pmeta = const_cast<camera_metadata_t *>(
-                physicalMetadata.mPhysicalCameraMetadata.getAndLock());
+        auto &metadata =
+                physicalMetadata.mCameraMetadataInfo.get<CameraMetadataInfo::metadata>();
+        camera_metadata_t *pmeta = const_cast<camera_metadata_t *>(metadata.getAndLock());
         set_camera_metadata_vendor_id(pmeta, states.vendorTagId);
         correctMeteringRegions(pmeta);
-        physicalMetadata.mPhysicalCameraMetadata.unlock(pmeta);
+        metadata.unlock(pmeta);
     }
 
     // Valid result, insert into queue
@@ -304,7 +306,7 @@ void sendCaptureResult(
         CameraMetadata &collectedPartialResult,
         uint32_t frameNumber,
         bool reprocess, bool zslStillCapture, bool rotateAndCropAuto,
-        const std::set<std::string>& cameraIdsWithZoom,
+        const std::set<std::string>& cameraIdsWithZoom, bool useZoomRatio,
         const std::vector<PhysicalCaptureResultInfo>& physicalMetadatas) {
     ATRACE_CALL();
     if (pendingMetadata.isEmpty())
@@ -362,7 +364,8 @@ void sendCaptureResult(
 
     for (auto& physicalMetadata : captureResult.mPhysicalMetadatas) {
         camera_metadata_entry timestamp =
-                physicalMetadata.mPhysicalCameraMetadata.find(ANDROID_SENSOR_TIMESTAMP);
+                physicalMetadata.mCameraMetadataInfo.get<CameraMetadataInfo::metadata>().
+                        find(ANDROID_SENSOR_TIMESTAMP);
         if (timestamp.count == 0) {
             SET_ERR("No timestamp provided by HAL for physical camera %s frame %d!",
                     physicalMetadata.mPhysicalCameraId.c_str(), frameNumber);
@@ -386,7 +389,7 @@ void sendCaptureResult(
     // HAL and app.
     bool zoomRatioIs1 = cameraIdsWithZoom.find(states.cameraId) == cameraIdsWithZoom.end();
     res = states.zoomRatioMappers[states.cameraId].updateCaptureResult(
-            &captureResult.mMetadata, zoomRatioIs1);
+            &captureResult.mMetadata, useZoomRatio, zoomRatioIs1);
     if (res != OK) {
         SET_ERR("Failed to update capture result zoom ratio metadata for frame %d: %s (%d)",
                 frameNumber, strerror(-res), res);
@@ -415,7 +418,8 @@ void sendCaptureResult(
         return;
     }
     for (auto& physicalMetadata : captureResult.mPhysicalMetadatas) {
-        res = fixupManualFlashStrengthControlTags(physicalMetadata.mPhysicalCameraMetadata);
+        res = fixupManualFlashStrengthControlTags(physicalMetadata.mCameraMetadataInfo.
+                get<CameraMetadataInfo::metadata>());
         if (res != OK) {
             SET_ERR("Failed to set flash strength level defaults in physical result"
                     " metadata: %s (%d)", strerror(-res), res);
@@ -431,7 +435,8 @@ void sendCaptureResult(
         return;
     }
     for (auto& physicalMetadata : captureResult.mPhysicalMetadatas) {
-        res = fixupAutoframingTags(physicalMetadata.mPhysicalCameraMetadata);
+        res = fixupAutoframingTags(physicalMetadata.mCameraMetadataInfo.
+                get<CameraMetadataInfo::metadata>());
         if (res != OK) {
             SET_ERR("Failed to set autoframing defaults in physical result metadata: %s (%d)",
                     strerror(-res), res);
@@ -444,7 +449,7 @@ void sendCaptureResult(
         auto mapper = states.distortionMappers.find(cameraId);
         if (mapper != states.distortionMappers.end()) {
             res = mapper->second.correctCaptureResult(
-                    &physicalMetadata.mPhysicalCameraMetadata);
+                    &physicalMetadata.mCameraMetadataInfo.get<CameraMetadataInfo::metadata>());
             if (res != OK) {
                 SET_ERR("Unable to correct physical capture result metadata for frame %d: %s (%d)",
                         frameNumber, strerror(-res), res);
@@ -452,9 +457,12 @@ void sendCaptureResult(
             }
         }
 
-        zoomRatioIs1 = cameraIdsWithZoom.find(cameraId) == cameraIdsWithZoom.end();
+        // Note: Physical camera continues to use SCALER_CROP_REGION to reflect
+        // zoom levels. Model this by treating app-set ZOOM_RATIO as 1x.
         res = states.zoomRatioMappers[cameraId].updateCaptureResult(
-                &physicalMetadata.mPhysicalCameraMetadata, zoomRatioIs1);
+                &physicalMetadata.mCameraMetadataInfo.get<CameraMetadataInfo::metadata>(),
+                /*zoomMethodIsRatio*/false,
+                /*zoomRatioIs1*/true);
         if (res != OK) {
             SET_ERR("Failed to update camera %s's physical zoom ratio metadata for "
                     "frame %d: %s(%d)", cameraId.c_str(), frameNumber, strerror(-res), res);
@@ -472,7 +480,7 @@ void sendCaptureResult(
         const std::string &cameraId = physicalMetadata.mPhysicalCameraId;
         res = fixupMonochromeTags(states,
                 states.physicalDeviceInfoMap.at(cameraId),
-                physicalMetadata.mPhysicalCameraMetadata);
+                physicalMetadata.mCameraMetadataInfo.get<CameraMetadataInfo::metadata>());
         if (res != OK) {
             SET_ERR("Failed to override result metadata: %s (%d)", strerror(-res), res);
             return;
@@ -482,7 +490,7 @@ void sendCaptureResult(
     std::unordered_map<std::string, CameraMetadata> monitoredPhysicalMetadata;
     for (auto& m : physicalMetadatas) {
         monitoredPhysicalMetadata.emplace(m.mPhysicalCameraId,
-                CameraMetadata(m.mPhysicalCameraMetadata));
+                CameraMetadata(m.mCameraMetadataInfo.get<CameraMetadataInfo::metadata>()));
     }
     states.tagMonitor.monitorMetadata(TagMonitor::RESULT,
             frameNumber, sensorTimestamp, captureResult.mMetadata,
@@ -685,7 +693,8 @@ void processCaptureResult(CaptureOutputStates& states, const camera_capture_resu
                         if (orientation.count > 0) {
                             int32_t transform;
                             ret = CameraUtils::getRotationTransform(deviceInfo->second,
-                                    OutputConfiguration::MIRROR_MODE_AUTO, &transform);
+                                    OutputConfiguration::MIRROR_MODE_AUTO,
+                                            /*transformInverseDisplay*/true, &transform);
                             if (ret == OK) {
                                 // It is possible for camera providers to return the capture
                                 // results after the processed frames. In such scenario, we will
@@ -828,7 +837,7 @@ void processCaptureResult(CaptureOutputStates& states, const camera_capture_resu
                 sendCaptureResult(states, metadata, request.resultExtras,
                     collectedPartialResult, frameNumber,
                     hasInputBufferInRequest, request.zslCapture && request.stillCapture,
-                    request.rotateAndCropAuto, cameraIdsWithZoom,
+                    request.rotateAndCropAuto, cameraIdsWithZoom, request.useZoomRatio,
                     request.physicalMetadatas);
             }
         }
@@ -894,8 +903,7 @@ void collectReturnableOutputBuffers(
 
         if (outputBuffers[i].buffer == nullptr) {
             if (!useHalBufManager &&
-                    !(flags::session_hal_buf_manager() &&
-                            contains(halBufferManagedStreams, streamId))) {
+                    !contains(halBufferManagedStreams, streamId)) {
                 // With HAL buffer management API, HAL sometimes will have to return buffers that
                 // has not got a output buffer handle filled yet. This is though illegal if HAL
                 // buffer management API is not being used.
@@ -1098,7 +1106,8 @@ void notifyShutter(CaptureOutputStates& states, const camera_shutter_msg_t &msg)
                     r.pendingMetadata, r.resultExtras,
                     r.collectedPartialResult, msg.frame_number,
                     r.hasInputBuffer, r.zslCapture && r.stillCapture,
-                    r.rotateAndCropAuto, cameraIdsWithZoom, r.physicalMetadatas);
+                    r.rotateAndCropAuto, cameraIdsWithZoom, r.useZoomRatio,
+                    r.physicalMetadatas);
             }
             collectAndRemovePendingOutputBuffers(
                     states.useHalBufManager, states.halBufManagedStreamIds,

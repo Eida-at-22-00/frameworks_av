@@ -16,10 +16,9 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "C2SoftMpeg2Dec"
-#ifndef KEEP_THREADS_ACTIVE
-#define KEEP_THREADS_ACTIVE 0
-#endif
 #include <log/log.h>
+
+#include <android_media_swcodec_flags.h>
 
 #include <media/stagefright/foundation/MediaDefs.h>
 
@@ -320,14 +319,7 @@ C2SoftMpeg2Dec::C2SoftMpeg2Dec(
         c2_node_id_t id,
         const std::shared_ptr<IntfImpl> &intfImpl)
     : SimpleC2Component(std::make_shared<SimpleInterface<IntfImpl>>(name, id, intfImpl)),
-        mIntf(intfImpl),
-        mDecHandle(nullptr),
-        mMemRecords(nullptr),
-        mOutBufferDrain(nullptr),
-        mIvColorformat(IV_YUV_420P),
-        mWidth(320),
-        mHeight(240),
-        mOutIndex(0u) {
+        mIntf(intfImpl) {
     // If input dump is enabled, then open create an empty file
     GENERATE_FILE_NAMES();
     CREATE_DUMP_FILE(mInFile);
@@ -436,7 +428,7 @@ status_t C2SoftMpeg2Dec::fillMemRecords() {
 
     s_fill_mem_ip.s_ivd_fill_mem_rec_ip_t.u4_size = sizeof(ivdext_fill_mem_rec_ip_t);
     s_fill_mem_ip.u4_share_disp_buf = 0;
-    s_fill_mem_ip.u4_keep_threads_active = KEEP_THREADS_ACTIVE;
+    s_fill_mem_ip.u4_keep_threads_active = mKeepThreadsActive;
     s_fill_mem_ip.e_output_format = mIvColorformat;
     s_fill_mem_ip.u4_deinterlace = 1;
     s_fill_mem_ip.s_ivd_fill_mem_rec_ip_t.e_cmd = IV_CMD_FILL_NUM_MEM_REC;
@@ -478,7 +470,7 @@ status_t C2SoftMpeg2Dec::createDecoder() {
     s_init_ip.s_ivd_init_ip_t.u4_frm_max_ht = mHeight;
     s_init_ip.u4_share_disp_buf = 0;
     s_init_ip.u4_deinterlace = 1;
-    s_init_ip.u4_keep_threads_active = KEEP_THREADS_ACTIVE;
+    s_init_ip.u4_keep_threads_active = mKeepThreadsActive;
     s_init_ip.s_ivd_init_ip_t.u4_num_mem_rec = mNumMemRecords;
     s_init_ip.s_ivd_init_ip_t.e_output_format = mIvColorformat;
     s_init_op.s_ivd_init_op_t.u4_size = sizeof(ivdext_init_op_t);
@@ -571,6 +563,7 @@ status_t C2SoftMpeg2Dec::initDecoder() {
     status_t ret = getNumMemRecords();
     if (OK != ret) return ret;
 
+    mKeepThreadsActive = android::media::swcodec::flags::mpeg2_keep_threads_active();
     ret = fillMemRecords();
     if (OK != ret) return ret;
 
@@ -743,6 +736,25 @@ void C2SoftMpeg2Dec::resetPlugin() {
 }
 
 status_t C2SoftMpeg2Dec::deleteDecoder() {
+    // API call to IV_CMD_RETRIEVE_MEMREC not only retrieves the memory records
+    // but also joins active threads and destroys conditional thread variables and
+    // mutex locks for each thread.
+    iv_retrieve_mem_rec_ip_t s_retrieve_mem_ip;
+    iv_retrieve_mem_rec_op_t s_retrieve_mem_op;
+
+    s_retrieve_mem_ip.pv_mem_rec_location = (iv_mem_rec_t *)mMemRecords;
+    s_retrieve_mem_ip.e_cmd = IV_CMD_RETRIEVE_MEMREC;
+    s_retrieve_mem_ip.u4_size = sizeof(iv_retrieve_mem_rec_ip_t);
+    s_retrieve_mem_op.u4_size = sizeof(iv_retrieve_mem_rec_op_t);
+
+    IV_API_CALL_STATUS_T status = ivdec_api_function(mDecHandle,
+                                                    &s_retrieve_mem_ip,
+                                                    &s_retrieve_mem_op);
+    if (IV_SUCCESS != status) {
+        ALOGE("error in %s: 0x%x", __func__, s_retrieve_mem_op.u4_error_code);
+        return UNKNOWN_ERROR;
+    }
+
     if (mMemRecords) {
         iv_mem_rec_t *ps_mem_rec = mMemRecords;
 

@@ -99,23 +99,21 @@ status_t Camera::unlock()
     return c->unlock();
 }
 
-// pass the buffered IGraphicBufferProducer to the camera service
-status_t Camera::setPreviewTarget(const sp<IGraphicBufferProducer>& bufferProducer)
-{
-    ALOGV("setPreviewTarget(%p)", bufferProducer.get());
-    sp <::android::hardware::ICamera> c = mCamera;
+// pass the Surface to the camera service
+status_t Camera::setPreviewTarget(const sp<SurfaceType>& target) {
+    ALOGV("setPreviewTarget(%p)", target.get());
+    sp<::android::hardware::ICamera> c = mCamera;
     if (c == 0) return NO_INIT;
-    ALOGD_IF(bufferProducer == 0, "app passed NULL surface");
-    return c->setPreviewTarget(bufferProducer);
+    ALOGD_IF(target == 0, "app passed NULL surface");
+    return c->setPreviewTarget(target);
 }
 
-status_t Camera::setVideoTarget(const sp<IGraphicBufferProducer>& bufferProducer)
-{
-    ALOGV("setVideoTarget(%p)", bufferProducer.get());
-    sp <::android::hardware::ICamera> c = mCamera;
+status_t Camera::setVideoTarget(const sp<SurfaceType>& target) {
+    ALOGV("setVideoTarget(%p)", target.get());
+    sp<::android::hardware::ICamera> c = mCamera;
     if (c == 0) return NO_INIT;
-    ALOGD_IF(bufferProducer == 0, "app passed NULL video surface");
-    return c->setVideoTarget(bufferProducer);
+    ALOGD_IF(target == 0, "app passed NULL video surface");
+    return c->setVideoTarget(target);
 }
 
 // start preview mode
@@ -272,12 +270,10 @@ void Camera::setPreviewCallbackFlags(int flag)
     c->setPreviewCallbackFlag(flag);
 }
 
-status_t Camera::setPreviewCallbackTarget(
-        const sp<IGraphicBufferProducer>& callbackProducer)
-{
-    sp <::android::hardware::ICamera> c = mCamera;
+status_t Camera::setPreviewCallbackTarget(const sp<SurfaceType>& target) {
+    sp<::android::hardware::ICamera> c = mCamera;
     if (c == 0) return NO_INIT;
-    return c->setPreviewCallbackTarget(callbackProducer);
+    return c->setPreviewCallbackTarget(target);
 }
 
 status_t Camera::setAudioRestriction(int32_t mode)

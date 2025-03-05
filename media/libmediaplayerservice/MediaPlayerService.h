@@ -28,6 +28,7 @@
 #include <utils/Vector.h>
 
 #include <media/AidlConversion.h>
+#include <media/AudioContainers.h>
 #include <media/AudioResamplerPublic.h>
 #include <media/AudioSystem.h>
 #include <media/AudioTrack.h>
@@ -104,14 +105,14 @@ class MediaPlayerService : public BnMediaPlayerService
         virtual int64_t         getBufferDurationInUs() const;
         virtual audio_output_flags_t getFlags() const { return mFlags; }
 
-        virtual status_t        open(
+        status_t open(
                 uint32_t sampleRate, int channelCount, audio_channel_mask_t channelMask,
                 audio_format_t format, int bufferCount,
-                AudioCallback cb, void *cookie,
+                AudioCallback cb, const wp<RefBase>& cookie,
                 audio_output_flags_t flags = AUDIO_OUTPUT_FLAG_NONE,
                 const audio_offload_info_t *offloadInfo = NULL,
                 bool doNotReconnect = false,
-                uint32_t suggestedFrameCount = 0);
+                uint32_t suggestedFrameCount = 0) override;
 
         virtual void            setPlayerIId(int32_t playerIId);
 
@@ -148,7 +149,7 @@ class MediaPlayerService : public BnMediaPlayerService
 
         // AudioRouting
         virtual status_t        setOutputDevice(audio_port_handle_t deviceId);
-        virtual status_t        getRoutedDeviceId(audio_port_handle_t* deviceId);
+        virtual status_t        getRoutedDeviceIds(DeviceIdVector& deviceIds);
         virtual status_t        enableAudioDeviceCallback(bool enabled);
 
     private:
@@ -164,7 +165,7 @@ class MediaPlayerService : public BnMediaPlayerService
         sp<AudioOutput>         mNextOutput;
         int                     mCachedPlayerIId;
         AudioCallback           mCallback;
-        void *                  mCallbackCookie;
+        wp<RefBase>             mCallbackCookie;
         sp<CallbackData>        mCallbackData;
         audio_stream_type_t     mStreamType;
         audio_attributes_t *    mAttributes;
@@ -181,7 +182,7 @@ class MediaPlayerService : public BnMediaPlayerService
         audio_output_flags_t    mFlags;
         sp<media::VolumeHandler>       mVolumeHandler;
         audio_port_handle_t     mSelectedDeviceId;
-        audio_port_handle_t     mRoutedDeviceId;
+        DeviceIdVector          mRoutedDeviceIds;
         bool                    mDeviceCallbackEnabled;
         wp<AudioSystem::AudioDeviceCallback>        mDeviceCallback;
         mutable Mutex           mLock;
@@ -402,7 +403,7 @@ private:
         virtual status_t releaseDrm();
         // AudioRouting
         virtual status_t setOutputDevice(audio_port_handle_t deviceId);
-        virtual status_t getRoutedDeviceId(audio_port_handle_t* deviceId);
+        virtual status_t getRoutedDeviceIds(DeviceIdVector& deviceIds);
         virtual status_t enableAudioDeviceCallback(bool enabled);
 
     private:
@@ -415,7 +416,7 @@ private:
             ~AudioDeviceUpdatedNotifier() {}
 
             virtual void onAudioDeviceUpdate(audio_io_handle_t audioIo,
-                                             audio_port_handle_t deviceId);
+                                             const DeviceIdVector& deviceIds);
 
         private:
             wp<MediaPlayerBase> mListener;

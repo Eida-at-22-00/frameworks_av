@@ -26,6 +26,7 @@
 #include <sys/syscall.h>
 
 #include <aaudio/AAudio.h>
+#include <android-base/strings.h>
 
 #include "AudioStreamBuilder.h"
 #include "AudioStream.h"
@@ -79,7 +80,7 @@ aaudio_result_t AudioStream::open(const AudioStreamBuilder& builder)
     mSamplesPerFrame = builder.getSamplesPerFrame();
     mChannelMask = builder.getChannelMask();
     mSampleRate = builder.getSampleRate();
-    mDeviceId = builder.getDeviceId();
+    mDeviceIds = builder.getDeviceIds();
     mFormat = builder.getFormat();
     mSharingMode = builder.getSharingMode();
     mSharingModeMatchRequired = builder.isSharingModeMatchRequired();
@@ -93,6 +94,7 @@ aaudio_result_t AudioStream::open(const AudioStreamBuilder& builder)
     if (mContentType == AAUDIO_UNSPECIFIED) {
         mContentType = AAUDIO_CONTENT_TYPE_MUSIC;
     }
+    mTags = builder.getTags();
     mSpatializationBehavior = builder.getSpatializationBehavior();
     // for consistency with other properties, note UNSPECIFIED is the same as AUTO
     if (mSpatializationBehavior == AAUDIO_UNSPECIFIED) {
@@ -115,6 +117,8 @@ aaudio_result_t AudioStream::open(const AudioStreamBuilder& builder)
     mErrorCallbackProc = builder.getErrorCallbackProc();
     mDataCallbackUserData = builder.getDataCallbackUserData();
     mErrorCallbackUserData = builder.getErrorCallbackUserData();
+    setPresentationEndCallbackUserData(builder.getPresentationEndCallbackUserData());
+    setPresentationEndCallbackProc(builder.getPresentationEndCallbackProc());
 
     return AAUDIO_OK;
 }
@@ -203,7 +207,7 @@ aaudio_result_t AudioStream::systemStart() {
     aaudio_result_t result = requestStart_l();
     if (result == AAUDIO_OK) {
         // We only call this for logging in "dumpsys audio". So ignore return code.
-        (void) mPlayerBase->startWithStatus(getDeviceId());
+        (void) mPlayerBase->startWithStatus(getDeviceIds());
     }
     return result;
 }
@@ -284,6 +288,10 @@ aaudio_result_t AudioStream::safeFlush() {
 
 aaudio_result_t AudioStream::systemStopInternal() {
     std::lock_guard<std::mutex> lock(mStreamLock);
+    return systemStopInternal_l();
+}
+
+aaudio_result_t AudioStream::systemStopInternal_l() {
     aaudio_result_t result = safeStop_l();
     if (result == AAUDIO_OK) {
         // We only call this for logging in "dumpsys audio". So ignore return code.
@@ -650,6 +658,10 @@ aaudio_stream_state_t AudioStream::getStateExternal() const {
         return AAUDIO_STREAM_STATE_DISCONNECTED;
     }
     return getState();
+}
+
+std::string AudioStream::getTagsAsString() const {
+    return android::base::Join(mTags, AUDIO_ATTRIBUTES_TAGS_SEPARATOR);
 }
 
 void AudioStream::MyPlayerBase::registerWithAudioManager(const android::sp<AudioStream>& parent) {

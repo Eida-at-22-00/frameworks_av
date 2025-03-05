@@ -16,6 +16,9 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "Codec2InfoBuilder"
+
+#include <cstdlib>
+
 #include <log/log.h>
 
 #include <strings.h>
@@ -508,6 +511,10 @@ status_t Codec2InfoBuilder::buildMediaCodecList(MediaCodecListWriter* writer) {
                 && !hasPrefix(v.first, "domain-")
                 && !hasPrefix(v.first, "variant-")) {
             writer->addGlobalSetting(v.first.c_str(), v.second.c_str());
+            if (v.first == "max-concurrent-instances") {
+                MediaCodecInfoWriter::SetMaxSupportedInstances(
+                        (int32_t)strtol(v.second.c_str(), NULL, 10));
+            }
         }
     }
 
@@ -740,6 +747,7 @@ status_t Codec2InfoBuilder::buildMediaCodecList(MediaCodecListWriter* writer) {
                     pixelFormatMap[HAL_PIXEL_FORMAT_YCBCR_P010]    = COLOR_FormatYUVP010;
                     pixelFormatMap[HAL_PIXEL_FORMAT_RGBA_1010102]  = COLOR_Format32bitABGR2101010;
                     pixelFormatMap[HAL_PIXEL_FORMAT_RGBA_FP16]     = COLOR_Format64bitABGRFloat;
+                    pixelFormatMap[AHARDWAREBUFFER_FORMAT_YCbCr_P210]    = COLOR_FormatYUVP210;
 
                     std::shared_ptr<C2StoreFlexiblePixelFormatDescriptorsInfo> pixelFormatInfo;
                     std::vector<std::unique_ptr<C2Param>> heapParams;
@@ -796,6 +804,7 @@ status_t Codec2InfoBuilder::buildMediaCodecList(MediaCodecListWriter* writer) {
                     }
                 }
             }
+            codecInfo->createCodecCaps();
         }
     }
     return OK;

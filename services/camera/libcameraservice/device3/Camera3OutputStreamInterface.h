@@ -34,7 +34,7 @@ class Camera3OutputStreamInterface : public virtual Camera3StreamInterface {
      * Set the transform on the output stream; one of the
      * HAL_TRANSFORM_* / NATIVE_WINDOW_TRANSFORM_* constants.
      */
-    virtual status_t setTransform(int transform, bool mayChangeMirror) = 0;
+    virtual status_t setTransform(int transform, bool mayChangeMirror, int surfaceId = 0) = 0;
 
     /**
      * Return if this output stream is for video encoding.
@@ -49,7 +49,7 @@ class Camera3OutputStreamInterface : public virtual Camera3StreamInterface {
     /**
      * Set the consumer surfaces to the output stream.
      */
-    virtual status_t setConsumers(const std::vector<sp<Surface>>& consumers) = 0;
+    virtual status_t setConsumers(const std::vector<SurfaceHolder>& consumers) = 0;
 
     /**
      * Detach an unused buffer from the stream.
@@ -81,7 +81,7 @@ class Camera3OutputStreamInterface : public virtual Camera3StreamInterface {
     /**
      * Update the stream output surfaces.
      */
-    virtual status_t updateStream(const std::vector<sp<Surface>> &outputSurfaces,
+    virtual status_t updateStream(const std::vector<SurfaceHolder> &outputSurfaces,
             const std::vector<OutputStreamInfo> &outputInfo,
             const std::vector<size_t> &removedSurfaceIds,
             KeyedVector<sp<Surface>, size_t> *outputMap/*out*/) = 0;

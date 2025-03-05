@@ -33,10 +33,8 @@ namespace android {
  * PCM then we need to wrap the data in an SPDIF wrapper.
  */
 SpdifStreamOut::SpdifStreamOut(AudioHwDevice *dev,
-            audio_output_flags_t flags,
             audio_format_t format)
-        // Tell the HAL that the data will be compressed audio wrapped in a data burst.
-        : AudioStreamOut(dev, (audio_output_flags_t) (flags | AUDIO_OUTPUT_FLAG_IEC958_NONAUDIO))
+        : AudioStreamOut(dev)
         , mSpdifEncoder(this, format)
 {
 }
@@ -45,6 +43,7 @@ status_t SpdifStreamOut::open(
         audio_io_handle_t handle,
         audio_devices_t devices,
         struct audio_config *config,
+        audio_output_flags_t *flags,
         const char *address,
         const std::vector<playback_track_metadata_v7_t>& sourceMetadata)
 {
@@ -63,6 +62,8 @@ status_t SpdifStreamOut::open(
 
     customConfig.format = AUDIO_FORMAT_PCM_16_BIT;
     customConfig.channel_mask = AUDIO_CHANNEL_OUT_STEREO;
+    // Tell the HAL that the data will be compressed audio wrapped in a data burst.
+    *flags = (audio_output_flags_t)(*flags | AUDIO_OUTPUT_FLAG_IEC958_NONAUDIO);
 
     // Always print this because otherwise it could be very confusing if the
     // HAL and AudioFlinger are using different formats.
@@ -76,8 +77,14 @@ status_t SpdifStreamOut::open(
             handle,
             devices,
             &customConfig,
+            flags,
             address,
             sourceMetadata);
+
+    // reset config back to whatever is returned by HAL
+    config->sample_rate = customConfig.sample_rate;
+    config->format = customConfig.format;
+    config->channel_mask = customConfig.channel_mask;
 
     ALOGI("SpdifStreamOut::open() status = %d", status);
 

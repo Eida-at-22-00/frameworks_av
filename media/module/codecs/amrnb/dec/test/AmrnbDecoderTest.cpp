@@ -22,6 +22,7 @@
 
 #include <audio_utils/sndfile.h>
 #include <stdio.h>
+#include <fstream>
 
 #include "gsmamr_dec.h"
 
@@ -40,7 +41,7 @@ constexpr int32_t kNumFrameReset = 150;
 
 static AmrnbDecTestEnvironment *gEnv = nullptr;
 
-class AmrnbDecoderTest : public ::testing::TestWithParam<string> {
+class AmrnbDecoderTest : public ::testing::TestWithParam<std::tuple<string, string>> {
   public:
     AmrnbDecoderTest() : mFpInput(nullptr) {}
 
@@ -54,6 +55,7 @@ class AmrnbDecoderTest : public ::testing::TestWithParam<string> {
     FILE *mFpInput;
     SNDFILE *openOutputFile(SF_INFO *sfInfo);
     int32_t DecodeFrames(void *amrHandle, SNDFILE *outFileHandle, int32_t frameCount = INT32_MAX);
+    bool compareBinaryFiles(const std::string& refFilePath, const std::string& outFilePath);
 };
 
 SNDFILE *AmrnbDecoderTest::openOutputFile(SF_INFO *sfInfo) {
@@ -97,6 +99,42 @@ int32_t AmrnbDecoderTest::DecodeFrames(void *amrHandle, SNDFILE *outFileHandle,
     return 0;
 }
 
+bool AmrnbDecoderTest::compareBinaryFiles(const std::string &refFilePath,
+                                          const std::string &outFilePath) {
+    std::ifstream refFile(refFilePath, std::ios::binary | std::ios::ate);
+    std::ifstream outFile(outFilePath, std::ios::binary | std::ios::ate);
+    assert(refFile.is_open() && "Error opening reference file " + refFilePath);
+    assert(outFile.is_open() && "Error opening output file " + outFilePath);
+
+    std::streamsize refFileSize = refFile.tellg();
+    std::streamsize outFileSize = outFile.tellg();
+    if (refFileSize != outFileSize) {
+        ALOGE("Error, File size mismatch: Reference file size = %td bytes,"
+              " but output file size = %td bytes.", refFileSize, outFileSize);
+        return false;
+    }
+
+    refFile.seekg(0, std::ios::beg);
+    outFile.seekg(0, std::ios::beg);
+    constexpr std::streamsize kBufferSize = 16 * 1024;
+    char refBuffer[kBufferSize];
+    char outBuffer[kBufferSize];
+
+    while (refFile && outFile) {
+        refFile.read(refBuffer, kBufferSize);
+        outFile.read(outBuffer, kBufferSize);
+
+        std::streamsize refBytesRead = refFile.gcount();
+        std::streamsize outBytesRead = outFile.gcount();
+
+        if (refBytesRead != outBytesRead || memcmp(refBuffer, outBuffer, refBytesRead) != 0) {
+            ALOGE("Error, File content mismatch.");
+            return false;
+        }
+    }
+    return true;
+}
+
 TEST_F(AmrnbDecoderTest, CreateAmrnbDecoderTest) {
     void *amrHandle;
     int32_t status = GSMInitDecode(&amrHandle, (Word8 *)"AMRNBDecoder");
@@ -106,7 +144,7 @@ TEST_F(AmrnbDecoderTest, CreateAmrnbDecoderTest) {
 }
 
 TEST_P(AmrnbDecoderTest, DecodeTest) {
-    string inputFile = gEnv->getRes() + GetParam();
+    string inputFile = gEnv->getRes() + std::get<0>(GetParam());
     mFpInput = fopen(inputFile.c_str(), "rb");
     ASSERT_NE(mFpInput, nullptr) << "Error opening input file " << inputFile;
 
@@ -126,10 +164,15 @@ TEST_P(AmrnbDecoderTest, DecodeTest) {
     sf_close(outFileHandle);
     GSMDecodeFrameExit(&amrHandle);
     ASSERT_EQ(amrHandle, nullptr) << "Error deleting AMR-NB decoder";
+
+    string refFilePath = gEnv->getRes() + std::get<1>(GetParam());
+    ASSERT_TRUE(compareBinaryFiles(refFilePath, OUTPUT_FILE))
+       << "Error, Binary file comparison failed: Output file " << OUTPUT_FILE
+       << " does not match the reference file " << refFilePath << ".";
 }
 
 TEST_P(AmrnbDecoderTest, ResetDecodeTest) {
-    string inputFile = gEnv->getRes() + GetParam();
+    string inputFile = gEnv->getRes() + std::get<0>(GetParam());
     mFpInput = fopen(inputFile.c_str(), "rb");
     ASSERT_NE(mFpInput, nullptr) << "Error opening input file " << inputFile;
 
@@ -159,8 +202,24 @@ TEST_P(AmrnbDecoderTest, ResetDecodeTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(AmrnbDecoderTestAll, AmrnbDecoderTest,
-                         ::testing::Values(("bbb_8000hz_1ch_8kbps_amrnb_30sec.amrnb"),
-                                           ("sine_amrnb_1ch_12kbps_8000hz.amrnb")));
+                         ::testing::Values(std::make_tuple(
+                                                   "bbb_8000hz_1ch_8kbps_amrnb_30sec.amrnb",
+                                                   "bbb_8000hz_1ch_8kbps_amrnb_30sec_ref.pcm"),
+                                           std::make_tuple(
+                                                   "sine_amrnb_1ch_12kbps_8000hz.amrnb",
+                                                   "sine_amrnb_1ch_12kbps_8000hz_ref.pcm"),
+                                           std::make_tuple(
+                                                   "trim_8000hz_1ch_12kpbs_amrnb_200ms.amrnb",
+                                                   "trim_8000hz_1ch_12kpbs_amrnb_200ms_ref.pcm"),
+                                           std::make_tuple(
+                                                   "bbb_8kHz_1ch_4.75kbps_amrnb_3sec.amrnb",
+                                                   "bbb_8kHz_1ch_4.75kbps_amrnb_3sec_ref.pcm"),
+                                           std::make_tuple(
+                                                   "bbb_8kHz_1ch_10kbps_amrnb_1sec.amrnb",
+                                                   "bbb_8kHz_1ch_10kbps_amrnb_1sec_ref.pcm"),
+                                           std::make_tuple(
+                                                   "bbb_8kHz_1ch_12.2kbps_amrnb_3sec.amrnb",
+                                                   "bbb_8kHz_1ch_12.2kbps_amrnb_3sec_ref.pcm")));
 
 int main(int argc, char **argv) {
     gEnv = new AmrnbDecTestEnvironment();

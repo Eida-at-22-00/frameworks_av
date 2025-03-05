@@ -119,8 +119,42 @@ enum {
      *
      * Available since API level 34.
      */
-    AAUDIO_FORMAT_IEC61937
+    AAUDIO_FORMAT_IEC61937,
 
+    /**
+     * This format is used for audio compressed in MP3 format.
+     */
+    AAUDIO_FORMAT_MP3,
+
+    /**
+     * This format is used for audio compressed in AAC LC format.
+     */
+    AAUDIO_FORMAT_AAC_LC,
+
+    /**
+     * This format is used for audio compressed in AAC HE V1 format.
+     */
+    AAUDIO_FORMAT_AAC_HE_V1,
+
+    /**
+     * This format is used for audio compressed in AAC HE V2 format.
+     */
+    AAUDIO_FORMAT_AAC_HE_V2,
+
+    /**
+     * This format is used for audio compressed in AAC ELD format.
+     */
+    AAUDIO_FORMAT_AAC_ELD,
+
+    /**
+     * This format is used for audio compressed in AAC XHE format.
+     */
+    AAUDIO_FORMAT_AAC_XHE,
+
+    /**
+     * This format is used for audio compressed in OPUS.
+     */
+    AAUDIO_FORMAT_OPUS
 };
 typedef int32_t aaudio_format_t;
 
@@ -335,7 +369,23 @@ enum {
     /**
      * Reducing latency is more important than battery life.
      */
-    AAUDIO_PERFORMANCE_MODE_LOW_LATENCY
+    AAUDIO_PERFORMANCE_MODE_LOW_LATENCY,
+
+    /**
+     * Extending battery life is more important than low latency.
+     *
+     * This mode is not supported in input streams.
+     * This mode will play through the offloaded audio path to save battery life.
+     *
+     * Comparing to mode {@link #AAUDIO_PERFORMANCE_MODE_POWER_SAVING}, the stream at
+     * this mode will be able to write a large amount(several seconds) of data within a
+     * short time. The written data will be queued in a hardware buffer. After that, the
+     * app can suspend its thread/process that playing audio, the audio framework's data
+     * pipe will be suspended automatically and the CPU will be allowed to sleep for
+     * power saving. When all queued data are played, the apps will be able to get callback
+     * to feed more data.
+     */
+    AAUDIO_PERFORMANCE_MODE_POWER_SAVING_OFFLOADED
 };
 typedef int32_t aaudio_performance_mode_t;
 
@@ -845,6 +895,180 @@ enum {
 };
 typedef uint32_t aaudio_channel_mask_t;
 
+// The values are copied from JAVA SDK device types defined in android/media/AudioDeviceInfo.java
+// When a new value is added, it should be added here and handled by the conversion at
+// AAudioConvert_aaudioToAndroidDeviceType.
+typedef enum AAudio_DeviceType : int32_t {
+    /**
+     * A device type describing the attached earphone speaker.
+     */
+    AAUDIO_DEVICE_BUILTIN_EARPIECE = 1,
+
+    /**
+     * A device type describing the speaker system (i.e. a mono speaker or stereo speakers) built
+     * in a device.
+     */
+    AAUDIO_DEVICE_BUILTIN_SPEAKER = 2,
+
+    /**
+     * A device type describing a headset, which is the combination of a headphones and microphone.
+     */
+    AAUDIO_DEVICE_WIRED_HEADSET = 3,
+
+    /**
+     * A device type describing a pair of wired headphones.
+     */
+    AAUDIO_DEVICE_WIRED_HEADPHONES = 4,
+
+    /**
+     * A device type describing an analog line-level connection.
+     */
+    AAUDIO_DEVICE_LINE_ANALOG = 5,
+
+    /**
+     * A device type describing a digital line connection (e.g. SPDIF).
+     */
+    AAUDIO_DEVICE_LINE_DIGITAL = 6,
+
+    /**
+     * A device type describing a Bluetooth device typically used for telephony.
+     */
+    AAUDIO_DEVICE_BLUETOOTH_SCO = 7,
+
+    /**
+     * A device type describing a Bluetooth device supporting the A2DP profile.
+     */
+    AAUDIO_DEVICE_BLUETOOTH_A2DP = 8,
+
+    /**
+     * A device type describing an HDMI connection .
+     */
+    AAUDIO_DEVICE_HDMI = 9,
+
+    /**
+     * A device type describing the Audio Return Channel of an HDMI connection.
+     */
+    AAUDIO_DEVICE_HDMI_ARC = 10,
+
+    /**
+     * A device type describing a USB audio device.
+     */
+    AAUDIO_DEVICE_USB_DEVICE = 11,
+
+    /**
+     * A device type describing a USB audio device in accessory mode.
+     */
+    AAUDIO_DEVICE_USB_ACCESSORY = 12,
+
+    /**
+     * A device type describing the audio device associated with a dock.
+     * Starting at API 34, this device type only represents digital docks, while docks with an
+     * analog connection are represented with {@link #AAUDIO_DEVICE_DOCK_ANALOG}.
+     */
+    AAUDIO_DEVICE_DOCK = 13,
+
+    /**
+     * A device type associated with the transmission of audio signals over FM.
+     */
+    AAUDIO_DEVICE_FM = 14,
+
+    /**
+     * A device type describing the microphone(s) built in a device.
+     */
+    AAUDIO_DEVICE_BUILTIN_MIC = 15,
+
+    /**
+     * A device type for accessing the audio content transmitted over FM.
+     */
+    AAUDIO_DEVICE_FM_TUNER = 16,
+
+    /**
+     * A device type for accessing the audio content transmitted over the TV tuner system.
+     */
+    AAUDIO_DEVICE_TV_TUNER = 17,
+
+    /**
+     * A device type describing the transmission of audio signals over the telephony network.
+     */
+    AAUDIO_DEVICE_TELEPHONY = 18,
+
+    /**
+     * A device type describing the auxiliary line-level connectors.
+     */
+    AAUDIO_DEVICE_AUX_LINE = 19,
+
+    /**
+     * A device type connected over IP.
+     */
+    AAUDIO_DEVICE_IP = 20,
+
+    /**
+     * A type-agnostic device used for communication with external audio systems.
+     */
+    AAUDIO_DEVICE_BUS = 21,
+
+    /**
+     * A device type describing a USB audio headset.
+     */
+    AAUDIO_DEVICE_USB_HEADSET = 22,
+
+    /**
+     * A device type describing a Hearing Aid.
+     */
+    AAUDIO_DEVICE_HEARING_AID = 23,
+
+    /**
+     * A device type describing the speaker system (i.e. a mono speaker or stereo speakers) built
+     * in a device, that is specifically tuned for outputting sounds like notifications and alarms
+     * (i.e. sounds the user couldn't necessarily anticipate).
+     * <p>Note that this physical audio device may be the same as {@link #TYPE_BUILTIN_SPEAKER}
+     * but is driven differently to safely accommodate the different use case.</p>
+     */
+    AAUDIO_DEVICE_BUILTIN_SPEAKER_SAFE = 24,
+
+    /**
+     * A device type for rerouting audio within the Android framework between mixes and
+     * system applications.
+     */
+    AAUDIO_DEVICE_REMOTE_SUBMIX = 25,
+    /**
+     * A device type describing a Bluetooth Low Energy (BLE) audio headset or headphones.
+     * Headphones are grouped with headsets when the device is a sink:
+     * the features of headsets and headphones with regard to playback are the same.
+     */
+    AAUDIO_DEVICE_BLE_HEADSET = 26,
+
+    /**
+     * A device type describing a Bluetooth Low Energy (BLE) audio speaker.
+     */
+    AAUDIO_DEVICE_BLE_SPEAKER = 27,
+
+    /**
+     * A device type describing an Echo Canceller loopback Reference.
+     * This device is only used when capturing with MediaRecorder.AudioSource.ECHO_REFERENCE,
+     * which requires privileged permission
+     * {@link android.Manifest.permission#CAPTURE_AUDIO_OUTPUT}.
+     *
+     * Note that this is not exposed as it is a system API that requires privileged permission.
+     */
+    // AAUDIO_DEVICE_ECHO_REFERENCE = 28,
+
+    /**
+     * A device type describing the Enhanced Audio Return Channel of an HDMI connection.
+     */
+    AAUDIO_DEVICE_HDMI_EARC = 29,
+
+    /**
+     * A device type describing a Bluetooth Low Energy (BLE) broadcast group.
+     */
+    AAUDIO_DEVICE_BLE_BROADCAST = 30,
+
+    /**
+     * A device type describing the audio device associated with a dock using an analog connection.
+     */
+    AAUDIO_DEVICE_DOCK_ANALOG = 31
+} AAudio_DeviceType;
+
 typedef struct AAudioStreamStruct         AAudioStream;
 typedef struct AAudioStreamBuilderStruct  AAudioStreamBuilder;
 
@@ -1090,7 +1314,8 @@ AAUDIO_API void AAudioStreamBuilder_setBufferCapacityInFrames(
  * Set the requested performance mode.
  *
  * Supported modes are {@link #AAUDIO_PERFORMANCE_MODE_NONE},
- * {@link #AAUDIO_PERFORMANCE_MODE_POWER_SAVING} * and {@link #AAUDIO_PERFORMANCE_MODE_LOW_LATENCY}.
+ * {@link #AAUDIO_PERFORMANCE_MODE_POWER_SAVING}, {@link #AAUDIO_PERFORMANCE_MODE_LOW_LATENCY} and
+ * {@link #AAUDIO_PERFORMANCE_MODE_POWER_SAVING_OFFLOADED}.
  *
  * The default, if you do not call this function, is {@link #AAUDIO_PERFORMANCE_MODE_NONE}.
  *
@@ -1473,6 +1698,48 @@ typedef void (*AAudioStream_errorCallback)(
 AAUDIO_API void AAudioStreamBuilder_setErrorCallback(AAudioStreamBuilder* _Nonnull builder,
         AAudioStream_errorCallback _Nullable callback, void* _Nullable userData)
         __INTRODUCED_IN(26);
+
+/**
+ * Prototype for the callback function that is passed to
+ * AAudioStreamBuilder_setPresentationEndCallback().
+ *
+ * This will be called when all the buffers of an offloaded stream that were queued in the audio
+ * system (e.g. the combination of the Android audio framework and the device's audio hardware)
+ * have been played after AudioStream_requestStop() has been called.
+ *
+ * @param stream reference provided by AAudioStreamBuilder_openStream(), which must be an
+ *               output stream as the offloaded mode is only supported for output stream
+ * @param userData the same address that was passed to
+ *                 AAudioStreamBuilder_setPresentationEndCallback().
+ */
+typedef void (*AAudioStream_presentationEndCallback)(AAudioStream* _Nonnull stream,
+                                                     void* _Null_unspecified userData);
+
+/**
+ * Request that AAudio call this function when all the buffers of an offloaded stream that were
+ * queued in the audio system (e.g. the combination of the Android audio framework and the device's
+ * audio hardware) have been played.
+ *
+ * The presentation end callback must be used together with the data callback.
+ * The presentation end callback won't be called if the stream is closed before all the data
+ * is played.
+ *
+ * The callback function will be called from the same thread as the data callback thread,
+ * which is a real-time thread owned by audio framework.
+ * The callback function will not be called after AAudioStream_close() is called.
+ *
+ * Available since API level 36.
+ *
+ * @param builder reference provided by AAudio_createStreamBuilder()
+ * @param callback pointer to a function that will be called when all the buffers of an offloaded
+ *                 stream that were queued have been played.
+ * @param userData pointer to an application data structure that will be passed
+ *                 to the callback functions.
+ */
+AAUDIO_API void AAudioStreamBuilder_setPresentationEndCallback(
+        AAudioStreamBuilder* _Nonnull builder,
+        AAudioStream_presentationEndCallback _Nonnull callback,
+        void* _Nullable userData) __INTRODUCED_IN(36);
 
 /**
  * Open a stream based on the options in the StreamBuilder.
@@ -1909,9 +2176,30 @@ AAUDIO_API int32_t AAudioStream_getSamplesPerFrame(AAudioStream* _Nonnull stream
  * Available since API level 26.
  *
  * @param stream reference provided by AAudioStreamBuilder_openStream()
- * @return actual device ID
+ * @return actual device id. If there are multiple device ids used,
+ *         this will return the first device id from AAudioStream_getDeviceIds().
  */
 AAUDIO_API int32_t AAudioStream_getDeviceId(AAudioStream* _Nonnull stream) __INTRODUCED_IN(26);
+
+/**
+ * Call this function after AAudioStreamBuilder_openStream().
+ * An array of size 16 should generally be large enough to fit all device identifiers.
+ *
+ * Available since API level 36.
+ *
+ * @param stream reference provided by AAudioStreamBuilder_openStream().
+ * @param ids reference to an array of ids.
+ * @params numIds size allocated to the array of ids.
+ *         The input should be the size of the ids array.
+ *         The output will be the actual number of device ids.
+ * @return {@link #AAUDIO_OK} or an error code.
+ *         If numIds is null, return {@link #AAUDIO_ERROR_ILLEGAL_ARGUMENT}.
+ *         If numIds is smaller than the number of device ids, return
+ *         {@link #AAUDIO_ERROR_OUT_OF_RANGE}. The value of numIds will still be updated.
+ *         Otherwise, if ids is null, return {@link #AAUDIO_ERROR_ILLEGAL_ARGUMENT}.
+ */
+AAUDIO_API aaudio_result_t AAudioStream_getDeviceIds(AAudioStream* _Nonnull stream,
+        int32_t* _Nullable ids, int32_t* _Nullable numIds) __INTRODUCED_IN(36);
 
 /**
  * Available since API level 26.
@@ -2165,6 +2453,155 @@ AAUDIO_API bool AAudioStream_isPrivacySensitive(AAudioStream* _Nonnull stream)
  */
 AAUDIO_API aaudio_channel_mask_t AAudioStream_getChannelMask(AAudioStream* _Nonnull stream)
         __INTRODUCED_IN(32);
+
+/**
+ * Configures the delay and padding values for the current stream playing in offload mode.
+ * This should only be used on a stream whose performance mode is
+ * {@link #AAUDIO_PERFORMANCE_MODE_POWER_SAVING_OFFLOADED} and the format is compressed format.
+ * The unit is frames, where a frame includes samples for all audio channels, e.g. 100 frames
+ * for a stereo stream corresponds to 200 interleaved PCM samples.
+ *
+ * @param stream reference provided by AAudioStreamBuilder_openStream()
+ * @param delayInFrames number of frames to be ignored at the beginning of the stream. A value
+ *                      of 0 indicates no delay is to be applied.
+ * @param paddingInFrames number of frames to be ignored at the end of the stream. A value of 0
+ *                        of 0 indicates no padding is to be applied.
+ * @return {@link #AAUDIO_OK} if the delay and padding values are set successfully,
+ *         or {@link #AAUDIO_ERROR_ILLEGAL_ARGUMENT} if delayInFrames or paddingInFrames
+ *         is less than 0,
+ *         or {@link #AAUDIO_ERROR_UNIMPLEMENTED} if the stream is not an output stream whose
+ *         performance mode is {@link #AAUDIO_PERFORMANCE_MODE_POWER_SAVING_OFFLOADED},
+ *         or {@link #AAUDIO_ERROR_INVALID_STATE} if the stream is not yet initialized.
+ */
+AAUDIO_API aaudio_result_t AAudioStream_setOffloadDelayPadding(
+        AAudioStream* _Nonnull stream, int32_t delayInFrames, int32_t paddingInFrames)
+        __INTRODUCED_IN(36);
+
+/**
+ * Return the decoder delay of an offloaded stream in frames.
+ *
+ * @param stream reference provided by AAudioStreamBuilder_openStream()
+ * @return the offload delay in frames that previously set with
+ *         {@link #AAudioStream_setOffloadDelayPadding},
+ *         or 0 if it was never modified,
+ *         or {@link #AAUDIO_ERROR_UNIMPLEMENTED} if the stream is not an output stream whose
+ *         performance mode is {@link #AAUDIO_PERFORMANCE_MODE_POWER_SAVING_OFFLOADED},
+ *         or {@link #AAUDIO_ERROR_INVALID_STATE} if the stream is not yet initialized.
+ */
+AAUDIO_API int32_t AAudioStream_getOffloadDelay(AAudioStream* _Nonnull stream) __INTRODUCED_IN(36);
+
+/**
+ * Return the decoder padding of an offloaded stream in frames.
+ *
+ * @param stream reference provided by AAudioStreamBuilder_openStream()
+ * @return the offload padding in frames that previously set with
+ *         {@link #AAudioStream_setOffloadDelayPadding},
+ *         or 0 if it was never modified,
+ *         or {@link #AAUDIO_ERROR_UNIMPLEMENTED} if the stream is not an output stream whose
+ *         performance mode is {@link #AAUDIO_PERFORMANCE_MODE_POWER_SAVING_OFFLOADED},
+ *         or {@link #AAUDIO_ERROR_INVALID_STATE} if the stream is not yet initialized.
+ */
+AAUDIO_API int32_t AAudioStream_getOffloadPadding(AAudioStream* _Nonnull stream)
+        __INTRODUCED_IN(36);
+
+/**
+ * Declares that the last data writing operation on this stream provided the last buffer of this
+ * stream.
+ * After the end of stream, previously set padding and delay values are ignored. That indicates
+ * all written data will be played.
+ * Use this method in the same thread as any data writing operation.
+ *
+ * @param stream reference provided by AAudioStreamBuilder_openStream()
+ * @return {@link #AAUDIO_OK} on success,
+ *         or {@link #AAUDIO_ERROR_UNIMPLEMENTED} if the stream is not an output stream whose
+ *         performance mode is {@link #AAUDIO_PERFORMANCE_MODE_POWER_SAVING_OFFLOADED},
+ *         or {@link #AAUDIO_ERROR_INVALID_STATE} if the stream is not yet initialized.
+ */
+AAUDIO_API aaudio_result_t AAudioStream_setOffloadEndOfStream(AAudioStream* _Nonnull stream)
+        __INTRODUCED_IN(36);
+
+/************************************************************************************
+ * Helper functions for AAudio MMAP.
+ * AAudio MMAP data path uses a memory region that is shared between the hardware and
+ * the audio software. The shared memory is referenced using a file descriptor that is
+ * generated by the ALSA driver. Apps can read/write directly from/to the shared
+ * memory, which helps improve the audio latency.
+ ************************************************************************************/
+
+/**
+ * When the audio is played/recorded via AAudio MMAP data path, the apps can write to/read from
+ * a shared memory that will also be accessed directly by hardware. That reduces the audio latency.
+ * The following values are used to describe how AAudio MMAP is supported.
+ */
+enum {
+    /**
+     * AAudio MMAP is disabled and never used.
+     */
+    AAUDIO_POLICY_NEVER = 1,
+
+    /**
+     * AAudio MMAP support depends on device's availability. It will be used
+     * when it is possible or fallback to the normal path, where the audio data
+     * will be delivered via audio framework data pipeline.
+     */
+    AAUDIO_POLICY_AUTO,
+
+    /**
+     * AAudio MMAP must be used or fail.
+     */
+    AAUDIO_POLICY_ALWAYS
+};
+typedef int32_t aaudio_policy_t;
+
+/**
+ * Query how aaudio mmap is supported for the given device type.
+ *
+ * @param device device type
+ * @param direction {@link AAUDIO_DIRECTION_OUTPUT} or {@link AAUDIO_DIRECTION_INPUT}
+ * @return the mmap policy or {@link #AAUDIO_ERROR_ILLEGAL_ARGUMENT} if the device or direction
+ *         is invalid or {@link #AAUDIO_ERROR_INTERNAL} if the audio HAL returns error.
+ */
+AAUDIO_API aaudio_policy_t AAudio_getPlatformMMapPolicy(
+        AAudio_DeviceType device, aaudio_direction_t direction) __INTRODUCED_IN(36);
+
+/**
+ * Query how aaudio exclusive mmap is supported for the given device type.
+ *
+ * @param device device type
+ * @param direction {@link AAUDIO_DIRECTION_OUTPUT} or {@link AAUDIO_DIRECTION_INPUT}
+ * @return the mmap exclusive policy or or {@link #AAUDIO_ERROR_ILLEGAL_ARGUMENT} if the device
+ *         or direction is invalid or {@link #AAUDIO_ERROR_INTERNAL} if the audio HAL returns error.
+ */
+AAUDIO_API aaudio_policy_t AAudio_getPlatformMMapExclusivePolicy(
+        AAudio_DeviceType device, aaudio_direction_t direction) __INTRODUCED_IN(36);
+
+/**
+ * Control whether AAudioStreamBuilder_openStream() will use the new MMAP data path
+ * or the older "Legacy" data path.
+ *
+ * This will only affect the current process.
+ *
+ * If unspecified then the policy will be based on system properties or configuration.
+ *
+ * @param policy {@link #AAUDIO_UNSPECIFIED}, {@link #AAUDIO_POLICY_NEVER},
+ *               {@link #AAUDIO_POLICY_AUTO}, or {@link #AAUDIO_POLICY_ALWAYS}
+ * @return AAUDIO_OK or a negative error
+ */
+AAUDIO_API aaudio_result_t AAudio_setMMapPolicy(aaudio_policy_t policy) __INTRODUCED_IN(36);
+
+/**
+ * Get the current MMAP policy set by AAudio_setMMapPolicy().
+ *
+ * @return current policy or {@link #AAUDIO_UNSPECIFIED} if it is never set.
+ */
+AAUDIO_API aaudio_policy_t AAudio_getMMapPolicy() __INTRODUCED_IN(36);
+
+/**
+ * Return true if the stream uses the MMAP data path versus the legacy path.
+ *
+ * @return true if the stream uses the MMAP data path
+ */
+AAUDIO_API bool AAudioStream_isMMapUsed(AAudioStream* _Nonnull stream) __INTRODUCED_IN(36);
 
 #ifdef __cplusplus
 }

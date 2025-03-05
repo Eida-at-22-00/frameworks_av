@@ -52,6 +52,8 @@ static const char *const gReferenceAttributeName = "name";
 
 namespace {
 
+static bool gIsConfigurableEngine = false;
+
 ConversionResult<std::string> aidl2legacy_AudioHalProductStrategy_ProductStrategyType(int id) {
     using AudioProductStrategyType = media::audio::common::AudioProductStrategyType;
 
@@ -547,9 +549,16 @@ status_t ProductStrategyTraits::deserialize(_xmlDoc *doc, const _xmlNode *child,
         if (!convertTo(idLiteral, id)) {
             return BAD_VALUE;
         }
-        ALOGV("%s: %s, %s = %d", __FUNCTION__, name.c_str(), Attributes::id, id);
+    } else {
+        legacy_strategy legacyId;
+        if (legacy_strategy_from_string(name.c_str(), &legacyId)) {
+            id = legacyId;
+        } else if (!gIsConfigurableEngine) {
+            return BAD_VALUE;
+        }
+        // With a configurable engine it can be a vendor-provided strategy name.
     }
-    ALOGV("%s: %s = %s", __FUNCTION__, Attributes::name, name.c_str());
+    ALOGV("%s: %s, %s = %d", __FUNCTION__, name.c_str(), Attributes::id, id);
 
     size_t skipped = 0;
     AttributesGroups attrGroups;
@@ -776,7 +785,7 @@ private:
 
 }  // namespace
 
-ParsingResult parse(const char* path) {
+ParsingResult parse(const char* path, bool isConfigurable) {
     XmlErrorHandler errorHandler;
     auto doc = make_xmlUnique(xmlParseFile(path));
     if (doc == NULL) {
@@ -801,6 +810,7 @@ ParsingResult parse(const char* path) {
         ALOGE("%s: No version found", __func__);
         return {nullptr, 0};
     }
+    gIsConfigurableEngine = isConfigurable;
     size_t nbSkippedElements = 0;
     auto config = std::make_unique<Config>();
     config->version = std::stof(version);

@@ -18,6 +18,7 @@ package com.android.media.benchmark.library;
 
 import android.view.Surface;
 
+import android.media.AudioFormat;
 import android.media.MediaCodec;
 import android.media.MediaCodec.BufferInfo;
 import android.media.MediaFormat;
@@ -42,6 +43,7 @@ public class Decoder implements IBufferXfer.IReceiveBuffer {
 
     protected final Object mLock = new Object();
     protected MediaCodec mCodec;
+    protected int mExtraFlags = 0;
     protected Surface mSurface = null;
     protected boolean mRender = false;
     protected ArrayList<BufferInfo> mInputBufferInfo;
@@ -57,6 +59,8 @@ public class Decoder implements IBufferXfer.IReceiveBuffer {
 
     protected int mNumOutputFrame;
     protected int mIndex;
+
+    protected boolean mUseFrameReleaseQueue = false;
 
     protected ArrayList<ByteBuffer> mInputBuffer;
     protected FileOutputStream mOutputStream;
@@ -85,6 +89,11 @@ public class Decoder implements IBufferXfer.IReceiveBuffer {
         mIBufferSend = receiver;
         return true;
     }
+
+    public void setExtraConfigureFlags(int flags) {
+        this.mExtraFlags = flags;
+    }
+
     /**
      * Setup of decoder
      *
@@ -94,17 +103,32 @@ public class Decoder implements IBufferXfer.IReceiveBuffer {
         mSignalledError = false;
         mOutputStream = outputStream;
     }
+
+    /*
+     * This can be used to setup audio decoding, simulating audio playback.
+     */
+    public void setupDecoder(
+            boolean render, boolean useFrameReleaseQueue, int numInFramesRequired) {
+        mRender = render;
+        mUseFrameReleaseQueue = useFrameReleaseQueue;
+        mNumInFramesRequired = numInFramesRequired;
+        mSignalledError = false;
+        setupDecoder(null);
+    }
+
     public void setupDecoder(Surface surface, boolean render,
             boolean useFrameReleaseQueue, int frameRate) {
         setupDecoder(surface, render, useFrameReleaseQueue, frameRate, -1);
     }
+
     public void setupDecoder(Surface surface, boolean render,
             boolean useFrameReleaseQueue, int frameRate, int numInFramesRequired) {
         mSignalledError = false;
         mOutputStream = null;
         mSurface = surface;
         mRender = render;
-        if (useFrameReleaseQueue) {
+        mUseFrameReleaseQueue = useFrameReleaseQueue;
+        if (mUseFrameReleaseQueue) {
             Log.i(TAG, "Using FrameReleaseQueue with frameRate " + frameRate);
             mFrameReleaseQueue = new FrameReleaseQueue(mRender, frameRate);
         }
@@ -166,6 +190,18 @@ public class Decoder implements IBufferXfer.IReceiveBuffer {
         public void onOutputFormatChanged(
                 @NonNull MediaCodec mediaCodec, @NonNull MediaFormat format) {
             Log.i(TAG, "Output format changed. Format: " + format.toString());
+            if (mUseFrameReleaseQueue
+                    && mFrameReleaseQueue == null && mMime.startsWith("audio/")) {
+                // start a frame release thread for this configuration.
+                int bytesPerSample = AudioFormat.getBytesPerSample(
+                        format.getInteger(MediaFormat.KEY_PCM_ENCODING,
+                                AudioFormat.ENCODING_PCM_16BIT));
+                int sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+                int channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+                mFrameReleaseQueue = new FrameReleaseQueue(
+                        mRender, sampleRate, channelCount, bytesPerSample);
+                mFrameReleaseQueue.setMediaCodec(mCodec);
+            }
         }
 
         @Override
@@ -223,11 +259,10 @@ public class Decoder implements IBufferXfer.IReceiveBuffer {
         if (asyncMode) {
             setCallback(mCodec);
         }
-        int isEncoder = 0;
         if (DEBUG) {
             Log.d(TAG, "Media Format : " + format.toString());
         }
-        mCodec.configure(format, mSurface, null, isEncoder);
+        mCodec.configure(format, mSurface, null, mExtraFlags);
 
         mCodec.start();
         Log.i(TAG, "Codec started async mode ?  " + asyncMode);
@@ -395,8 +430,17 @@ public class Decoder implements IBufferXfer.IReceiveBuffer {
             }
         }
         if (mFrameReleaseQueue != null) {
-            mFrameReleaseQueue.pushFrame(mNumOutputFrame, outputBufferId,
-                                            outputBufferInfo.presentationTimeUs);
+            if (mMime.startsWith("audio/")) {
+                try {
+                    ByteBuffer outputBuffer = mediaCodec.getOutputBuffer(outputBufferId);
+                    mFrameReleaseQueue.pushFrame(outputBufferId, outputBuffer.remaining());
+                } catch (Exception e) {
+                    Log.d(TAG, "Error in getting MediaCodec buffer" + e.toString());
+                }
+            } else {
+                mFrameReleaseQueue.pushFrame(mNumOutputFrame, outputBufferId,
+                                                outputBufferInfo.presentationTimeUs);
+            }
         } else if (mIBufferSend != null) {
             IBufferXfer.BufferXferInfo info = new IBufferXfer.BufferXferInfo();
             info.buf = mediaCodec.getOutputBuffer(outputBufferId);

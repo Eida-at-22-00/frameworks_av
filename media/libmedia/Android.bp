@@ -104,8 +104,8 @@ cc_library_shared {
     ],
 
     shared_libs: [
-        "android.hidl.token@1.0-utils",
         "android.hardware.media.omx@1.0",
+        "android.hidl.token@1.0-utils",
         "libbinder",
         "libcutils",
         "libhidlbase",
@@ -116,8 +116,8 @@ cc_library_shared {
     ],
 
     export_shared_lib_headers: [
-        "android.hidl.token@1.0-utils",
         "android.hardware.media.omx@1.0",
+        "android.hidl.token@1.0-utils",
         "libstagefright_foundation",
         "libui",
     ],
@@ -138,15 +138,15 @@ cc_library_shared {
     ],
 
     cflags: [
+        "-Wall",
         "-Werror",
         "-Wno-error=deprecated-declarations",
-        "-Wall",
     ],
 
     sanitize: {
         misc_undefined: [
-            "unsigned-integer-overflow",
             "signed-integer-overflow",
+            "unsigned-integer-overflow",
         ],
         cfi: true,
     },
@@ -197,15 +197,15 @@ cc_library_shared {
     ],
 
     cflags: [
+        "-Wall",
         "-Werror",
         "-Wno-error=deprecated-declarations",
-        "-Wall",
     ],
 
     sanitize: {
         misc_undefined: [
-            "unsigned-integer-overflow",
             "signed-integer-overflow",
+            "unsigned-integer-overflow",
         ],
         cfi: true,
     },
@@ -232,15 +232,15 @@ cc_library_static {
     ],
 
     cflags: [
+        "-Wall",
         "-Werror",
         "-Wno-error=deprecated-declarations",
-        "-Wall",
     ],
 
     sanitize: {
         misc_undefined: [
-            "unsigned-integer-overflow",
             "signed-integer-overflow",
+            "unsigned-integer-overflow",
         ],
         cfi: true,
     },
@@ -260,6 +260,8 @@ cc_library_shared {
     srcs: [
         "AudioCapabilities.cpp",
         "CodecCapabilities.cpp",
+        "EncoderCapabilities.cpp",
+        "VideoCapabilities.cpp",
         "CodecCapabilitiesUtils.cpp",
     ],
 
@@ -279,15 +281,15 @@ cc_library_shared {
     ],
 
     cflags: [
+        "-Wall",
         "-Werror",
         "-Wno-error=deprecated-declarations",
-        "-Wall",
     ],
 
     sanitize: {
         misc_undefined: [
-            "unsigned-integer-overflow",
             "signed-integer-overflow",
+            "unsigned-integer-overflow",
         ],
         cfi: true,
     },
@@ -323,15 +325,15 @@ cc_library_shared {
     ],
 
     cflags: [
+        "-Wall",
         "-Werror",
         "-Wno-error=deprecated-declarations",
-        "-Wall",
     ],
 
     sanitize: {
         misc_undefined: [
-            "unsigned-integer-overflow",
             "signed-integer-overflow",
+            "unsigned-integer-overflow",
         ],
         cfi: true,
     },
@@ -346,36 +348,36 @@ cc_library {
 
     srcs: [
         ":mediaextractorservice_aidl",
-        "IDataSource.cpp",
         "IHDCP.cpp",
         "BufferingSettings.cpp",
-        "mediaplayer.cpp",
+        "CharacterEncodingDetector.cpp",
+        "IDataSource.cpp",
+        "IMediaDeathNotifier.cpp",
+        "IMediaExtractor.cpp",
         "IMediaHTTPConnection.cpp",
         "IMediaHTTPService.cpp",
-        "IMediaExtractor.cpp",
-        "IMediaPlayerService.cpp",
-        "IMediaPlayerClient.cpp",
-        "IMediaRecorderClient.cpp",
+        "IMediaMetadataRetriever.cpp",
         "IMediaPlayer.cpp",
+        "IMediaPlayerClient.cpp",
+        "IMediaPlayerService.cpp",
         "IMediaRecorder.cpp",
+        "IMediaRecorderClient.cpp",
         "IMediaSource.cpp",
         "IRemoteDisplay.cpp",
         "IRemoteDisplayClient.cpp",
         "IStreamSource.cpp",
-        "Metadata.cpp",
-        "mediarecorder.cpp",
-        "IMediaMetadataRetriever.cpp",
-        "mediametadataretriever.cpp",
-        "MediaScanner.cpp",
-        "MediaScannerClient.cpp",
-        "CharacterEncodingDetector.cpp",
-        "IMediaDeathNotifier.cpp",
         "MediaProfiles.cpp",
         "MediaResource.cpp",
         "MediaResourcePolicy.cpp",
-        "StringArray.cpp",
-        "NdkMediaFormatPriv.cpp",
+        "MediaScanner.cpp",
+        "MediaScannerClient.cpp",
+        "Metadata.cpp",
         "NdkMediaErrorPriv.cpp",
+        "NdkMediaFormatPriv.cpp",
+        "StringArray.cpp",
+        "mediametadataretriever.cpp",
+        "mediaplayer.cpp",
+        "mediarecorder.cpp",
     ],
 
     aidl: {
@@ -384,56 +386,58 @@ cc_library {
     },
 
     header_libs: [
+        "jni_headers",
         "libstagefright_headers",
         "media_ndk_headers",
-        "jni_headers",
     ],
 
     export_header_lib_headers: [
+        "jni_headers",
         "libstagefright_headers",
         "media_ndk_headers",
-        "jni_headers",
     ],
 
     shared_libs: [
         "android.hidl.token@1.0-utils",
         "audioclient-types-aidl-cpp",
         "av-types-aidl-cpp",
-        "liblog",
-        "libcutils",
-        "libutils",
         "libbinder",
         "libbinder_ndk",
         //"libsonivox",
+        "libcutils",
+        "liblog",
+        "libutils",
+        "framework-permission-aidl-cpp",
         "libandroidicu",
-        "libexpat",
-        "libcamera_client",
-        "libstagefright_foundation",
-        "libgui",
-        "libui",
-        "libdl",
         "libaudioclient",
+        "libaudiofoundation",
+        "libcamera_client",
+        "libdl",
+        "libexpat",
+        "libgui",
         "libmedia_codeclist",
         "libmedia_omx",
-        "framework-permission-aidl-cpp",
+        "libstagefright_foundation",
+        "libui",
     ],
 
     export_shared_lib_headers: [
         "libaudioclient",
+        "libaudiofoundation",
         "libbinder",
         //"libsonivox",
-        "libmedia_omx",
         "framework-permission-aidl-cpp",
+        "libmedia_omx",
     ],
 
     static_libs: [
-        "resourcemanager_aidl_interface-ndk",
         "framework-permission-aidl-cpp",
+        "resourcemanager_aidl_interface-ndk",
     ],
 
     export_static_lib_headers: [
-        "resourcemanager_aidl_interface-ndk",
         "framework-permission-aidl-cpp",
+        "resourcemanager_aidl_interface-ndk",
     ],
 
     export_include_dirs: [
@@ -441,17 +445,17 @@ cc_library {
     ],
 
     cflags: [
+        "-Wall",
         "-Werror",
         "-Wno-error=deprecated-declarations",
-        "-Wall",
     ],
 
     version_script: "exports.lds",
 
     sanitize: {
         misc_undefined: [
-            "unsigned-integer-overflow",
             "signed-integer-overflow",
+            "unsigned-integer-overflow",
         ],
         cfi: true,
     },
@@ -463,8 +467,8 @@ cc_library_static {
     host_supported: true,
 
     srcs: [
-        "NdkMediaFormatPriv.cpp",
         "NdkMediaErrorPriv.cpp",
+        "NdkMediaFormatPriv.cpp",
     ],
 
     header_libs: [
@@ -475,8 +479,8 @@ cc_library_static {
 
     cflags: [
         "-DEXPORT=__attribute__((visibility(\"default\")))",
-        "-Werror",
         "-Wall",
+        "-Werror",
     ],
 
     export_include_dirs: ["include"],

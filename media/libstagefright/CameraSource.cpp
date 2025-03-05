@@ -35,6 +35,7 @@
 #include <camera/StringUtils.h>
 #include <com_android_graphics_libgui_flags.h>
 #include <gui/Surface.h>
+#include <gui/Flags.h>
 #include <utils/String8.h>
 #include <cutils/properties.h>
 
@@ -103,7 +104,7 @@ CameraSource *CameraSource::CreateFromCamera(
     pid_t clientPid,
     Size videoSize,
     int32_t frameRate,
-    const sp<IGraphicBufferProducer>& surface) {
+    const sp<SurfaceType>& surface) {
 
     CameraSource *source = new CameraSource(camera, proxy, cameraId,
             clientName, clientUid, clientPid, videoSize, frameRate, surface);
@@ -119,7 +120,7 @@ CameraSource::CameraSource(
     pid_t clientPid,
     Size videoSize,
     int32_t frameRate,
-    const sp<IGraphicBufferProducer>& surface)
+    const sp<SurfaceType>& surface)
     : mCameraFlags(0),
       mNumInputBuffers(0),
       mVideoFrameRate(-1),
@@ -160,6 +161,7 @@ status_t CameraSource::isCameraAvailable(
         clientAttribution.uid = clientUid;
         clientAttribution.deviceId = kDefaultDeviceId;
         clientAttribution.packageName = clientName;
+        clientAttribution.token = sp<BBinder>::make();
 
         mCamera = Camera::connect(cameraId, /*targetSdkVersion*/__ANDROID_API_FUTURE__,
                 /*rotationOverride*/hardware::ICameraService::ROTATION_OVERRIDE_NONE,
@@ -494,11 +496,23 @@ status_t CameraSource::initBufferQueue(uint32_t width, uint32_t height,
 #if COM_ANDROID_GRAPHICS_LIBGUI_FLAGS(WB_CONSUMER_BASE_OWNS_BQ)
     mVideoBufferConsumer = new BufferItemConsumer(usage, bufferCount);
     mVideoBufferConsumer->setName(String8::format("StageFright-CameraSource"));
+
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+    mVideoBufferProducer = mVideoBufferConsumer->getSurface();
+#else
     mVideoBufferProducer = mVideoBufferConsumer->getSurface()->getIGraphicBufferProducer();
+#endif  // WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+
 #else
     mVideoBufferConsumer = new BufferItemConsumer(consumer, usage, bufferCount);
     mVideoBufferConsumer->setName(String8::format("StageFright-CameraSource"));
+
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+    mVideoBufferProducer = new Surface(producer);
+#else
     mVideoBufferProducer = producer;
+#endif  // WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+
 #endif  // COM_ANDROID_GRAPHICS_LIBGUI_FLAGS(WB_CONSUMER_BASE_OWNS_BQ)
 
     status_t res = mVideoBufferConsumer->setDefaultBufferSize(width, height);

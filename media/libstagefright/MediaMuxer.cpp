@@ -19,6 +19,8 @@
 
 #include "webm/WebmWriter.h"
 
+#include <com_android_internal_camera_flags.h>
+
 #include <utils/Log.h>
 
 #include <media/stagefright/MediaMuxer.h>
@@ -37,6 +39,8 @@
 #include <media/stagefright/MPEG4Writer.h>
 #include <media/stagefright/OggWriter.h>
 #include <media/stagefright/Utils.h>
+
+namespace flags_camera = com::android::internal::camera::flags;
 
 namespace android {
 
@@ -268,6 +272,25 @@ status_t MediaMuxer::writeSampleData(const sp<ABuffer> &buffer, size_t trackInde
                 "last-sample-index-in-chunk" /*AMEDIAFORMAT_KEY_LAST_SAMPLE_INDEX_IN_CHUNK*/,
                 &val64)) {
         sampleMetaData.setInt64(kKeyLastSampleIndexInChunk, val64);
+    }
+
+    if (flags_camera::camera_heif_gainmap()) {
+        int32_t val32;
+        if (bufMeta->findInt32("color-primaries", &val32)) {
+            sampleMetaData.setInt32(kKeyColorPrimaries, val32);
+        }
+        if (bufMeta->findInt32("color-transfer", &val32)) {
+            sampleMetaData.setInt32(kKeyTransferFunction, val32);
+        }
+        if (bufMeta->findInt32("color-matrix", &val32)) {
+            sampleMetaData.setInt32(kKeyColorMatrix, val32);
+        }
+        if (bufMeta->findInt32("color-range", &val32)) {
+            sampleMetaData.setInt32(kKeyColorRange, val32);
+        }
+        if (bufMeta->findInt32(KEY_COLOR_FORMAT, &val32)) {
+            sampleMetaData.setInt32(kKeyColorFormat, val32);
+        }
     }
 
     sp<MediaAdapter> currentTrack = mTrackList[trackIndex];

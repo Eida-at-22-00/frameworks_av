@@ -18,21 +18,10 @@
 #define ANDROID_COMPANION_VIRTUALCAMERA_VIRTUALCAMERACAPTURERESULT_H
 
 #include <chrono>
-#include <cstdint>
 #include <cstring>
-#include <future>
 #include <memory>
-#include <mutex>
-#include <thread>
-#include <utility>
-#include <vector>
 
-#include "Exif.h"
-#include "GLES/gl.h"
 #include "VirtualCameraCaptureRequest.h"
-#include "VirtualCameraDevice.h"
-#include "VirtualCameraRenderThread.h"
-#include "VirtualCameraSessionContext.h"
 #include "aidl/android/hardware/camera/device/CameraMetadata.h"
 
 namespace android {
@@ -41,7 +30,7 @@ namespace virtualcamera {
 
 // Construct the Metadata for the Capture result based on the request
 // settings, timestamp and reported sensore size
-::aidl::android::hardware::camera::device::CameraMetadata
+std::unique_ptr<::aidl::android::hardware::camera::device::CameraMetadata>
 createCaptureResultMetadata(std::chrono::nanoseconds timestamp,
                             const RequestSettings& requestSettings,
                             Resolution reportedSensorSize);

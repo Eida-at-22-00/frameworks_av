@@ -42,7 +42,6 @@
 #include "fifo/FifoBuffer.h"
 #include "utility/AudioClock.h"
 #include <media/AidlConversion.h>
-#include <com_android_media_aaudio.h>
 
 #include "AudioStreamInternal.h"
 
@@ -121,7 +120,7 @@ aaudio_result_t AudioStreamInternal::open(const AudioStreamBuilder &builder) {
     request.setSharingModeMatchRequired(isSharingModeMatchRequired());
     request.setInService(isInService());
 
-    request.getConfiguration().setDeviceId(getDeviceId());
+    request.getConfiguration().setDeviceIds(getDeviceIds());
     request.getConfiguration().setSampleRate(getSampleRate());
     request.getConfiguration().setDirection(getDirection());
     request.getConfiguration().setSharingMode(getSharingMode());
@@ -129,12 +128,18 @@ aaudio_result_t AudioStreamInternal::open(const AudioStreamBuilder &builder) {
 
     request.getConfiguration().setUsage(getUsage());
     request.getConfiguration().setContentType(getContentType());
+    request.getConfiguration().setTags(getTags());
     request.getConfiguration().setSpatializationBehavior(getSpatializationBehavior());
     request.getConfiguration().setIsContentSpatialized(isContentSpatialized());
     request.getConfiguration().setInputPreset(getInputPreset());
     request.getConfiguration().setPrivacySensitive(isPrivacySensitive());
 
-    request.getConfiguration().setBufferCapacity(builder.getBufferCapacity());
+    // When sample rate conversion is needed, we use the device sample rate instead of the
+    // requested sample rate to scale the capacity in configureDataInformation().
+    // Thus, we should scale the capacity here to cancel out the (sampleRate / deviceSampleRate)
+    // scaling there.
+    request.getConfiguration().setBufferCapacity(builder.getBufferCapacity()
+            * 48000 / getSampleRate());
 
     mServiceStreamHandleInfo = mServiceInterface.openStream(request, configurationOutput);
     if (getServiceHandle() < 0
@@ -179,12 +184,13 @@ aaudio_result_t AudioStreamInternal::open(const AudioStreamBuilder &builder) {
         setChannelMask(configurationOutput.getChannelMask());
     }
 
-    setDeviceId(configurationOutput.getDeviceId());
+    setDeviceIds(configurationOutput.getDeviceIds());
     setSessionId(configurationOutput.getSessionId());
     setSharingMode(configurationOutput.getSharingMode());
 
     setUsage(configurationOutput.getUsage());
     setContentType(configurationOutput.getContentType());
+    setTags(configurationOutput.getTags());
     setSpatializationBehavior(configurationOutput.getSpatializationBehavior());
     setIsContentSpatialized(configurationOutput.isContentSpatialized());
     setInputPreset(configurationOutput.getInputPreset());
@@ -193,15 +199,6 @@ aaudio_result_t AudioStreamInternal::open(const AudioStreamBuilder &builder) {
 
     if (getSampleRate() == AAUDIO_UNSPECIFIED) {
         setSampleRate(configurationOutput.getSampleRate());
-    }
-
-    if (!com::android::media::aaudio::sample_rate_conversion()) {
-        if (getSampleRate() != getDeviceSampleRate()) {
-            ALOGD("%s - skipping sample rate converter. SR = %d, Device SR = %d", __func__,
-                    getSampleRate(), getDeviceSampleRate());
-            result = AAUDIO_ERROR_INVALID_RATE;
-            goto error;
-        }
     }
 
     // Save device format so we can do format conversion and volume scaling together.

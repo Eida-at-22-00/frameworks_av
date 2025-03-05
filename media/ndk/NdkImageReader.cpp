@@ -678,6 +678,28 @@ AImageReader::acquireLatestImage(/*out*/AImage** image, /*out*/int* acquireFence
     }
 }
 
+media_status_t
+AImageReader::setUsage(uint64_t usage) {
+    Mutex::Autolock _l(mLock);
+    if (!mIsOpen || mBufferItemConsumer == nullptr) {
+        ALOGE("not ready to perform setUsage()");
+        return AMEDIA_ERROR_INVALID_PARAMETER;
+    }
+    if (mUsage == usage) {
+        return AMEDIA_OK;
+    }
+
+    uint64_t halUsage = AHardwareBuffer_convertToGrallocUsageBits(mUsage);
+    status_t ret = mBufferItemConsumer->setConsumerUsageBits(halUsage);
+    if (ret != OK) {
+        ALOGE("setConsumerUsageBits() failed %d", ret);
+        return AMEDIA_ERROR_UNKNOWN;
+    }
+    mUsage = usage;
+    mHalUsage = halUsage;
+    return AMEDIA_OK;
+}
+
 static
 media_status_t validateParameters(int32_t width, int32_t height, int32_t format,
                                   uint64_t usage, int32_t maxImages,
@@ -934,4 +956,15 @@ media_status_t AImageReader_setBufferRemovedListener(
 
     reader->setBufferRemovedListener(listener);
     return AMEDIA_OK;
+}
+
+EXPORT
+media_status_t AImageReader_setUsage(
+    AImageReader *reader, uint64_t usage) {
+    ALOGV("%s", __FUNCTION__);
+    if (reader == nullptr) {
+        ALOGE("%s: invalid argument! reader %p", __FUNCTION__, reader);
+        return AMEDIA_ERROR_INVALID_PARAMETER;
+    }
+    return reader->setUsage(usage);
 }

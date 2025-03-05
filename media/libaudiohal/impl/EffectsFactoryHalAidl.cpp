@@ -25,10 +25,12 @@
 #include <error/expected_utils.h>
 #include <aidl/android/media/audio/common/AudioStreamType.h>
 #include <android/binder_manager.h>
+#include <com_android_media_audio.h>
 #include <media/AidlConversionCppNdk.h>
 #include <media/AidlConversionEffect.h>
 #include <system/audio.h>
 #include <system/audio_aidl_utils.h>
+#include <system/audio_effects/effect_uuid.h>
 #include <utils/Log.h>
 
 #include "AidlUtils.h"
@@ -68,6 +70,7 @@ EffectsFactoryHalAidl::EffectsFactoryHalAidl(std::shared_ptr<IFactory> effectsFa
           std::vector<Descriptor> list;
           if (mFactory) {
               mFactory->queryEffects(std::nullopt, std::nullopt, std::nullopt, &list).isOk();
+              filterHalDescriptors(list);
           }
           return list;
       }()),
@@ -180,6 +183,11 @@ status_t EffectsFactoryHalAidl::createEffect(const effect_uuid_t* uuid, int32_t 
 
     AudioUuid aidlUuid =
             VALUE_OR_RETURN_STATUS(::aidl::android::legacy2aidl_audio_uuid_t_AudioUuid(*uuid));
+    if (!com_android_media_audio_audio_eraser_effect() && isAudioEraser(aidlUuid)) {
+        ALOGE("%s Audio eraser effect not supported yet", __func__);
+        return BAD_VALUE;
+    }
+
     std::shared_ptr<IEffect> aidlEffect;
     // Use EffectProxy interface instead of IFactory to create
     const bool isProxy = isProxyEffect(aidlUuid);
@@ -365,6 +373,23 @@ std::shared_ptr<const effectsConfig::Processings> EffectsFactoryHalAidl::getProc
 // Return 0 for AIDL, as the AIDL interface is not aware of the configuration file.
 ::android::error::Result<size_t> EffectsFactoryHalAidl::getSkippedElements() const {
     return 0;
+}
+
+
+bool EffectsFactoryHalAidl::isAudioEraser(const AudioUuid& uuid) {
+    return uuid == getEffectTypeUuidEraser();
+}
+
+void EffectsFactoryHalAidl::filterHalDescriptors(std::vector<Descriptor>& descs) {
+    if (!com_android_media_audio_audio_eraser_effect()) {
+        descs.erase(std::remove_if(descs.begin(), descs.end(),
+                                   [](const Descriptor& desc) {
+                                       return isAudioEraser(desc.common.id.type);
+                                   }),
+                    descs.end());
+    }
+
+    return;
 }
 
 } // namespace effect

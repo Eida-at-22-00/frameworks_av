@@ -56,6 +56,7 @@ struct FastTrack {
     bool                    mHapticPlaybackEnabled = false; // haptic playback is enabled or not
     os::HapticScale mHapticScale = os::HapticScale::mute(); // scale of haptic data
     float                   mHapticMaxAmplitude = NAN; // max amplitude allowed for haptic data
+    char mTraceName[32]{};
 };
 
 // No virtuals.

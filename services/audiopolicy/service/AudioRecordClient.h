@@ -43,10 +43,11 @@ public:
             wp<AudioPolicyService::AudioCommandThread> commandThread);
 
 private:
-    OpRecordAudioMonitor(const AttributionSourceState &attributionSource,
+    OpRecordAudioMonitor(AttributionSourceState attributionSource,
                          uint32_t virtualDeviceId,
                          const audio_attributes_t &attr,
                          int32_t appOp,
+                         bool shouldMonitorRecord,
                          wp<AudioPolicyService::AudioCommandThread> commandThread);
 
     void onFirstRef() override;
@@ -74,6 +75,7 @@ private:
     const uint32_t mVirtualDeviceId;
     const audio_attributes_t mAttr;
     const int32_t mAppOp;
+    const bool mShouldMonitorRecord;
     wp<AudioPolicyService::AudioCommandThread> mCommandThread;
 };
 
@@ -85,17 +87,16 @@ public:
             AudioRecordClient(const audio_attributes_t attributes,
                       const audio_io_handle_t io,
                       const audio_session_t session, audio_port_handle_t portId,
-                      const audio_port_handle_t deviceId,
+                      const DeviceIdVector deviceIds,
                       const AttributionSourceState& attributionSource,
                       const uint32_t virtualDeviceId,
-                      bool canCaptureOutput, bool canCaptureHotword,
+                      bool canBypassConcurrentPolicy,
                       wp<AudioPolicyService::AudioCommandThread> commandThread) :
                 AudioClient(attributes, io, attributionSource,
-                    session, portId, deviceId), attributionSource(attributionSource),
+                    session, portId, deviceIds), attributionSource(attributionSource),
                     virtualDeviceId(virtualDeviceId),
-                    startTimeNs(0), canCaptureOutput(canCaptureOutput),
-                    canCaptureHotword(canCaptureHotword), silenced(false),
-                    mOpRecordAudioMonitor(
+                    startTimeNs(0), canBypassConcurrentPolicy(canBypassConcurrentPolicy),
+                    silenced(false), mOpRecordAudioMonitor(
                             OpRecordAudioMonitor::createIfNeeded(attributionSource,
                                                                  virtualDeviceId,
                                                                  attributes, commandThread)) {
@@ -110,8 +111,7 @@ public:
     const AttributionSourceState attributionSource; // attribution source of client
     const uint32_t virtualDeviceId; // id of the virtual device associated with the audio device
     nsecs_t startTimeNs;
-    const bool canCaptureOutput;
-    const bool canCaptureHotword;
+    const bool canBypassConcurrentPolicy;
     bool silenced;
 
 private:

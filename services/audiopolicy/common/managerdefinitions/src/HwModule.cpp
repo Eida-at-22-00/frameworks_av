@@ -283,6 +283,16 @@ void HwModule::dump(String8 *dst, int spaces) const
     dumpAudioRouteVector(mRoutes, dst, spaces);
 }
 
+sp<HwModule> HwModuleCollection::getModuleFromHandle(audio_module_handle_t handle) const
+{
+    for (const auto& module : *this) {
+        if (module->getHandle() == handle) {
+            return module;
+        }
+    }
+    return nullptr;
+}
+
 sp <HwModule> HwModuleCollection::getModuleFromName(const char *name) const
 {
     for (const auto& module : *this) {

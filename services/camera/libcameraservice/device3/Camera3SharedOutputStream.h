@@ -41,21 +41,15 @@ public:
      * surfaces. A valid stream set id needs to be set to support buffer
      * sharing between multiple streams.
      */
-    Camera3SharedOutputStream(int id, const std::vector<sp<Surface>>& surfaces,
+    Camera3SharedOutputStream(int id, const std::vector<SurfaceHolder>& surfaces,
             uint32_t width, uint32_t height, int format,
             uint64_t consumerUsage, android_dataspace dataSpace,
             camera_stream_rotation_t rotation, nsecs_t timestampOffset,
             const std::string& physicalCameraId,
             const std::unordered_set<int32_t> &sensorPixelModesUsed, IPCTransport transport,
-            int setId = CAMERA3_STREAM_SET_ID_INVALID,
-            bool useHalBufManager = false,
-            int64_t dynamicProfile = ANDROID_REQUEST_AVAILABLE_DYNAMIC_RANGE_PROFILES_MAP_STANDARD,
-            int64_t streamUseCase = ANDROID_SCALER_AVAILABLE_STREAM_USE_CASES_DEFAULT,
-            bool deviceTimeBaseIsRealtime = false,
-            int timestampBase = OutputConfiguration::TIMESTAMP_BASE_DEFAULT,
-            int mirrorMode = OutputConfiguration::MIRROR_MODE_AUTO,
-            int32_t colorSpace = ANDROID_REQUEST_AVAILABLE_COLOR_SPACE_PROFILES_MAP_UNSPECIFIED,
-            bool useReadoutTimestamp = false);
+            int setId, bool useHalBufManager, int64_t dynamicProfile, int64_t streamUseCase,
+            bool deviceTimeBaseIsRealtime, int timestampBase,
+            int32_t colorSpace, bool useReadoutTimestamp);
 
     virtual ~Camera3SharedOutputStream();
 
@@ -65,7 +59,7 @@ public:
 
     virtual bool isConsumerConfigurationDeferred(size_t surface_id) const;
 
-    virtual status_t setConsumers(const std::vector<sp<Surface>>& consumers);
+    virtual status_t setConsumers(const std::vector<SurfaceHolder>& consumers);
 
     virtual ssize_t getSurfaceId(const sp<Surface> &surface);
 
@@ -78,7 +72,7 @@ public:
     virtual status_t getUniqueSurfaceIds(const std::vector<size_t>& surfaceIds,
             /*out*/std::vector<size_t>* outUniqueIds) override;
 
-    virtual status_t updateStream(const std::vector<sp<Surface>> &outputSurfaces,
+    virtual status_t updateStream(const std::vector<SurfaceHolder> &outputSurfaces,
             const std::vector<OutputStreamInfo> &outputInfo,
             const std::vector<size_t> &removedSurfaceIds,
             KeyedVector<sp<Surface>, size_t> *outputMap/*out*/);
@@ -89,6 +83,8 @@ public:
         return false;
     }
 
+    virtual status_t  setTransform(int transform, bool mayChangeMirror, int surfaceId);
+
 private:
 
     static const size_t kMaxOutputs = 4;
@@ -97,17 +93,26 @@ private:
     // depends on this flag.
     bool mUseHalBufManager;
 
-    // Pair of an output Surface and its unique ID
-    typedef std::pair<sp<Surface>, size_t> SurfaceUniqueId;
+    // Struct of an output SurfaceHolder, transform, and its unique ID
+    struct SurfaceHolderUniqueId {
+        SurfaceHolder mSurfaceHolder;
+        int mTransform = -1;
+        size_t mId = -1;
 
-    // Map surfaceId -> (output surface, unique surface ID)
-    std::array<SurfaceUniqueId, kMaxOutputs> mSurfaceUniqueIds;
+        SurfaceHolderUniqueId() = default;
+        SurfaceHolderUniqueId(size_t id) : mId(id) {}
+        SurfaceHolderUniqueId(const SurfaceHolder& holder, size_t id) :
+                mSurfaceHolder(holder), mId(id) {}
+    };
+
+    // Map surfaceId -> SurfaceHolderUniqueId
+    std::array<SurfaceHolderUniqueId, kMaxOutputs> mSurfaceUniqueIds;
 
     size_t mNextUniqueSurfaceId = 0;
 
     ssize_t getNextSurfaceIdLocked();
 
-    status_t revertPartialUpdateLocked(const KeyedVector<sp<Surface>, size_t> &removedSurfaces,
+    status_t revertPartialUpdateLocked(const KeyedVector<size_t, SurfaceHolder> &removedSurfaces,
             const KeyedVector<sp<Surface>, size_t> &attachedSurfaces);
 
     /**

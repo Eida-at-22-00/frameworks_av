@@ -43,7 +43,6 @@ class AsyncCallbackThread;
 
 class ThreadBase : public virtual IAfThreadBase, public Thread {
 public:
-    static const char *threadTypeToString(type_t type);
 
     // ThreadBase_ThreadLoop is a virtual mutex (always nullptr) that
     // guards methods and variables that ONLY run and are accessed
@@ -400,6 +399,8 @@ public:
         }
     }
 
+    std::string flagsAsString() const final {  return mFlagsAsString; }
+
     sp<IAfEffectHandle> createEffect_l(
                                     const sp<Client>& client,
                                     const sp<media::IEffectClient>& effectClient,
@@ -576,6 +577,9 @@ public:
         return mThreadloopExecutor;
     }
 
+    // Used to print the header for the local log on a particular thread type
+    virtual std::string getLocalLogHeader() const { return {}; };
+
 protected:
 
                 // entry describing an effect being suspended in mSuspendedSessions keyed vector
@@ -623,7 +627,8 @@ protected:
      * ThreadBase_Mutex during this time.  No other mutex is held.
      */
 
-    void waitWhileThreadBusy_l(audio_utils::unique_lock& ul) final REQUIRES(mutex()) {
+    void waitWhileThreadBusy_l(audio_utils::unique_lock<audio_utils::mutex>& ul)
+            final REQUIRES(mutex()) {
         // the wait returns immediately if the predicate is satisfied.
         mThreadBusyCv.wait(ul, [&]{ return mThreadBusy == false;});
     }
@@ -676,6 +681,9 @@ protected:
                 const sp<IAfThreadCallback>  mAfThreadCallback;
                 ThreadMetrics           mThreadMetrics;
                 const bool              mIsOut;
+
+    std::string mFlagsAsString;                                     // set in constructor.
+    bool mAtraceEnabled GUARDED_BY(ThreadBase_ThreadLoop) = false;  // checked in threadLoop.
 
     // mThreadBusy is checked under the ThreadBase_Mutex to ensure that
     // TrackHandle operations do not proceed while the ThreadBase is busy
@@ -887,7 +895,7 @@ protected:
                     bool                mHasChanged = false;
                 };
 
-                SimpleLog mLocalLog;  // locked internally
+                SimpleLog mLocalLog {/* maxLogLines= */ 120};  // locked internally
 
     // mThreadloopExecutor contains deferred functors and object (dtors) to
     // be executed at the end of the processing period, without any
@@ -1016,11 +1024,12 @@ public:
     void setMasterVolume(float value) final;
     void setMasterBalance(float balance) override EXCLUDES_ThreadBase_Mutex;
     void setMasterMute(bool muted) final;
-    void setStreamVolume(audio_stream_type_t stream, float value) final EXCLUDES_ThreadBase_Mutex;
+    void setStreamVolume(audio_stream_type_t stream, float value, bool muted) final
+            EXCLUDES_ThreadBase_Mutex;
     void setStreamMute(audio_stream_type_t stream, bool muted) final EXCLUDES_ThreadBase_Mutex;
     float streamVolume(audio_stream_type_t stream) const final EXCLUDES_ThreadBase_Mutex;
-    status_t setPortsVolume(const std::vector<audio_port_handle_t>& portIds, float volume)
-            final EXCLUDES_ThreadBase_Mutex;
+    status_t setPortsVolume(const std::vector<audio_port_handle_t>& portIds, float volume,
+                            bool muted) final EXCLUDES_ThreadBase_Mutex;
 
     void setVolumeForOutput_l(float left, float right) const final;
 
@@ -1047,7 +1056,8 @@ public:
                                 bool isSpatialized,
                                 bool isBitPerfect,
                                 audio_output_flags_t* afTrackFlags,
-                                float volume) final
+                                float volume,
+                                bool muted) final
             REQUIRES(audio_utils::AudioFlinger_Mutex);
 
     bool isTrackActive(const sp<IAfTrack>& track) const final {
@@ -1229,6 +1239,9 @@ public:
             override EXCLUDES_ThreadBase_Mutex {
         // Do nothing. It is only used for bit perfect thread
     }
+
+    std::string getLocalLogHeader() const override;
+
 protected:
     // updated by readOutputParameters_l()
     size_t                          mNormalFrameCount;  // normal mixer and effects
@@ -2133,6 +2146,8 @@ public:
                             return !(mInput == nullptr || mInput->stream == nullptr);
                         }
 
+    std::string getLocalLogHeader() const override;
+
 protected:
     void dumpInternals_l(int fd, const Vector<String16>& args) override REQUIRES(mutex());
     void dumpTracks_l(int fd, const Vector<String16>& args) override REQUIRES(mutex());
@@ -2232,17 +2247,17 @@ class MmapThread : public ThreadBase, public virtual IAfMmapThread
                                       audio_stream_type_t streamType,
                                       audio_session_t sessionId,
                                       const sp<MmapStreamCallback>& callback,
-                                      audio_port_handle_t deviceId,
+                                      const DeviceIdVector& deviceIds,
             audio_port_handle_t portId) override EXCLUDES_ThreadBase_Mutex {
         audio_utils::lock_guard l(mutex());
-        configure_l(attr, streamType, sessionId, callback, deviceId, portId);
+        configure_l(attr, streamType, sessionId, callback, deviceIds, portId);
     }
 
     void configure_l(const audio_attributes_t* attr,
             audio_stream_type_t streamType,
             audio_session_t sessionId,
             const sp<MmapStreamCallback>& callback,
-            audio_port_handle_t deviceId,
+            const DeviceIdVector& deviceIds,
             audio_port_handle_t portId) REQUIRES(mutex());
 
     void disconnect() final EXCLUDES_ThreadBase_Mutex;
@@ -2324,6 +2339,8 @@ class MmapThread : public ThreadBase, public virtual IAfMmapThread
 
     bool isStreamInitialized() const override { return false; }
 
+    std::string getLocalLogHeader() const override;
+
     void setClientSilencedState_l(audio_port_handle_t portId, bool silenced) REQUIRES(mutex()) {
                                 mClientSilencedStates[portId] = silenced;
                             }
@@ -2350,9 +2367,9 @@ class MmapThread : public ThreadBase, public virtual IAfMmapThread
     void dumpTracks_l(int fd, const Vector<String16>& args) final REQUIRES(mutex());
 
                 /**
-                 * @brief mDeviceId  current device port unique identifier
+                 * @brief mDeviceIds current device port unique identifiers
                  */
-    audio_port_handle_t mDeviceId GUARDED_BY(mutex()) = AUDIO_PORT_HANDLE_NONE;
+    DeviceIdVector mDeviceIds GUARDED_BY(mutex());
 
     audio_attributes_t mAttr GUARDED_BY(mutex());
     audio_session_t mSessionId GUARDED_BY(mutex());
@@ -2384,7 +2401,7 @@ public:
                                       audio_stream_type_t streamType,
                                       audio_session_t sessionId,
                                       const sp<MmapStreamCallback>& callback,
-                                      audio_port_handle_t deviceId,
+                                      const DeviceIdVector& deviceIds,
             audio_port_handle_t portId) final EXCLUDES_ThreadBase_Mutex;
 
     AudioStreamOut* clearOutput() final EXCLUDES_ThreadBase_Mutex;
@@ -2394,11 +2411,13 @@ public:
     // Needs implementation?
     void setMasterBalance(float /* value */) final EXCLUDES_ThreadBase_Mutex {}
     void setMasterMute(bool muted) final EXCLUDES_ThreadBase_Mutex;
-    void setStreamVolume(audio_stream_type_t stream, float value) final EXCLUDES_ThreadBase_Mutex;
+
+    void setStreamVolume(audio_stream_type_t stream, float value, bool muted) final
+            EXCLUDES_ThreadBase_Mutex;
     void setStreamMute(audio_stream_type_t stream, bool muted) final EXCLUDES_ThreadBase_Mutex;
     float streamVolume(audio_stream_type_t stream) const final EXCLUDES_ThreadBase_Mutex;
-    status_t setPortsVolume(const std::vector<audio_port_handle_t>& portIds, float volume)
-            final EXCLUDES_ThreadBase_Mutex;
+    status_t setPortsVolume(const std::vector<audio_port_handle_t>& portIds, float volume,
+                            bool muted) final EXCLUDES_ThreadBase_Mutex;
 
     void setMasterMute_l(bool muted) REQUIRES(mutex()) { mMasterMute = muted; }
 

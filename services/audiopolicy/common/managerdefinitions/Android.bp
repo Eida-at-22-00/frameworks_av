@@ -39,6 +39,7 @@ cc_library {
         "android.media.audiopolicy-aconfig-cc",
         "audioclient-types-aidl-cpp",
         "audiopolicy-types-aidl-cpp",
+        "com.android.media.audio-aconfig-cc",
         "com.android.media.audioserver-aconfig-cc",
         "libaconfig_storage_read_api_cc",
         "libaudioclient_aidl_conversion",

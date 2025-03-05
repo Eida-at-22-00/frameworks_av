@@ -1787,7 +1787,7 @@ status_t MatroskaExtractor::synthesizeVP9(TrackInfo* trackInfo, size_t index) {
         return ERROR_MALFORMED;
     }
 
-    if (!MakeVP9CodecSpecificData(trackInfo->mMeta, tmpData.get(), frame.len)) {
+    if (!MakeVP9CodecSpecificDataFromFirstFrame(trackInfo->mMeta, tmpData.get(), frame.len)) {
         return ERROR_MALFORMED;
     }
 

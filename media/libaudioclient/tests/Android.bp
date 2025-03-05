@@ -107,7 +107,6 @@ cc_defaults {
         "framework-permission-aidl-cpp",
         "libaudioutils",
         "libbase",
-        "libcgrouprc",
         "libdl",
         "libmedia",
         "libmedia_helper",

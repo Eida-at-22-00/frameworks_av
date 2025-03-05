@@ -44,12 +44,24 @@ cc_defaults {
         "libjpeg",
         "liblog",
         "libutils",
-        "camera_platform_flags_c_lib",
     ],
 
     static_libs: [
         "libgmock",
     ],
+
+    target: {
+        android: {
+            shared_libs: [
+                "camera_platform_flags_c_lib",
+            ],
+        },
+        host: {
+            shared_libs: [
+                "camera_platform_flags_c_lib_for_test",
+            ],
+        },
+    },
 
     cflags: [
         "-Wall",

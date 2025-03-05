@@ -260,36 +260,41 @@ aaudio_result_t AudioStreamLegacy::getBestTimestamp(clockid_t clockId,
 }
 
 void AudioStreamLegacy::onAudioDeviceUpdate(audio_io_handle_t /* audioIo */,
-            audio_port_handle_t deviceId) {
-    // Check for an invalid deviceId. Why change to UNSPECIFIED?
-    if (deviceId == AAUDIO_UNSPECIFIED) {
-        ALOGE("%s(, deviceId = AAUDIO_UNSPECIFIED)! Why?", __func__);
+            const android::DeviceIdVector& deviceIds) {
+    // Check for empty deviceIds. Callbacks for duplicating threads returns empty devices.
+    if (deviceIds.empty()) {
+        ALOGW("%s(empty deviceIds", __func__);
         return;
     }
+    android::DeviceIdVector oldDeviceIds = getDeviceIds();
     // Device routing is a common source of errors and DISCONNECTS.
     // Please leave this log in place. If there is a bug then this might
     // get called after the stream has been deleted so log before we
     // touch the stream object.
-    ALOGD("%s(deviceId = %d)", __func__, (int)deviceId);
-    if (getDeviceId() != AAUDIO_UNSPECIFIED
-            && getDeviceId() != deviceId
+    ALOGD("%s() devices %s => %s",
+            __func__, android::toString(oldDeviceIds).c_str(),
+            android::toString(deviceIds).c_str());
+    if (!oldDeviceIds.empty()
+            && !android::areDeviceIdsEqual(oldDeviceIds, deviceIds)
             && !isDisconnected()
             ) {
         // Note that isDataCallbackActive() is affected by state so call it before DISCONNECTING.
         // If we have a data callback and the stream is active, then ask the data callback
         // to DISCONNECT and call the error callback.
         if (isDataCallbackActive()) {
-            ALOGD("%s() request DISCONNECT in data callback, device %d => %d",
-                  __func__, (int) getDeviceId(), (int) deviceId);
+            ALOGD("%s() request DISCONNECT in data callback, devices %s => %s",
+                    __func__, android::toString(oldDeviceIds).c_str(),
+                    android::toString(deviceIds).c_str());
             // If the stream is stopped before the data callback has a chance to handle the
             // request then the requestStop_l() and requestPause() methods will handle it after
             // the callback has stopped.
             mRequestDisconnect.request();
         } else {
-            ALOGD("%s() DISCONNECT the stream now, device %d => %d",
-                  __func__, (int) getDeviceId(), (int) deviceId);
+            ALOGD("%s() DISCONNECT the stream now, devices %s => %s",
+                    __func__, android::toString(oldDeviceIds).c_str(),
+                    android::toString(deviceIds).c_str());
             forceDisconnect();
         }
     }
-    setDeviceId(deviceId);
+    setDeviceIds(deviceIds);
 }

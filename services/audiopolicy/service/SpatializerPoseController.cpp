@@ -22,6 +22,7 @@
 
 #define LOG_TAG "SpatializerPoseController"
 //#define LOG_NDEBUG 0
+#include <audio_utils/mutex.h>
 #include <cutils/properties.h>
 #include <sensor/Sensor.h>
 #include <media/MediaMetricsItem.h>
@@ -131,20 +132,22 @@ SpatializerPoseController::SpatializerPoseController(Listener* listener,
               Pose3f headToStage;
               std::optional<HeadTrackingMode> modeIfChanged;
               {
-                  std::unique_lock lock(mMutex);
-                  if (maxUpdatePeriod.has_value()) {
-                      mCondVar.wait_for(lock, maxUpdatePeriod.value(),
-                                        [this] { return mShouldExit || mShouldCalculate; });
-                  } else {
-                      mCondVar.wait(lock, [this] { return mShouldExit || mShouldCalculate; });
+                  audio_utils::unique_lock ul(mMutex);
+                  while (true) {
+                      if (mShouldExit) {
+                          ALOGV("Exiting thread");
+                          return;
+                      }
+                      if (mShouldCalculate) {
+                          std::tie(headToStage, modeIfChanged) = calculate_l();
+                          break;
+                      }
+                      if (maxUpdatePeriod.has_value()) {
+                          mCondVar.wait_for(ul, maxUpdatePeriod.value());
+                      } else {
+                          mCondVar.wait(ul);
+                      }
                   }
-                  if (mShouldExit) {
-                      ALOGV("Exiting thread");
-                      return;
-                  }
-
-                  // Calculate.
-                  std::tie(headToStage, modeIfChanged) = calculate_l();
               }
 
               // Invoke the callbacks outside the lock.
@@ -173,7 +176,7 @@ SpatializerPoseController::SpatializerPoseController(Listener* listener,
 
 SpatializerPoseController::~SpatializerPoseController() {
     {
-        std::unique_lock lock(mMutex);
+        std::lock_guard lock(mMutex);
         mShouldExit = true;
         mCondVar.notify_all();
     }
@@ -278,8 +281,10 @@ void SpatializerPoseController::calculateAsync() {
 }
 
 void SpatializerPoseController::waitUntilCalculated() {
-    std::unique_lock lock(mMutex);
-    mCondVar.wait(lock, [this] { return mCalculated; });
+    audio_utils::unique_lock ul(mMutex);
+    while (!mCalculated) {
+        mCondVar.wait(ul);
+    }
 }
 
 std::tuple<media::Pose3f, std::optional<media::HeadTrackingMode>>
@@ -358,14 +363,15 @@ void SpatializerPoseController::onPose(int64_t timestamp, int32_t sensor, const 
     }
 }
 
-std::string SpatializerPoseController::toString(unsigned level) const {
+std::string SpatializerPoseController::toString(unsigned level) const NO_THREAD_SAFETY_ANALYSIS {
     std::string prefixSpace(level, ' ');
     std::string ss = prefixSpace + "SpatializerPoseController:\n";
     bool needUnlock = false;
 
     prefixSpace += ' ';
     auto now = std::chrono::steady_clock::now();
-    if (!mMutex.try_lock_until(now + media::kSpatializerDumpSysTimeOutInSecond)) {
+    if (!audio_utils::std_mutex_timed_lock(mMutex, std::chrono::nanoseconds(
+            media::kSpatializerDumpSysTimeOutInSecond).count())) {
         ss.append(prefixSpace).append("try_lock failed, dumpsys maybe INACCURATE!\n");
     } else {
         needUnlock = true;

@@ -268,7 +268,7 @@ void cor_h_x2(
                 max = s;
             }
         }
-        tot = (tot + (max >> 1));
+        __builtin_add_overflow(tot, (max >> 1), &tot);
     }
 
     j = sub(norm_l(tot), sf, pOverflow);

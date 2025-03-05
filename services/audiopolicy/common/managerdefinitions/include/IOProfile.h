@@ -73,7 +73,8 @@ public:
     enum CompatibilityScore{
         NO_MATCH = 0,
         PARTIAL_MATCH = 1,
-        EXACT_MATCH = 2
+        PARTIAL_MATCH_WITH_FLAG = 2,
+        EXACT_MATCH = 3
     };
 
     /**
@@ -92,7 +93,6 @@ public:
      * @param channelMask to be checked for compatibility. Must be specified
      * @param updatedChannelMask if non-NULL, it is assigned the actual channel mask
      * @param flags to be checked for compatibility
-     * @param exactMatchRequiredForInputFlags true if exact match is required on flags
      * @return how the IO profile is compatible with the given parameters.
      */
     CompatibilityScore getCompatibilityScore(const DeviceVector &devices,
@@ -103,8 +103,7 @@ public:
                                              audio_channel_mask_t channelMask,
                                              audio_channel_mask_t *updatedChannelMask,
                                              // FIXME parameter type
-                                             uint32_t flags,
-                                             bool exactMatchRequiredForInputFlags = false) const;
+                                             uint32_t flags) const;
 
     /**
      * @brief areAllDevicesSupported: Checks if the given devices are supported by the IO profile.
@@ -119,11 +118,9 @@ public:
      * specified flags.
      *
      * @param flags to be checked for compatibility
-     * @param exactMatchRequiredForInputFlags true if exact match is required on flags
      * @return true if the profile is compatible, false otherwise.
      */
-    bool isCompatibleProfileForFlags(uint32_t flags,
-                                     bool exactMatchRequiredForInputFlags = false) const;
+    bool isCompatibleProfileForFlags(uint32_t flags) const;
 
     void dump(String8 *dst, int spaces) const;
     void log();
@@ -235,6 +232,7 @@ public:
 
 private:
     void refreshMixerBehaviors();
+    CompatibilityScore getFlagsCompatibleScore(uint32_t flags) const;
 
     DeviceVector mSupportedDevices; // supported devices: this input/output can be routed from/to
 

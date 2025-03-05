@@ -25,6 +25,7 @@ const char *MEDIA_MIMETYPE_IMAGE_AVIF = "image/avif";
 const char *MEDIA_MIMETYPE_VIDEO_VP8 = "video/x-vnd.on2.vp8";
 const char *MEDIA_MIMETYPE_VIDEO_VP9 = "video/x-vnd.on2.vp9";
 const char *MEDIA_MIMETYPE_VIDEO_AV1 = "video/av01";
+const char *MEDIA_MIMETYPE_VIDEO_APV = "video/apv";
 const char *MEDIA_MIMETYPE_VIDEO_AVC = "video/avc";
 const char *MEDIA_MIMETYPE_VIDEO_HEVC = "video/hevc";
 const char *MEDIA_MIMETYPE_VIDEO_MPEG4 = "video/mp4v-es";
@@ -123,6 +124,8 @@ const char *MEDIA_MIMETYPE_AUDIO_AAC_LATM_HE_V2 = "audio/mp4a-latm.29";
 const char *MEDIA_MIMETYPE_AUDIO_IEC61937 = "audio/x-iec61937";
 // Note: not in the IANA registry.
 const char *MEDIA_MIMETYPE_AUDIO_IEC60958 = "audio/x-iec60958";
+// Note: not in the IANA registry.
+const char *MEDIA_MIMETYPE_AUDIO_IAMF = "audio/iamf";
 
 const char *MEDIA_MIMETYPE_CONTAINER_MPEG4 = "video/mp4";
 const char *MEDIA_MIMETYPE_CONTAINER_WAV = "audio/x-wav";

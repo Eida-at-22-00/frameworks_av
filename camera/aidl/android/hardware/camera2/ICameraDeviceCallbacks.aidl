@@ -16,6 +16,7 @@
 
 package android.hardware.camera2;
 
+import android.hardware.camera2.CameraMetadataInfo;
 import android.hardware.camera2.impl.CameraMetadataNative;
 import android.hardware.camera2.impl.CaptureResultExtras;
 import android.hardware.camera2.impl.PhysicalCaptureResultInfo;
@@ -36,7 +37,7 @@ interface ICameraDeviceCallbacks
     oneway void onDeviceError(int errorCode, in CaptureResultExtras resultExtras);
     oneway void onDeviceIdle();
     oneway void onCaptureStarted(in CaptureResultExtras resultExtras, long timestamp);
-    oneway void onResultReceived(in CameraMetadataNative result,
+    oneway void onResultReceived(in CameraMetadataInfo resultInfo,
                                  in CaptureResultExtras resultExtras,
                                  in PhysicalCaptureResultInfo[] physicalCaptureResultInfos);
     oneway void onPrepared(int streamId);
@@ -50,4 +51,15 @@ interface ICameraDeviceCallbacks
     oneway void onRepeatingRequestError(in long lastFrameNumber,
                                         in int repeatingRequestId);
     oneway void onRequestQueueEmpty();
+
+    /**
+     * Notify registered clients about client shared access priority changes when the camera device
+     * has been opened in shared mode.
+     *
+     * If the client priority changes from secondary to primary, then it can now
+     * create capture request and change the capture request parameters. If client priority
+     * changes from primary to secondary, that implies that another higher priority client is also
+     * accessing the camera in shared mode and is now the primary client.
+     */
+    oneway void onClientSharedAccessPriorityChanged(boolean primaryClient);
 }

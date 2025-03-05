@@ -108,7 +108,7 @@ void AudioSystemTest::createRecordSession(void) {
 // UNIT TESTS
 TEST_F(AudioSystemTest, CheckServerSideValues) {
     ASSERT_NO_FATAL_FAILURE(createPlaybackSession());
-    const auto [pbAudioIo, _] = mCbPlayback->getLastPortAndDevice();
+    const auto [pbAudioIo, _] = mCbPlayback->getLastPortAndDevices();
     EXPECT_GT(mAF->sampleRate(pbAudioIo), 0);
     EXPECT_NE(mAF->format(pbAudioIo), AUDIO_FORMAT_INVALID);
     EXPECT_GT(mAF->frameCount(pbAudioIo), 0);
@@ -122,7 +122,7 @@ TEST_F(AudioSystemTest, CheckServerSideValues) {
     EXPECT_LE(mAF->latency(pbAudioIo), mPlayback->getAudioTrackHandle()->latency());
 
     ASSERT_NO_FATAL_FAILURE(createRecordSession());
-    const auto [recAudioIo, __] = mCbRecord->getLastPortAndDevice();
+    const auto [recAudioIo, __] = mCbRecord->getLastPortAndDevices();
     EXPECT_GT(mAF->sampleRate(recAudioIo), 0);
     // EXPECT_NE(mAF->format(recAudioIo), AUDIO_FORMAT_INVALID);
     EXPECT_GT(mAF->frameCount(recAudioIo), 0);

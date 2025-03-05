@@ -28,6 +28,8 @@ parcelable GetInputForAttrResponse {
     int selectedDeviceId;
     /** Interpreted as audio_port_handle_t. */
     int portId;
+    /** The virtual device id corresponding to the opened input. */
+    int virtualDeviceId;
     /** The suggested config if fails to get an input. **/
     AudioConfigBase config;
 }

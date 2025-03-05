@@ -21,6 +21,7 @@
 // NOTE: due to dependency from mainline modules cannot use libsysprop
 // #include <android/sysprop/MediaProperties.sysprop.h>
 #include <android-base/properties.h>
+#include <android_media_codec.h>
 #include <com_android_media_codec_flags.h>
 
 #include <codec2/common/HalSelection.h>
@@ -64,6 +65,22 @@ bool IsCodec2AidlHalSelected() {
 #endif
 
     return false;
+}
+
+bool IsCodec2AidlInputSurfaceSelected() {
+    if (!IsCodec2AidlHalSelected()) {
+        return false;
+    }
+
+    int32_t inputSurfaceSetting = ::android::base::GetIntProperty(
+            "debug.stagefright.c2inputsurface", int32_t(0));
+    if (inputSurfaceSetting <= 0) {
+        return false;
+    }
+    if (!android::media::codec::provider_->aidl_hal_input_surface()) {
+        return false;
+    }
+    return true;
 }
 
 }  // namespace android

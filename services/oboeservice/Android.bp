@@ -89,6 +89,7 @@ cc_defaults {
         "libaaudio_internal",
         "libaudioclient",
         "libaudioclient_aidl_conversion",
+        "libaudiofoundation",
         "libaudioutils",
         "libbase",
         "libbinder",

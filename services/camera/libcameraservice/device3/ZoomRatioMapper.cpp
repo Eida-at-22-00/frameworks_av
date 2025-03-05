@@ -19,6 +19,8 @@
 
 #include <algorithm>
 
+#include <com_android_internal_camera_flags.h>
+
 #include "device3/ZoomRatioMapper.h"
 #include "utils/SessionConfigurationUtilsHost.h"
 
@@ -42,13 +44,25 @@ void ZoomRatioMapper::initRemappedKeys() {
 }
 
 status_t ZoomRatioMapper::initZoomRatioInTemplate(CameraMetadata *request) {
+    status_t res = OK;
+
+    if (flags::zoom_method()) {
+        uint8_t zoomMethod = ANDROID_CONTROL_ZOOM_METHOD_AUTO;
+        res = request->update(ANDROID_CONTROL_ZOOM_METHOD, &zoomMethod, 1);
+        if (res != OK) {
+            ALOGE("%s: Failed to update CONTROL_ZOOM_METHOD key: %s (%d)",
+                    __FUNCTION__, strerror(-res), res);
+            return res;
+        }
+    }
+
     camera_metadata_entry_t entry;
     entry = request->find(ANDROID_CONTROL_ZOOM_RATIO);
     float defaultZoomRatio = 1.0f;
     if (entry.count == 0) {
-        return request->update(ANDROID_CONTROL_ZOOM_RATIO, &defaultZoomRatio, 1);
+        res = request->update(ANDROID_CONTROL_ZOOM_RATIO, &defaultZoomRatio, 1);
     }
-    return OK;
+    return res;
 }
 
 status_t ZoomRatioMapper::overrideZoomRatioTags(
@@ -57,40 +71,69 @@ status_t ZoomRatioMapper::overrideZoomRatioTags(
         return BAD_VALUE;
     }
 
+    bool halSupportZoomRatio = false;
     camera_metadata_entry_t entry;
     entry = deviceInfo->find(ANDROID_CONTROL_ZOOM_RATIO_RANGE);
     if (entry.count != 2 && entry.count != 0) return BAD_VALUE;
-
     // Hal has zoom ratio support
     if (entry.count == 2) {
-        *supportNativeZoomRatio = true;
-        return OK;
+        halSupportZoomRatio = true;
     }
 
-    // Hal has no zoom ratio support
-    *supportNativeZoomRatio = false;
-
-    entry = deviceInfo->find(ANDROID_SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
-    if (entry.count != 1) {
-        ALOGI("%s: Camera device doesn't support SCALER_AVAILABLE_MAX_DIGITAL_ZOOM key!",
-                __FUNCTION__);
-        return OK;
-    }
-
-    float zoomRange[] = {1.0f, entry.data.f[0]};
-    status_t res = deviceInfo->update(ANDROID_CONTROL_ZOOM_RATIO_RANGE, zoomRange, 2);
-    if (res != OK) {
-        ALOGE("%s: Failed to update CONTROL_ZOOM_RATIO_RANGE key: %s (%d)",
-                __FUNCTION__, strerror(-res), res);
-        return res;
-    }
-
+    // Add ZOOM_METHOD request and result keys
     std::vector<int32_t> requestKeys;
     entry = deviceInfo->find(ANDROID_REQUEST_AVAILABLE_REQUEST_KEYS);
     if (entry.count > 0) {
         requestKeys.insert(requestKeys.end(), entry.data.i32, entry.data.i32 + entry.count);
     }
-    requestKeys.push_back(ANDROID_CONTROL_ZOOM_RATIO);
+    if (flags::zoom_method()) {
+        requestKeys.push_back(ANDROID_CONTROL_ZOOM_METHOD);
+    }
+    std::vector<int32_t> resultKeys;
+    entry = deviceInfo->find(ANDROID_REQUEST_AVAILABLE_RESULT_KEYS);
+    if (entry.count > 0) {
+        resultKeys.insert(resultKeys.end(), entry.data.i32, entry.data.i32 + entry.count);
+    }
+    if (flags::zoom_method()) {
+        resultKeys.push_back(ANDROID_CONTROL_ZOOM_METHOD);
+    }
+
+    // Add additional keys if the HAL doesn't support ZOOM_RATIO
+    status_t res = OK;
+    if (!halSupportZoomRatio) {
+        entry = deviceInfo->find(ANDROID_SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
+        if (entry.count != 1) {
+            ALOGI("%s: Camera device doesn't support SCALER_AVAILABLE_MAX_DIGITAL_ZOOM key!",
+                    __FUNCTION__);
+            return OK;
+        }
+        float zoomRange[] = {1.0f, entry.data.f[0]};
+        res = deviceInfo->update(ANDROID_CONTROL_ZOOM_RATIO_RANGE, zoomRange, 2);
+        if (res != OK) {
+            ALOGE("%s: Failed to update CONTROL_ZOOM_RATIO_RANGE key: %s (%d)",
+                    __FUNCTION__, strerror(-res), res);
+            return res;
+        }
+
+        requestKeys.push_back(ANDROID_CONTROL_ZOOM_RATIO);
+        resultKeys.push_back(ANDROID_CONTROL_ZOOM_RATIO);
+
+        std::vector<int32_t> charKeys;
+        entry = deviceInfo->find(ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS);
+        if (entry.count > 0) {
+            charKeys.insert(charKeys.end(), entry.data.i32, entry.data.i32 + entry.count);
+        }
+        charKeys.push_back(ANDROID_CONTROL_ZOOM_RATIO_RANGE);
+        res = deviceInfo->update(ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS,
+                charKeys.data(), charKeys.size());
+        if (res != OK) {
+            ALOGE("%s: Failed to update REQUEST_AVAILABLE_CHARACTERISTICS_KEYS: %s (%d)",
+                    __FUNCTION__, strerror(-res), res);
+            return res;
+        }
+    }
+
+    // Update available request and result keys
     res = deviceInfo->update(ANDROID_REQUEST_AVAILABLE_REQUEST_KEYS,
             requestKeys.data(), requestKeys.size());
     if (res != OK) {
@@ -98,13 +141,6 @@ status_t ZoomRatioMapper::overrideZoomRatioTags(
                 __FUNCTION__, strerror(-res), res);
         return res;
     }
-
-    std::vector<int32_t> resultKeys;
-    entry = deviceInfo->find(ANDROID_REQUEST_AVAILABLE_RESULT_KEYS);
-    if (entry.count > 0) {
-        resultKeys.insert(resultKeys.end(), entry.data.i32, entry.data.i32 + entry.count);
-    }
-    resultKeys.push_back(ANDROID_CONTROL_ZOOM_RATIO);
     res = deviceInfo->update(ANDROID_REQUEST_AVAILABLE_RESULT_KEYS,
             resultKeys.data(), resultKeys.size());
     if (res != OK) {
@@ -113,20 +149,7 @@ status_t ZoomRatioMapper::overrideZoomRatioTags(
         return res;
     }
 
-    std::vector<int32_t> charKeys;
-    entry = deviceInfo->find(ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS);
-    if (entry.count > 0) {
-        charKeys.insert(charKeys.end(), entry.data.i32, entry.data.i32 + entry.count);
-    }
-    charKeys.push_back(ANDROID_CONTROL_ZOOM_RATIO_RANGE);
-    res = deviceInfo->update(ANDROID_REQUEST_AVAILABLE_CHARACTERISTICS_KEYS,
-            charKeys.data(), charKeys.size());
-    if (res != OK) {
-        ALOGE("%s: Failed to update REQUEST_AVAILABLE_CHARACTERISTICS_KEYS: %s (%d)",
-                __FUNCTION__, strerror(-res), res);
-        return res;
-    }
-
+    *supportNativeZoomRatio = halSupportZoomRatio;
     return OK;
 }
 
@@ -223,7 +246,6 @@ status_t ZoomRatioMapper::updateCaptureRequest(CameraMetadata* request) {
     if (!mIsValid) return INVALID_OPERATION;
 
     status_t res = OK;
-    bool zoomRatioIs1 = true;
     camera_metadata_entry_t entry;
     int arrayHeight, arrayWidth = 0;
     res = getArrayDimensionsToBeUsed(request, &arrayWidth, &arrayHeight);
@@ -231,9 +253,14 @@ status_t ZoomRatioMapper::updateCaptureRequest(CameraMetadata* request) {
         return res;
     }
     entry = request->find(ANDROID_CONTROL_ZOOM_RATIO);
-    if (entry.count == 1 && entry.data.f[0] != 1.0f) {
-        zoomRatioIs1 = false;
-
+    bool zoomRatioIs1 = (entry.count == 0 || entry.data.f[0] == 1.0f);
+    bool useZoomRatio = !zoomRatioIs1;
+    if (flags::zoom_method()) {
+        entry = request->find(ANDROID_CONTROL_ZOOM_METHOD);
+        useZoomRatio |= (entry.count == 1
+                        && entry.data.u8[0] == ANDROID_CONTROL_ZOOM_METHOD_ZOOM_RATIO);
+    }
+    if (useZoomRatio) {
         // If cropRegion is windowboxing, override it with activeArray
         camera_metadata_entry_t cropRegionEntry = request->find(ANDROID_SCALER_CROP_REGION);
         if (cropRegionEntry.count == 4) {
@@ -248,9 +275,9 @@ status_t ZoomRatioMapper::updateCaptureRequest(CameraMetadata* request) {
         }
     }
 
-    if (mHalSupportsZoomRatio && zoomRatioIs1) {
+    if (mHalSupportsZoomRatio && !useZoomRatio) {
         res = separateZoomFromCropLocked(request, false/*isResult*/, arrayWidth, arrayHeight);
-    } else if (!mHalSupportsZoomRatio && !zoomRatioIs1) {
+    } else if (!mHalSupportsZoomRatio && useZoomRatio) {
         res = combineZoomAndCropLocked(request, false/*isResult*/, arrayWidth, arrayHeight);
     }
 
@@ -263,7 +290,8 @@ status_t ZoomRatioMapper::updateCaptureRequest(CameraMetadata* request) {
     return res;
 }
 
-status_t ZoomRatioMapper::updateCaptureResult(CameraMetadata* result, bool requestedZoomRatioIs1) {
+status_t ZoomRatioMapper::updateCaptureResult(
+        CameraMetadata* result, bool zoomMethodIsRatio, bool zoomRatioIs1) {
     if (!mIsValid) return INVALID_OPERATION;
 
     status_t res = OK;
@@ -273,9 +301,11 @@ status_t ZoomRatioMapper::updateCaptureResult(CameraMetadata* result, bool reque
     if (res != OK) {
         return res;
     }
-    if (mHalSupportsZoomRatio && requestedZoomRatioIs1) {
+
+    bool useZoomRatio = !zoomRatioIs1 || zoomMethodIsRatio;
+    if (mHalSupportsZoomRatio && !useZoomRatio) {
         res = combineZoomAndCropLocked(result, true/*isResult*/, arrayWidth, arrayHeight);
-    } else if (!mHalSupportsZoomRatio && !requestedZoomRatioIs1) {
+    } else if (!mHalSupportsZoomRatio && useZoomRatio) {
         res = separateZoomFromCropLocked(result, true/*isResult*/, arrayWidth, arrayHeight);
     } else {
         camera_metadata_entry_t entry = result->find(ANDROID_CONTROL_ZOOM_RATIO);
@@ -283,6 +313,12 @@ status_t ZoomRatioMapper::updateCaptureResult(CameraMetadata* result, bool reque
             float zoomRatio1x = 1.0f;
             result->update(ANDROID_CONTROL_ZOOM_RATIO, &zoomRatio1x, 1);
         }
+    }
+
+    if (flags::zoom_method()) {
+        uint8_t zoomMethod = zoomMethodIsRatio ?  ANDROID_CONTROL_ZOOM_METHOD_ZOOM_RATIO :
+                ANDROID_CONTROL_ZOOM_METHOD_AUTO;
+        result->update(ANDROID_CONTROL_ZOOM_METHOD, &zoomMethod, 1);
     }
 
     return res;

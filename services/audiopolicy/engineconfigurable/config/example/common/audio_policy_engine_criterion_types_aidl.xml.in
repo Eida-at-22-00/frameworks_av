@@ -19,76 +19,77 @@
     <criterion_type name="OutputDevicesAddressesType" type="inclusive">
         <values>
             <!-- legacy remote submix -->
-            <value literal="0" numerical="1"/>
+            <value literal="0"/>
         </values>
     </criterion_type>
     <criterion_type name="InputDevicesAddressesType" type="inclusive">
         <values>
             <!-- legacy remote submix -->
-            <value literal="0" numerical="1"/>
+            <value literal="0"/>
         </values>
     </criterion_type>
     <criterion_type name="AndroidModeType" type="exclusive"/>
     <criterion_type name="ForceUseForCommunicationType" type="exclusive">
         <values>
-            <value literal="NONE" numerical="0"/>
-            <value literal="SPEAKER" numerical="1"/>
-            <value literal="BT_SCO" numerical="3"/>
+            <value literal="NONE"/>
+            <value literal="SPEAKER"/>
+            <value literal="BT_SCO"/>
         </values>
     </criterion_type>
     <criterion_type name="ForceUseForMediaType" type="exclusive">
         <values>
-            <value literal="NONE" numerical="0"/>
-            <value literal="SPEAKER" numerical="1"/>
-            <value literal="HEADPHONES" numerical="2"/>
-            <value literal="BT_A2DP" numerical="4"/>
-            <value literal="WIRED_ACCESSORY" numerical="5"/>
-            <value literal="ANALOG_DOCK" numerical="8"/>
-            <value literal="DIGITAL_DOCK" numerical="9"/>
-            <value literal="NO_BT_A2DP" numerical="10"/>
+            <value literal="NONE"/>
+            <value literal="SPEAKER"/>
+            <value literal="HEADPHONES"/>
+            <value literal="BT_A2DP"/>
+            <value literal="ANALOG_DOCK"/>
+            <value literal="DIGITAL_DOCK"/>
+            <value literal="WIRED_ACCESSORY"/>
+            <value literal="NO_BT_A2DP"/>
         </values>
     </criterion_type>
     <criterion_type name="ForceUseForRecordType" type="exclusive">
         <values>
-            <value literal="NONE" numerical="0"/>
-            <value literal="BT_SCO" numerical="3"/>
-            <value literal="WIRED_ACCESSORY" numerical="5"/>
+            <value literal="NONE"/>
+            <value literal="BT_SCO"/>
+            <value literal="WIRED_ACCESSORY"/>
         </values>
     </criterion_type>
     <criterion_type name="ForceUseForDockType" type="exclusive">
         <values>
-            <value literal="NONE" numerical="0"/>
-            <value literal="WIRED_ACCESSORY" numerical="5"/>
-            <value literal="BT_CAR_DOCK" numerical="6"/>
-            <value literal="BT_DESK_DOCK" numerical="7"/>
-            <value literal="ANALOG_DOCK" numerical="8"/>
-            <value literal="DIGITAL_DOCK" numerical="9"/>
+            <value literal="NONE"/>
+            <value literal="BT_CAR_DOCK"/>
+            <value literal="BT_DESK_DOCK"/>
+            <value literal="ANALOG_DOCK"/>
+            <value literal="DIGITAL_DOCK"/>
+            <value literal="WIRED_ACCESSORY"/>
         </values>
     </criterion_type>
     <criterion_type name="ForceUseForSystemType" type="exclusive" >
         <values>
-            <value literal="NONE" numerical="0"/>
-            <value literal="SYSTEM_ENFORCED" numerical="11"/>
+            <value literal="NONE"/>
+            <value literal="SYSTEM_ENFORCED"/>
         </values>
     </criterion_type>
     <criterion_type name="ForceUseForHdmiSystemAudioType" type="exclusive">
         <values>
-            <value literal="NONE" numerical="0"/>
-            <value literal="HDMI_SYSTEM_AUDIO_ENFORCED" numerical="12"/>
+            <value literal="NONE"/>
+            <value literal="HDMI_SYSTEM_AUDIO_ENFORCED"/>
         </values>
     </criterion_type>
     <criterion_type name="ForceUseForEncodedSurroundType" type="exclusive">
         <values>
-            <value literal="NONE" numerical="0"/>
-            <value literal="ENCODED_SURROUND_NEVER" numerical="13"/>
-            <value literal="ENCODED_SURROUND_ALWAYS" numerical="14"/>
-            <value literal="ENCODED_SURROUND_MANUAL" numerical="15"/>
+            <value literal="UNSPECIFIED"/>
+            <value literal="NEVER"/>
+            <value literal="ALWAYS"/>
+            <value literal="MANUAL"/>
         </values>
     </criterion_type>
     <criterion_type name="ForceUseForVibrateRingingType" type="exclusive">
         <values>
-            <value literal="NONE" numerical="0"/>
-            <value literal="BT_SCO" numerical="3"/>
+            <value literal="NONE"/>
+            <value literal="BT_SCO"/>
+            <value literal="BT_BLE"/>
         </values>
     </criterion_type>
 </criterion_types>

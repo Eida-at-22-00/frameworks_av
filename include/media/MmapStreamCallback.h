@@ -17,6 +17,7 @@
 #ifndef ANDROID_AUDIO_MMAP_STREAM_CALLBACK_H
 #define ANDROID_AUDIO_MMAP_STREAM_CALLBACK_H
 
+#include <media/AudioContainers.h>
 #include <system/audio.h>
 #include <utils/Errors.h>
 #include <utils/RefBase.h>
@@ -42,10 +43,10 @@ class MmapStreamCallback : public virtual RefBase {
     virtual void onVolumeChanged(float volume) = 0;
 
     /**
-     * The device the stream is routed to/from has changed
-     * \param[in] onRoutingChanged the unique device ID of the new device.
+     * The devices the stream is routed to/from has changed
+     * \param[in] deviceIds a set of the device IDs of the new devices.
      */
-    virtual void onRoutingChanged(audio_port_handle_t deviceId) = 0;
+    virtual void onRoutingChanged(const DeviceIdVector& deviceIds) = 0;
 
   protected:
     MmapStreamCallback() {}

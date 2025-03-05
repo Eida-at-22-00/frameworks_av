@@ -64,6 +64,21 @@ sp<DeviceDescriptor> findPreferredDevice(
             if (activeClients.size() == activeClientsWithRoute.size()) {
                 return devices.getDeviceFromId(activeClientsWithRoute[0]->preferredDeviceId());
             }
+            if (activeClientsWithRoute.size() == 0) {
+                return nullptr;
+            }
+            uid_t uniqueUid = activeClients[0]->uid();
+            for (const auto &client : activeClients) {
+                if (uniqueUid != client->uid()) {
+                   return nullptr;
+                }
+            }
+            for (const auto &client : activeClientsWithRoute) {
+                if (uniqueUid != client->uid()) {
+                   return nullptr;
+                }
+            }
+            return devices.getDeviceFromId(activeClientsWithRoute[0]->preferredDeviceId());
         }
     }
     return nullptr;

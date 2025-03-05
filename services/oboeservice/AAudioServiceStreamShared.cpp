@@ -144,6 +144,9 @@ aaudio_result_t AAudioServiceStreamShared::open(const aaudio::AAudioStreamReques
         goto error;
     }
 
+    // Use the sample rate of the endpoint as each shared stream should use its own SRC.
+    setSampleRate(endpoint->getSampleRate());
+
     // Is the request compatible with the shared endpoint?
     setFormat(configurationInput.getFormat());
     if (getFormat() == AUDIO_FORMAT_DEFAULT) {
@@ -151,16 +154,6 @@ aaudio_result_t AAudioServiceStreamShared::open(const aaudio::AAudioStreamReques
     } else if (getFormat() != AUDIO_FORMAT_PCM_FLOAT) {
         ALOGD("%s() audio_format_t mAudioFormat = %d, need FLOAT", __func__, getFormat());
         result = AAUDIO_ERROR_INVALID_FORMAT;
-        goto error;
-    }
-
-    setSampleRate(configurationInput.getSampleRate());
-    if (getSampleRate() == AAUDIO_UNSPECIFIED) {
-        setSampleRate(endpoint->getSampleRate());
-    } else if (getSampleRate() != endpoint->getSampleRate()) {
-        ALOGD("%s() mSampleRate = %d, need %d",
-              __func__, getSampleRate(), endpoint->getSampleRate());
-        result = AAUDIO_ERROR_INVALID_RATE;
         goto error;
     }
 

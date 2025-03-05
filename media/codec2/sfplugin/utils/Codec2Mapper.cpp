@@ -436,6 +436,86 @@ ALookup<C2Config::hdr_format_t, int32_t> sAv1HdrFormats = {
     { C2Config::hdr_format_t::HDR10_PLUS, AV1ProfileMain10HDR10Plus },
 };
 
+// APV
+ALookup<C2Config::profile_t, int32_t> sApvProfiles = {
+    { C2Config::PROFILE_APV_422_10, APVProfile422_10 },
+    { C2Config::PROFILE_APV_422_10, APVProfile422_10HDR10 },
+    { C2Config::PROFILE_APV_422_10, APVProfile422_10HDR10Plus },
+};
+
+ALookup<C2Config::profile_t, int32_t> sApvHdrProfiles = {
+    { C2Config::PROFILE_APV_422_10, APVProfile422_10HDR10 },
+};
+
+ALookup<C2Config::profile_t, int32_t> sApvHdr10PlusProfiles = {
+    { C2Config::PROFILE_APV_422_10, APVProfile422_10HDR10Plus },
+};
+
+ALookup<C2Config::level_t, int32_t> sApvLevels = {
+    { C2Config::LEVEL_APV_1_BAND_0, APVLevel1Band0 },
+    { C2Config::LEVEL_APV_1_BAND_1, APVLevel1Band1 },
+    { C2Config::LEVEL_APV_1_BAND_2, APVLevel1Band2 },
+    { C2Config::LEVEL_APV_1_BAND_3, APVLevel1Band3 },
+    { C2Config::LEVEL_APV_1_1_BAND_0, APVLevel11Band0 },
+    { C2Config::LEVEL_APV_1_1_BAND_1, APVLevel11Band1 },
+    { C2Config::LEVEL_APV_1_1_BAND_2, APVLevel11Band2 },
+    { C2Config::LEVEL_APV_1_1_BAND_3, APVLevel11Band3 },
+    { C2Config::LEVEL_APV_2_BAND_0, APVLevel2Band0 },
+    { C2Config::LEVEL_APV_2_BAND_1, APVLevel2Band1 },
+    { C2Config::LEVEL_APV_2_BAND_2, APVLevel2Band2 },
+    { C2Config::LEVEL_APV_2_BAND_3, APVLevel2Band3 },
+    { C2Config::LEVEL_APV_2_1_BAND_0, APVLevel21Band0 },
+    { C2Config::LEVEL_APV_2_1_BAND_1, APVLevel21Band1 },
+    { C2Config::LEVEL_APV_2_1_BAND_2, APVLevel21Band2 },
+    { C2Config::LEVEL_APV_2_1_BAND_3, APVLevel21Band3 },
+    { C2Config::LEVEL_APV_3_BAND_0, APVLevel3Band0 },
+    { C2Config::LEVEL_APV_3_BAND_1, APVLevel3Band1 },
+    { C2Config::LEVEL_APV_3_BAND_2, APVLevel3Band2 },
+    { C2Config::LEVEL_APV_3_BAND_3, APVLevel3Band3 },
+    { C2Config::LEVEL_APV_3_1_BAND_0, APVLevel31Band0 },
+    { C2Config::LEVEL_APV_3_1_BAND_1, APVLevel31Band1 },
+    { C2Config::LEVEL_APV_3_1_BAND_2, APVLevel31Band2 },
+    { C2Config::LEVEL_APV_3_1_BAND_3, APVLevel31Band3 },
+    { C2Config::LEVEL_APV_4_BAND_0, APVLevel4Band0 },
+    { C2Config::LEVEL_APV_4_BAND_1, APVLevel4Band1 },
+    { C2Config::LEVEL_APV_4_BAND_2, APVLevel4Band2 },
+    { C2Config::LEVEL_APV_4_BAND_3, APVLevel4Band3 },
+    { C2Config::LEVEL_APV_4_1_BAND_0, APVLevel41Band0 },
+    { C2Config::LEVEL_APV_4_1_BAND_1, APVLevel41Band1 },
+    { C2Config::LEVEL_APV_4_1_BAND_2, APVLevel41Band2 },
+    { C2Config::LEVEL_APV_4_1_BAND_3, APVLevel41Band3 },
+    { C2Config::LEVEL_APV_5_BAND_0, APVLevel5Band0 },
+    { C2Config::LEVEL_APV_5_BAND_1, APVLevel5Band1 },
+    { C2Config::LEVEL_APV_5_BAND_2, APVLevel5Band2 },
+    { C2Config::LEVEL_APV_5_BAND_3, APVLevel5Band3 },
+    { C2Config::LEVEL_APV_5_1_BAND_0, APVLevel51Band0 },
+    { C2Config::LEVEL_APV_5_1_BAND_1, APVLevel51Band1 },
+    { C2Config::LEVEL_APV_5_1_BAND_2, APVLevel51Band2 },
+    { C2Config::LEVEL_APV_5_1_BAND_3, APVLevel51Band3 },
+    { C2Config::LEVEL_APV_6_BAND_0, APVLevel6Band0 },
+    { C2Config::LEVEL_APV_6_BAND_1, APVLevel6Band1 },
+    { C2Config::LEVEL_APV_6_BAND_2, APVLevel6Band2 },
+    { C2Config::LEVEL_APV_6_BAND_3, APVLevel6Band3 },
+    { C2Config::LEVEL_APV_6_1_BAND_0, APVLevel61Band0 },
+    { C2Config::LEVEL_APV_6_1_BAND_1, APVLevel61Band1 },
+    { C2Config::LEVEL_APV_6_1_BAND_2, APVLevel61Band2 },
+    { C2Config::LEVEL_APV_6_1_BAND_3, APVLevel61Band3 },
+    { C2Config::LEVEL_APV_7_BAND_0, APVLevel7Band0 },
+    { C2Config::LEVEL_APV_7_BAND_1, APVLevel7Band1 },
+    { C2Config::LEVEL_APV_7_BAND_2, APVLevel7Band2 },
+    { C2Config::LEVEL_APV_7_BAND_3, APVLevel7Band3 },
+    { C2Config::LEVEL_APV_7_1_BAND_0, APVLevel71Band0 },
+    { C2Config::LEVEL_APV_7_1_BAND_1, APVLevel71Band1 },
+    { C2Config::LEVEL_APV_7_1_BAND_2, APVLevel71Band2 },
+    { C2Config::LEVEL_APV_7_1_BAND_3, APVLevel71Band3 },
+};
+
+ALookup<C2Config::hdr_format_t, int32_t> sApvHdrFormats = {
+    { C2Config::hdr_format_t::HLG, APVProfile422_10 },
+    { C2Config::hdr_format_t::HDR10, APVProfile422_10HDR10 },
+    { C2Config::hdr_format_t::HDR10_PLUS, APVProfile422_10HDR10Plus },
+};
+
 // HAL_PIXEL_FORMAT_* -> COLOR_Format*
 ALookup<uint32_t, int32_t> sPixelFormats = {
     { HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED, COLOR_FormatSurface },
@@ -720,6 +800,37 @@ private:
     int32_t mBitDepth;
 };
 
+// APV
+struct ApvProfileLevelMapper : ProfileLevelMapperHelper {
+    ApvProfileLevelMapper(bool isHdr = false, bool isHdr10Plus = false) :
+        ProfileLevelMapperHelper(),
+        mIsHdr(isHdr), mIsHdr10Plus(isHdr10Plus) {}
+
+    virtual bool simpleMap(C2Config::level_t from, int32_t *to) {
+        return sApvLevels.map(from, to);
+    }
+    virtual bool simpleMap(int32_t from, C2Config::level_t *to) {
+        return sApvLevels.map(from, to);
+    }
+    virtual bool simpleMap(C2Config::profile_t from, int32_t *to) {
+        return mIsHdr10Plus ? sApvHdr10PlusProfiles.map(from, to) :
+                     mIsHdr ? sApvHdrProfiles.map(from, to) :
+                              sApvProfiles.map(from, to);
+    }
+    virtual bool simpleMap(int32_t from, C2Config::profile_t *to) {
+        return mIsHdr10Plus ? sApvHdr10PlusProfiles.map(from, to) :
+                     mIsHdr ? sApvHdrProfiles.map(from, to) :
+                              sApvProfiles.map(from, to);
+    }
+    virtual bool mapHdrFormat(int32_t from, C2Config::hdr_format_t *to) override {
+        return sApvHdrFormats.map(from, to);
+    }
+
+private:
+    bool mIsHdr;
+    bool mIsHdr10Plus;
+};
+
 } // namespace
 
 // the default mapper is used for media types that do not support HDR
@@ -753,6 +864,8 @@ C2Mapper::GetProfileLevelMapper(std::string mediaType) {
         return std::make_shared<Vp9ProfileLevelMapper>();
     } else if (mediaType == MIMETYPE_VIDEO_AV1) {
         return std::make_shared<Av1ProfileLevelMapper>();
+    } else if (mediaType == MIMETYPE_VIDEO_APV) {
+        return std::make_shared<ApvProfileLevelMapper>();
     }
     return nullptr;
 }
@@ -767,6 +880,8 @@ C2Mapper::GetHdrProfileLevelMapper(std::string mediaType, bool isHdr10Plus) {
         return std::make_shared<Vp9ProfileLevelMapper>(true, isHdr10Plus);
     } else if (mediaType == MIMETYPE_VIDEO_AV1) {
         return std::make_shared<Av1ProfileLevelMapper>(true, isHdr10Plus);
+    } else if (mediaType == MIMETYPE_VIDEO_APV) {
+        return std::make_shared<ApvProfileLevelMapper>(true, isHdr10Plus);
     }
     return nullptr;
 }
@@ -779,6 +894,8 @@ C2Mapper::GetBitDepthProfileLevelMapper(std::string mediaType, int32_t bitDepth)
         return GetProfileLevelMapper(mediaType);
     } else if (mediaType == MIMETYPE_VIDEO_AV1 && bitDepth == 10) {
         return std::make_shared<Av1ProfileLevelMapper>(false, false, bitDepth);
+    } else if (mediaType == MIMETYPE_VIDEO_APV) {
+        return std::make_shared<ApvProfileLevelMapper>();
     }
     return nullptr;
 }

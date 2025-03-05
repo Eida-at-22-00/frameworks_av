@@ -60,7 +60,7 @@ private:
             public:
                 SelfAudioDeviceCallback(PlayerBase& self);
                 virtual void onAudioDeviceUpdate(audio_io_handle_t audioIo,
-                                                         audio_port_handle_t deviceId);
+                                                 const DeviceIdVector& deviceIds);
             private:
                 virtual ~SelfAudioDeviceCallback();
                 PlayerBase& mSelf;

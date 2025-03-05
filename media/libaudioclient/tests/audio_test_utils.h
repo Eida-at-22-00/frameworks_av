@@ -52,9 +52,9 @@ status_t getPortByAttributes(audio_port_role_t role, audio_port_type_t type,
                              audio_port_v7& port);
 status_t getPatchForOutputMix(audio_io_handle_t audioIo, audio_patch& patch);
 status_t getPatchForInputMix(audio_io_handle_t audioIo, audio_patch& patch);
-bool patchContainsOutputDevice(audio_port_handle_t deviceId, audio_patch patch);
+bool patchContainsOutputDevices(DeviceIdVector deviceIds, audio_patch patch);
 bool patchContainsInputDevice(audio_port_handle_t deviceId, audio_patch patch);
-bool checkPatchPlayback(audio_io_handle_t audioIo, audio_port_handle_t deviceId);
+bool checkPatchPlayback(audio_io_handle_t audioIo, const DeviceIdVector& deviceIds);
 bool checkPatchCapture(audio_io_handle_t audioIo, audio_port_handle_t deviceId);
 std::string dumpPort(const audio_port_v7& port);
 std::string dumpPortConfig(const audio_port_config& port);
@@ -62,13 +62,13 @@ std::string dumpPatch(const audio_patch& patch);
 
 class OnAudioDeviceUpdateNotifier : public AudioSystem::AudioDeviceCallback {
   public:
-    void onAudioDeviceUpdate(audio_io_handle_t audioIo, audio_port_handle_t deviceId) override;
+    void onAudioDeviceUpdate(audio_io_handle_t audioIo, const DeviceIdVector& deviceIds) override;
     status_t waitForAudioDeviceCb(audio_port_handle_t expDeviceId = AUDIO_PORT_HANDLE_NONE);
-    std::pair<audio_io_handle_t, audio_port_handle_t> getLastPortAndDevice() const;
+    std::pair<audio_io_handle_t, DeviceIdVector> getLastPortAndDevices() const;
 
   private:
     audio_io_handle_t mAudioIo GUARDED_BY(mMutex) = AUDIO_IO_HANDLE_NONE;
-    audio_port_handle_t mDeviceId GUARDED_BY(mMutex) = AUDIO_PORT_HANDLE_NONE;
+    DeviceIdVector mDeviceIds GUARDED_BY(mMutex);
     mutable std::mutex mMutex;
     std::condition_variable mCondition;
 };

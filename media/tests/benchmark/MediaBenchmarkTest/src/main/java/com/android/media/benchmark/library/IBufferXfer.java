@@ -16,6 +16,8 @@
 
 package com.android.media.benchmark.library;
 import android.media.MediaCodec;
+
+import java.util.ArrayDeque;
 import java.nio.ByteBuffer;
 /**
  * interfaces that can be used to implement
@@ -26,10 +28,11 @@ public class IBufferXfer {
       public ByteBuffer buf;
       public int idx;
       public Object obj;
-      int flag;
-      int bytesRead;
-      boolean isComplete = true;
-      long presentationTimeUs;
+      public ArrayDeque<MediaCodec.BufferInfo> infos;
+      public int flag;
+      public int bytesRead;
+      public boolean isComplete = true;
+      public long presentationTimeUs;
   }
 
   public interface IReceiveBuffer {

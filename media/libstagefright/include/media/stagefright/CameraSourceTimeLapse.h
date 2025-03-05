@@ -23,6 +23,7 @@
 #include <utils/RefBase.h>
 #include <utils/threads.h>
 #include <utils/String16.h>
+#include <gui/Flags.h>
 
 namespace android {
 
@@ -44,7 +45,7 @@ public:
         pid_t clientPid,
         Size videoSize,
         int32_t videoFrameRate,
-        const sp<IGraphicBufferProducer>& surface,
+        const sp<SurfaceType>& surface,
         int64_t timeBetweenTimeLapseFrameCaptureUs);
 
     virtual ~CameraSourceTimeLapse();
@@ -120,7 +121,7 @@ private:
         pid_t clientPid,
         Size videoSize,
         int32_t videoFrameRate,
-        const sp<IGraphicBufferProducer>& surface,
+        const sp<SurfaceType>& surface,
         int64_t timeBetweenTimeLapseFrameCaptureUs);
 
     // Wrapper over CameraSource::signalBufferReturned() to implement quick stop.

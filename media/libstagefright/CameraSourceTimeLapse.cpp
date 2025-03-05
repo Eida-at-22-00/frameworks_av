@@ -29,6 +29,7 @@
 #include <media/stagefright/MetaData.h>
 #include <camera/Camera.h>
 #include <camera/CameraParameters.h>
+#include <gui/Flags.h>
 #include <utils/String8.h>
 #include <utils/Vector.h>
 
@@ -44,7 +45,11 @@ CameraSourceTimeLapse *CameraSourceTimeLapse::CreateFromCamera(
         pid_t clientPid,
         Size videoSize,
         int32_t videoFrameRate,
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+        const sp<Surface>& surface,
+#else
         const sp<IGraphicBufferProducer>& surface,
+#endif
         int64_t timeBetweenFrameCaptureUs) {
 
     CameraSourceTimeLapse *source = new
@@ -71,7 +76,11 @@ CameraSourceTimeLapse::CameraSourceTimeLapse(
         pid_t clientPid,
         Size videoSize,
         int32_t videoFrameRate,
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+        const sp<Surface>& surface,
+#else
         const sp<IGraphicBufferProducer>& surface,
+#endif
         int64_t timeBetweenFrameCaptureUs)
       : CameraSource(camera, proxy, cameraId, clientName, clientUid, clientPid,
                 videoSize, videoFrameRate, surface),

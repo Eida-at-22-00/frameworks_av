@@ -19,6 +19,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <future>
@@ -205,6 +206,35 @@ class VirtualCameraRenderThread {
   std::chrono::nanoseconds getSurfaceTimestamp(
       std::chrono::nanoseconds timeSinceLastFrame);
 
+  // Build a default capture result object populating the metadata from the request.
+  std::unique_ptr<::aidl::android::hardware::camera::device::CaptureResult>
+  createCaptureResult(
+      int frameNumber,
+      std::unique_ptr<aidl::android::hardware::camera::device::CameraMetadata>
+          metadata);
+
+  // Renders the images from the input surface into the request's buffers.
+  void renderOutputBuffers(
+      const ProcessCaptureRequestTask& request,
+      ::aidl::android::hardware::camera::device::CaptureResult& captureResult);
+
+  // Notify a shutter event for all the buffers in this request.
+  ::ndk::ScopedAStatus notifyShutter(
+      const ProcessCaptureRequestTask& request,
+      const ::aidl::android::hardware::camera::device::CaptureResult& captureResult,
+      std::chrono::nanoseconds captureTimestamp);
+
+  // Notify a timeout error for this request. The capture result still needs to
+  // be submitted after this call.
+  ::ndk::ScopedAStatus notifyTimeout(
+      const ProcessCaptureRequestTask& request,
+      ::aidl::android::hardware::camera::device::CaptureResult& captureResult);
+
+  // Submit the capture result to the camera callback.
+  ::ndk::ScopedAStatus submitCaptureResult(
+      std::unique_ptr<::aidl::android::hardware::camera::device::CaptureResult>
+          captureResult);
+
   // Camera callback
   const std::shared_ptr<
       ::aidl::android::hardware::camera::device::ICameraDeviceCallback>
@@ -221,8 +251,8 @@ class VirtualCameraRenderThread {
   std::mutex mLock;
   std::deque<std::unique_ptr<ProcessCaptureRequestTask>> mQueue GUARDED_BY(mLock);
   std::condition_variable mCondVar;
-  volatile bool mTextureUpdateRequested GUARDED_BY(mLock);
-  volatile bool mPendingExit GUARDED_BY(mLock);
+  volatile bool GUARDED_BY(mLock) mTextureUpdateRequested = false;
+  volatile bool GUARDED_BY(mLock) mPendingExit = false;
 
   // Acquisition timestamp of last frame.
   std::atomic<uint64_t> mLastAcquisitionTimestampNanoseconds;

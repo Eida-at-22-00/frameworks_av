@@ -60,8 +60,8 @@ TrackPlayerBase::SelfAudioDeviceCallback::~SelfAudioDeviceCallback() {
 }
 
 void TrackPlayerBase::SelfAudioDeviceCallback::onAudioDeviceUpdate(audio_io_handle_t __unused,
-                                                                   audio_port_handle_t deviceId) {
-    mSelf.baseUpdateDeviceId(deviceId);
+        const DeviceIdVector& deviceIds) {
+    mSelf.baseUpdateDeviceIds(deviceIds);
 }
 
 void TrackPlayerBase::doDestroy() {

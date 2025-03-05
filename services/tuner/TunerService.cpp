@@ -82,7 +82,7 @@ binder_status_t TunerService::instantiate() {
     return AServiceManager_addService(tunerService->asBinder().get(), getServiceName());
 }
 
-::ndk::ScopedAStatus TunerService::openDemux(int32_t in_demuxHandle,
+::ndk::ScopedAStatus TunerService::openDemux(int64_t in_demuxHandle,
                                              shared_ptr<ITunerDemux>* _aidl_return) {
     ALOGV("openDemux");
     shared_ptr<IDemux> demux;
@@ -116,7 +116,7 @@ binder_status_t TunerService::instantiate() {
     }
 }
 
-::ndk::ScopedAStatus TunerService::getDemuxInfo(int32_t in_demuxHandle, DemuxInfo* _aidl_return) {
+::ndk::ScopedAStatus TunerService::getDemuxInfo(int64_t in_demuxHandle, DemuxInfo* _aidl_return) {
     if (mTunerVersion <= TUNER_HAL_VERSION_2_0) {
         return ::ndk::ScopedAStatus::fromServiceSpecificError(
                 static_cast<int32_t>(Result::UNAVAILABLE));
@@ -169,7 +169,7 @@ binder_status_t TunerService::instantiate() {
     return mTuner->getFrontendInfo(id, _aidl_return);
 }
 
-::ndk::ScopedAStatus TunerService::openFrontend(int32_t frontendHandle,
+::ndk::ScopedAStatus TunerService::openFrontend(int64_t frontendHandle,
                                                 shared_ptr<ITunerFrontend>* _aidl_return) {
     int id = TunerHelper::getResourceIdFromHandle(frontendHandle, FRONTEND);
     shared_ptr<IFrontend> frontend;
@@ -181,7 +181,7 @@ binder_status_t TunerService::instantiate() {
     return status;
 }
 
-::ndk::ScopedAStatus TunerService::openLnb(int lnbHandle, shared_ptr<ITunerLnb>* _aidl_return) {
+::ndk::ScopedAStatus TunerService::openLnb(int64_t lnbHandle, shared_ptr<ITunerLnb>* _aidl_return) {
     shared_ptr<ILnb> lnb;
     int id = TunerHelper::getResourceIdFromHandle(lnbHandle, LNB);
     auto status = mTuner->openLnbById(id, &lnb);
@@ -204,7 +204,7 @@ binder_status_t TunerService::instantiate() {
     return ::ndk::ScopedAStatus::ok();
 }
 
-::ndk::ScopedAStatus TunerService::openDescrambler(int32_t /*descramblerHandle*/,
+::ndk::ScopedAStatus TunerService::openDescrambler(int64_t /*descramblerHandle*/,
                                                    shared_ptr<ITunerDescrambler>* _aidl_return) {
     shared_ptr<IDescrambler> descrambler;
     // int id = TunerHelper::getResourceIdFromHandle(descramblerHandle, DESCRAMBLER);
@@ -310,7 +310,7 @@ vector<TunerFrontendInfo> TunerService::getTRMFrontendInfos() {
             continue;
         }
         TunerFrontendInfo tunerFrontendInfo{
-                .handle = TunerHelper::getResourceHandleFromId((int)ids[i], FRONTEND),
+                .handle = TunerHelper::getResourceHandleFromId(ids[i], FRONTEND),
                 .type = static_cast<int>(frontendInfo.type),
                 .exclusiveGroupId = frontendInfo.exclusiveGroupId,
         };
@@ -336,18 +336,16 @@ vector<TunerDemuxInfo> TunerService::getTRMDemuxInfos() {
     for (int i = 0; i < ids.size(); i++) {
         DemuxInfo demuxInfo;
         mTuner->getDemuxInfo(ids[i], &demuxInfo);
-        TunerDemuxInfo tunerDemuxInfo{
-                .handle = TunerHelper::getResourceHandleFromId((int)ids[i], DEMUX),
-                .filterTypes = static_cast<int>(demuxInfo.filterTypes)
-        };
+        TunerDemuxInfo tunerDemuxInfo{.handle = TunerHelper::getResourceHandleFromId(ids[i], DEMUX),
+                                      .filterTypes = static_cast<int>(demuxInfo.filterTypes)};
         infos.push_back(tunerDemuxInfo);
     }
 
     return infos;
 }
 
-vector<int32_t> TunerService::getTRMLnbHandles() {
-    vector<int32_t> lnbHandles;
+vector<int64_t> TunerService::getTRMLnbHandles() {
+    vector<int64_t> lnbHandles;
     if (mTuner != nullptr) {
         vector<int32_t> lnbIds;
         auto res = mTuner->getLnbIds(&lnbIds);

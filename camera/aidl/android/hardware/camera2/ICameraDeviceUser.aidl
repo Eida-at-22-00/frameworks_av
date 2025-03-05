@@ -23,6 +23,8 @@ import android.hardware.camera2.impl.CameraMetadataNative;
 import android.hardware.camera2.params.OutputConfiguration;
 import android.hardware.camera2.params.SessionConfiguration;
 import android.hardware.camera2.utils.SubmitInfo;
+import android.hardware.common.fmq.MQDescriptor;
+import android.hardware.common.fmq.SynchronizedReadWrite;
 import android.view.Surface;
 
 /** @hide */
@@ -66,6 +68,17 @@ interface ICameraDeviceUser
      * used, and requests must be batched.
      */
     const int CONSTRAINED_HIGH_SPEED_MODE = 1;
+
+    /**
+     * The shared operating mode for a camera device.
+     *
+     * <p>
+     * When in shared mode, the camera device can be opened and accessed by multiple applications
+     * simultaneously.
+     * </p>
+     *
+     */
+    const int SHARED_MODE = 2;
 
     /**
      * Start of custom vendor modes
@@ -162,6 +175,7 @@ interface ICameraDeviceUser
 
     void finalizeOutputConfigurations(int streamId, in OutputConfiguration outputConfiguration);
 
+    MQDescriptor<byte, SynchronizedReadWrite> getCaptureResultMetadataQueue();
 
     // Keep in sync with public API in
     // frameworks/base/core/java/android/hardware/camera2/CameraDevice.java
@@ -194,4 +208,12 @@ interface ICameraDeviceUser
      */
     ICameraOfflineSession switchToOffline(in ICameraDeviceCallbacks callbacks,
             in int[] offlineOutputIds);
+
+    /**
+     * Get the client status as primary or secondary when camera is opened in shared mode.
+     *
+     * @return true if this is primary client when camera is opened in shared mode.
+     *         false if another higher priority client with primary access is also using the camera.
+     */
+    boolean isPrimaryClient();
 }

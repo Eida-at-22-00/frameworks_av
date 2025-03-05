@@ -19,6 +19,7 @@
 #include <utils/Log.h>
 
 #include <new>
+#include <numeric>
 #include <stdint.h>
 #include <vector>
 
@@ -28,6 +29,7 @@
 #include <android/media/audio/common/AudioMMapPolicyInfo.h>
 #include <android/media/audio/common/AudioMMapPolicyType.h>
 #include <media/AudioSystem.h>
+#include <system/aaudio/AAudio.h>
 
 #include "binding/AAudioBinderClient.h"
 #include "client/AudioStreamInternalCapture.h"
@@ -110,7 +112,7 @@ aaudio_result_t AudioStreamBuilder::build(AudioStream** streamPtr) {
     std::vector<AudioMMapPolicyInfo> policyInfos;
     aaudio_policy_t mmapPolicy = AudioGlobal_getMMapPolicy();
     ALOGD("%s, global mmap policy is %d", __func__, mmapPolicy);
-    if (status_t status = android::AudioSystem::getMmapPolicyInfo(
+    if (status_t status = android::AudioSystem::getMmapPolicyInfos(
             AudioMMapPolicyType::DEFAULT, &policyInfos); status == NO_ERROR) {
         aaudio_policy_t systemMmapPolicy = AAudio_getAAudioPolicy(
                 policyInfos, AAUDIO_MMAP_POLICY_DEFAULT_AIDL);
@@ -143,7 +145,7 @@ aaudio_result_t AudioStreamBuilder::build(AudioStream** streamPtr) {
 
     policyInfos.clear();
     aaudio_policy_t mmapExclusivePolicy = AAUDIO_UNSPECIFIED;
-    if (status_t status = android::AudioSystem::getMmapPolicyInfo(
+    if (status_t status = android::AudioSystem::getMmapPolicyInfos(
             AudioMMapPolicyType::EXCLUSIVE, &policyInfos); status == NO_ERROR) {
         mmapExclusivePolicy = AAudio_getAAudioPolicy(
                 policyInfos, AAUDIO_MMAP_EXCLUSIVE_POLICY_DEFAULT_AIDL);
@@ -172,6 +174,11 @@ aaudio_result_t AudioStreamBuilder::build(AudioStream** streamPtr) {
     if (getPerformanceMode() != AAUDIO_PERFORMANCE_MODE_LOW_LATENCY) {
         ALOGD("%s() MMAP not used because AAUDIO_PERFORMANCE_MODE_LOW_LATENCY not requested.",
               __func__);
+        allowMMap = false;
+    }
+    if (!audio_is_linear_pcm(getFormat())) {
+        ALOGD("%s() MMAP not used because the requested format(%#x) is not pcm",
+              __func__, getFormat());
         allowMMap = false;
     }
 
@@ -261,6 +268,14 @@ aaudio_result_t AudioStreamBuilder::validate() const {
         case AAUDIO_PERFORMANCE_MODE_POWER_SAVING:
         case AAUDIO_PERFORMANCE_MODE_LOW_LATENCY:
             break;
+        case AAUDIO_PERFORMANCE_MODE_POWER_SAVING_OFFLOADED:
+            if (getDirection() != AAUDIO_DIRECTION_OUTPUT ||
+                getFormat() == AUDIO_FORMAT_DEFAULT ||
+                getSampleRate() == 0 ||
+                getChannelMask() == AAUDIO_UNSPECIFIED) {
+                return AAUDIO_ERROR_ILLEGAL_ARGUMENT;
+            }
+            break;
         default:
             ALOGE("illegal performanceMode = %d", mPerformanceMode);
             return AAUDIO_ERROR_ILLEGAL_ARGUMENT;
@@ -277,6 +292,24 @@ aaudio_result_t AudioStreamBuilder::validate() const {
     }
 
     return AAUDIO_OK;
+}
+
+aaudio_result_t AudioStreamBuilder::addTag(const char* tag) {
+    const std::string tagStr(tag);
+    mTags.insert(tagStr);
+    // The tags will be joined with `;` and ended with null terminator when sending to the HAL.
+    const int tagsLength = std::accumulate(
+            mTags.begin(), mTags.end(), 0, [](int v, const std::string& s) { return v + s.size(); })
+            + mTags.size();
+    if (tagsLength <= AUDIO_ATTRIBUTES_TAGS_MAX_SIZE) {
+        return AAUDIO_OK;
+    }
+    mTags.erase(tagStr);
+    return AAUDIO_ERROR_OUT_OF_RANGE;
+}
+
+void AudioStreamBuilder::clearTags() {
+    mTags.clear();
 }
 
 static const char *AAudio_convertSharingModeToShortText(aaudio_sharing_mode_t sharingMode) {
@@ -307,8 +340,8 @@ void AudioStreamBuilder::logParameters() const {
           getSampleRate(), getSamplesPerFrame(), getChannelMask(), getFormat(),
           AAudio_convertSharingModeToShortText(getSharingMode()),
           AAudio_convertDirectionToText(getDirection()));
-    ALOGI("device = %6d, sessionId = %d, perfMode = %d, callback: %s with frames = %d",
-          getDeviceId(),
+    ALOGI("devices = %s, sessionId = %d, perfMode = %d, callback: %s with frames = %d",
+          android::toString(getDeviceIds()).c_str(),
           getSessionId(),
           getPerformanceMode(),
           ((getDataCallbackProc() != nullptr) ? "ON" : "OFF"),

@@ -28,6 +28,7 @@
 #include <type_traits>
 #include <unordered_map>
 
+#include <android-base/thread_annotations.h>
 #include <binder/MemoryBase.h>
 #include <binder/MemoryHeapBase.h>
 #include <log/log_main.h>
@@ -425,8 +426,57 @@ class FallbackAllocator {
     [[no_unique_address]] SecondaryAllocator mSecondary;
 };
 
+// Wrap an allocator with a lock if backs multiple allocators through indirection
+template <typename Allocator>
+class LockedAllocator {
+  public:
+    static size_t alignment() { return Allocator::alignment(); }
+
+    explicit LockedAllocator(Allocator allocator) : mAllocator(allocator) {}
+
+    LockedAllocator() = default;
+
+    template <typename T>
+    AllocationType allocate(T&& request) {
+        static_assert(std::is_base_of_v<android::mediautils::BasicAllocRequest, std::decay_t<T>>);
+        std::lock_guard l_{mMutex};
+        return mAllocator.allocate(std::forward<T>(request));
+    }
+
+    void deallocate(const AllocationType& allocation) {
+        std::lock_guard l_{mMutex};
+        mAllocator.deallocate(allocation);
+    }
+
+    template <typename Enable = void>
+    auto deallocate_all()
+            -> std::enable_if_t<shared_allocator_impl::has_deallocate_all<Allocator>, Enable> {
+        std::lock_guard l_{mMutex};
+        mAllocator.deallocate_all();
+    }
+
+    template <typename Enable = bool>
+    auto owns(const AllocationType& allocation) const
+            -> std::enable_if_t<shared_allocator_impl::has_owns<Allocator>, Enable> {
+        std::lock_guard l_{mMutex};
+        return mAllocator.owns(allocation);
+    }
+
+    template <typename Enable = std::string>
+    auto dump() const -> std::enable_if_t<shared_allocator_impl::has_dump<Allocator>, Enable> {
+        std::lock_guard l_{mMutex};
+        return mAllocator.dump();
+    }
+
+  private:
+    std::mutex mMutex;
+    [[no_unique_address]] Allocator mAllocator GUARDED_BY(mMutex);
+};
+
 // An allocator which is backed by a shared_ptr to an allocator, so multiple
 // allocators can share the same backing allocator (and thus the same state).
+// When the same backing allocator is used by multiple higher level allocators,
+// locking at the sharing level is necessary.
 template <typename Allocator>
 class IndirectAllocator {
   public:

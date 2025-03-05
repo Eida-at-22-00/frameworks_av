@@ -34,8 +34,8 @@ status_t CameraOfflineSessionClient::initialize(sp<CameraProviderManager>, const
         return OK;
     }
 
-    // Verify ops permissions
-    auto res = startCameraOps();
+    // Verify ops permissions and/or open camera
+    auto res = notifyCameraOpening();
     if (res != OK) {
         return res;
     }
@@ -163,7 +163,7 @@ binder::Status CameraOfflineSessionClient::disconnect() {
     }
     // Allow both client and the media server to disconnect at all times
     int callingPid = getCallingPid();
-    if (callingPid != mClientPid &&
+    if (callingPid != mCallingPid &&
             callingPid != mServicePid) {
         return res;
     }
@@ -171,7 +171,7 @@ binder::Status CameraOfflineSessionClient::disconnect() {
     mDisconnected = true;
 
     sCameraService->removeByClient(this);
-    sCameraService->logDisconnectedOffline(mCameraIdStr, mClientPid, mClientPackageName);
+    sCameraService->logDisconnectedOffline(mCameraIdStr, mCallingPid, getPackageName());
 
     sp<IBinder> remote = getRemote();
     if (remote != nullptr) {
@@ -184,12 +184,12 @@ binder::Status CameraOfflineSessionClient::disconnect() {
     mFrameProcessor->requestExit();
     mFrameProcessor->join();
 
-    finishCameraOps();
+    notifyCameraClosing();
     ALOGI("%s: Disconnected client for offline camera %s for PID %d", __FUNCTION__,
-            mCameraIdStr.c_str(), mClientPid);
+            mCameraIdStr.c_str(), mCallingPid);
 
     // client shouldn't be able to call into us anymore
-    mClientPid = 0;
+    mCallingPid = 0;
 
     if (mOfflineSession.get() != nullptr) {
         auto ret = mOfflineSession->disconnect();
@@ -227,11 +227,11 @@ void CameraOfflineSessionClient::notifyError(int32_t errorCode,
     }
 }
 
-status_t CameraOfflineSessionClient::startCameraOps() {
+status_t CameraOfflineSessionClient::notifyCameraOpening() {
     ATRACE_CALL();
     {
-        ALOGV("%s: Start camera ops, package name = %s, client UID = %d",
-              __FUNCTION__, mClientPackageName.c_str(), mClientUid);
+        ALOGV("%s: Notify camera opening, package name = %s, client UID = %d", __FUNCTION__,
+              getPackageName().c_str(), getClientUid());
     }
 
     if (mAppOpsManager != nullptr) {
@@ -239,47 +239,48 @@ status_t CameraOfflineSessionClient::startCameraOps() {
         mOpsCallback = new OpsCallback(this);
         int32_t res;
         // TODO : possibly change this to OP_OFFLINE_CAMERA_SESSION
-        mAppOpsManager->startWatchingMode(AppOpsManager::OP_CAMERA,
-                toString16(mClientPackageName), mOpsCallback);
+        mAppOpsManager->startWatchingMode(AppOpsManager::OP_CAMERA, toString16(getPackageName()),
+                                          mOpsCallback);
         // TODO : possibly change this to OP_OFFLINE_CAMERA_SESSION
-        res = mAppOpsManager->startOpNoThrow(AppOpsManager::OP_CAMERA,
-                mClientUid, toString16(mClientPackageName), /*startIfModeDefault*/ false);
+        res = mAppOpsManager->startOpNoThrow(AppOpsManager::OP_CAMERA, getClientUid(),
+                                             toString16(getPackageName()),
+                                             /*startIfModeDefault*/ false);
 
         if (res == AppOpsManager::MODE_ERRORED) {
-            ALOGI("Offline Camera %s: Access for \"%s\" has been revoked",
-                    mCameraIdStr.c_str(), mClientPackageName.c_str());
+            ALOGI("Offline Camera %s: Access for \"%s\" has been revoked", mCameraIdStr.c_str(),
+                  getPackageName().c_str());
             return PERMISSION_DENIED;
         }
 
         // If the calling Uid is trusted (a native service), the AppOpsManager could
         // return MODE_IGNORED. Do not treat such case as error.
         if (!mUidIsTrusted && res == AppOpsManager::MODE_IGNORED) {
-            ALOGI("Offline Camera %s: Access for \"%s\" has been restricted",
-                    mCameraIdStr.c_str(), mClientPackageName.c_str());
+            ALOGI("Offline Camera %s: Access for \"%s\" has been restricted", mCameraIdStr.c_str(),
+                  getPackageName().c_str());
             // Return the same error as for device policy manager rejection
             return -EACCES;
         }
     }
 
-    mOpsActive = true;
+    mCameraOpen = true;
 
     // Transition device state to OPEN
-    sCameraService->mUidPolicy->registerMonitorUid(mClientUid, /*openCamera*/true);
+    sCameraService->mUidPolicy->registerMonitorUid(getClientUid(), /*openCamera*/ true);
 
     return OK;
 }
 
-status_t CameraOfflineSessionClient::finishCameraOps() {
+status_t CameraOfflineSessionClient::notifyCameraClosing() {
     ATRACE_CALL();
 
-    // Check if startCameraOps succeeded, and if so, finish the camera op
-    if (mOpsActive) {
+    // Check if notifyCameraOpening succeeded, and if so, finish the camera op if necessary
+    if (mCameraOpen) {
         // Notify app ops that the camera is available again
         if (mAppOpsManager != nullptr) {
-        // TODO : possibly change this to OP_OFFLINE_CAMERA_SESSION
-            mAppOpsManager->finishOp(AppOpsManager::OP_CAMERA, mClientUid,
-                    toString16(mClientPackageName));
-            mOpsActive = false;
+            // TODO : possibly change this to OP_OFFLINE_CAMERA_SESSION
+            mAppOpsManager->finishOp(AppOpsManager::OP_CAMERA, getClientUid(),
+                                     toString16(getPackageName()));
+            mCameraOpen = false;
         }
     }
     // Always stop watching, even if no camera op is active
@@ -288,7 +289,7 @@ status_t CameraOfflineSessionClient::finishCameraOps() {
     }
     mOpsCallback.clear();
 
-    sCameraService->mUidPolicy->unregisterMonitorUid(mClientUid, /*closeCamera*/true);
+    sCameraService->mUidPolicy->unregisterMonitorUid(getClientUid(), /*closeCamera*/ true);
 
     return OK;
 }
@@ -298,13 +299,19 @@ void CameraOfflineSessionClient::onResultAvailable(const CaptureResult& result) 
     ALOGV("%s", __FUNCTION__);
 
     if (mRemoteCallback.get() != NULL) {
-        mRemoteCallback->onResultReceived(result.mMetadata, result.mResultExtras,
+        using hardware::camera2::CameraMetadataInfo;
+        CameraMetadataInfo resultInfo;
+        resultInfo.set<CameraMetadataInfo::metadata>(result.mMetadata);
+        mRemoteCallback->onResultReceived(resultInfo, result.mResultExtras,
                 result.mPhysicalMetadatas);
     }
 
     for (size_t i = 0; i < mCompositeStreamMap.size(); i++) {
         mCompositeStreamMap.valueAt(i)->onResultAvailable(result);
     }
+}
+
+void CameraOfflineSessionClient::notifyClientSharedAccessPriorityChanged(bool /*primaryClient*/) {
 }
 
 void CameraOfflineSessionClient::notifyShutter(const CaptureResultExtras& resultExtras,

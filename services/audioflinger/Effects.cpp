@@ -24,7 +24,7 @@
 #include "Client.h"
 #include "EffectConfiguration.h"
 
-#include <afutils/DumpTryLock.h>
+#include <afutils/FallibleLockGuard.h>
 #include <audio_utils/channels.h>
 #include <audio_utils/primitives.h>
 #include <media/AudioCommonTypes.h>
@@ -506,52 +506,50 @@ static String8 effectFlagsToString(uint32_t flags) {
 }
 
 void EffectBase::dump(int fd, const Vector<String16>& args __unused) const
-NO_THREAD_SAFETY_ANALYSIS // conditional try lock
 {
     String8 result;
 
     result.appendFormat("\tEffect ID %d:\n", mId);
 
-    const bool locked = afutils::dumpTryLock(mutex());
-    // failed to lock - AudioFlinger is probably deadlocked
-    if (!locked) {
-        result.append("\t\tCould not lock Fx mutex:\n");
-    }
-    bool isInternal = isInternal_l();
-    result.append("\t\tSession State Registered Internal Enabled Suspended:\n");
-    result.appendFormat("\t\t%05d   %03d   %s          %s        %s       %s\n",
-            mSessionId, mState, mPolicyRegistered ? "y" : "n", isInternal ? "y" : "n",
-            ((isInternal && isEnabled()) || (!isInternal && mPolicyEnabled)) ? "y" : "n",
-            mSuspended ? "y" : "n");
-
-    result.append("\t\tDescriptor:\n");
-    char uuidStr[64];
-    AudioEffect::guidToString(&mDescriptor.uuid, uuidStr, sizeof(uuidStr));
-    result.appendFormat("\t\t- UUID: %s\n", uuidStr);
-    AudioEffect::guidToString(&mDescriptor.type, uuidStr, sizeof(uuidStr));
-    result.appendFormat("\t\t- TYPE: %s\n", uuidStr);
-    result.appendFormat("\t\t- apiVersion: %08X\n\t\t- flags: %08X (%s)\n",
-            mDescriptor.apiVersion,
-            mDescriptor.flags,
-            effectFlagsToString(mDescriptor.flags).c_str());
-    result.appendFormat("\t\t- name: %s\n",
-            mDescriptor.name);
-
-    result.appendFormat("\t\t- implementor: %s\n",
-            mDescriptor.implementor);
-
-    result.appendFormat("\t\t%zu Clients:\n", mHandles.size());
-    result.append("\t\t\t  Pid Priority Ctrl Locked client server\n");
-    char buffer[256];
-    for (size_t i = 0; i < mHandles.size(); ++i) {
-        IAfEffectHandle *handle = mHandles[i];
-        if (handle != NULL && !handle->disconnected()) {
-            handle->dumpToBuffer(buffer, sizeof(buffer));
-            result.append(buffer);
+    {
+        afutils::FallibleLockGuard l{mutex()};
+        // failed to lock - AudioFlinger is probably deadlocked
+        if (!l) {
+            result.append("\t\tCould not lock Fx mutex:\n");
         }
-    }
-    if (locked) {
-        mutex().unlock();
+        bool isInternal = isInternal_l();
+        result.append("\t\tSession State Registered Internal Enabled Suspended:\n");
+        result.appendFormat("\t\t%05d   %03d   %s          %s        %s       %s\n",
+                mSessionId, mState, mPolicyRegistered ? "y" : "n", isInternal ? "y" : "n",
+                ((isInternal && isEnabled()) || (!isInternal && mPolicyEnabled)) ? "y" : "n",
+                mSuspended ? "y" : "n");
+
+        result.append("\t\tDescriptor:\n");
+        char uuidStr[64];
+        AudioEffect::guidToString(&mDescriptor.uuid, uuidStr, sizeof(uuidStr));
+        result.appendFormat("\t\t- UUID: %s\n", uuidStr);
+        AudioEffect::guidToString(&mDescriptor.type, uuidStr, sizeof(uuidStr));
+        result.appendFormat("\t\t- TYPE: %s\n", uuidStr);
+        result.appendFormat("\t\t- apiVersion: %08X\n\t\t- flags: %08X (%s)\n",
+                mDescriptor.apiVersion,
+                mDescriptor.flags,
+                effectFlagsToString(mDescriptor.flags).c_str());
+        result.appendFormat("\t\t- name: %s\n",
+                mDescriptor.name);
+
+        result.appendFormat("\t\t- implementor: %s\n",
+                mDescriptor.implementor);
+
+        result.appendFormat("\t\t%zu Clients:\n", mHandles.size());
+        result.append("\t\t\t  Pid Priority Ctrl Locked client server\n");
+        char buffer[256];
+        for (size_t i = 0; i < mHandles.size(); ++i) {
+            IAfEffectHandle *handle = mHandles[i];
+            if (handle != NULL && !handle->disconnected()) {
+                handle->dumpToBuffer(buffer, sizeof(buffer));
+                result.append(buffer);
+            }
+        }
     }
 
     write(fd, result.c_str(), result.length());
@@ -1710,13 +1708,11 @@ static std::string dumpInOutBuffer(bool isInput, const sp<EffectBufferHalInterfa
     return ss.str();
 }
 
-void EffectModule::dump(int fd, const Vector<String16>& args) const
-NO_THREAD_SAFETY_ANALYSIS  // conditional try lock
-{
+void EffectModule::dump(int fd, const Vector<String16>& args) const {
     EffectBase::dump(fd, args);
 
     String8 result;
-    const bool locked = afutils::dumpTryLock(mutex());
+    afutils::FallibleLockGuard l{mutex()};
 
     result.append("\t\tStatus Engine:\n");
     result.appendFormat("\t\t%03d    %p\n",
@@ -1758,9 +1754,6 @@ NO_THREAD_SAFETY_ANALYSIS  // conditional try lock
         (void)mEffectInterface->dump(fd);
     }
 
-    if (locked) {
-        mutex().unlock();
-    }
 }
 
 // ----------------------------------------------------------------------------
@@ -2203,22 +2196,20 @@ void EffectHandle::framesProcessed(int32_t frames) const
 }
 
 void EffectHandle::dumpToBuffer(char* buffer, size_t size) const
-NO_THREAD_SAFETY_ANALYSIS  // conditional try lock
 {
-    const bool locked = mCblk != nullptr && afutils::dumpTryLock(mCblk->lock);
+    std::optional<afutils::FallibleLockGuard> guard;
+    if (mCblk != nullptr) {
+        guard.emplace(mCblk->lock);
+    }
 
     snprintf(buffer, size, "\t\t\t%5d    %5d  %3s    %3s  %5u  %5u\n",
             (mClient == 0) ? getpid() : mClient->pid(),
             mPriority,
             mHasControl ? "yes" : "no",
-            locked ? "yes" : "no",
+            guard.has_value() && *guard ? "yes" : "no",
             mCblk ? mCblk->clientIndex : 0,
             mCblk ? mCblk->serverIndex : 0
             );
-
-    if (locked) {
-        mCblk->lock.unlock();
-    }
 }
 
 #undef LOG_TAG
@@ -2803,41 +2794,36 @@ void EffectChain::syncHalEffectsState_l()
 }
 
 void EffectChain::dump(int fd, const Vector<String16>& args) const
-NO_THREAD_SAFETY_ANALYSIS  // conditional try lock
 {
     String8 result;
-
+    afutils::FallibleLockGuard l{mutex()};
     const size_t numEffects = mEffects.size();
     result.appendFormat("    %zu effects for session %d\n", numEffects, mSessionId);
-
-    if (numEffects) {
-        const bool locked = afutils::dumpTryLock(mutex());
-        // failed to lock - AudioFlinger is probably deadlocked
-        if (!locked) {
-            result.append("\tCould not lock mutex:\n");
-        }
-
-        const std::string inBufferStr = dumpInOutBuffer(true /* isInput */, mInBuffer);
-        const std::string outBufferStr = dumpInOutBuffer(false /* isInput */, mOutBuffer);
-        result.appendFormat("\t%-*s%-*s   Active tracks:\n",
-                (int)inBufferStr.size(), "In buffer    ",
-                (int)outBufferStr.size(), "Out buffer      ");
-        result.appendFormat("\t%s   %s   %d\n",
-                inBufferStr.c_str(), outBufferStr.c_str(), mActiveTrackCnt);
+    if (numEffects == 0) {
         write(fd, result.c_str(), result.size());
+        return;
+    }
 
-        for (size_t i = 0; i < numEffects; ++i) {
-            sp<IAfEffectModule> effect = mEffects[i];
-            if (effect != 0) {
-                effect->dump(fd, args);
-            }
-        }
 
-        if (locked) {
-            mutex().unlock();
+    // failed to lock - AudioFlinger is probably deadlocked
+    if (!l) {
+        result.append("\tCould not lock mutex:\n");
+    }
+
+    const std::string inBufferStr = dumpInOutBuffer(true /* isInput */, mInBuffer);
+    const std::string outBufferStr = dumpInOutBuffer(false /* isInput */, mOutBuffer);
+    result.appendFormat("\t%-*s%-*s   Active tracks:\n",
+            (int)inBufferStr.size(), "In buffer    ",
+            (int)outBufferStr.size(), "Out buffer      ");
+    result.appendFormat("\t%s   %s   %d\n",
+            inBufferStr.c_str(), outBufferStr.c_str(), mActiveTrackCnt);
+    write(fd, result.c_str(), result.size());
+
+    for (size_t i = 0; i < numEffects; ++i) {
+        sp<IAfEffectModule> effect = mEffects[i];
+        if (effect != 0) {
+            effect->dump(fd, args);
         }
-    } else {
-        write(fd, result.c_str(), result.size());
     }
 }
 
@@ -3718,13 +3704,13 @@ uint32_t DeviceEffectProxy::channelCount() const {
 }
 
 void DeviceEffectProxy::dump2(int fd, int spaces) const
-NO_THREAD_SAFETY_ANALYSIS  // conditional try lock
 {
     const Vector<String16> args;
     EffectBase::dump(fd, args);
 
-    const bool locked = afutils::dumpTryLock(proxyMutex());
-    if (!locked) {
+    afutils::FallibleLockGuard l{proxyMutex()};
+
+    if (!l) {
         String8 result("DeviceEffectProxy may be deadlocked\n");
         write(fd, result.c_str(), result.size());
     }
@@ -3750,10 +3736,6 @@ NO_THREAD_SAFETY_ANALYSIS  // conditional try lock
         if (effect != nullptr) {
             effect->dump(fd, args);
         }
-    }
-
-    if (locked) {
-        proxyMutex().unlock();
     }
 }
 

@@ -25,6 +25,8 @@
 #include <camera/ICameraRecordingProxy.h>
 #include <camera/CameraParameters.h>
 #include <gui/BufferItemConsumer.h>
+#include <gui/Surface.h>
+#include <gui/Flags.h>
 #include <utils/List.h>
 #include <utils/RefBase.h>
 #include <utils/String16.h>
@@ -77,7 +79,7 @@ public:
                                           pid_t clientPid,
                                           Size videoSize,
                                           int32_t frameRate,
-                                          const sp<IGraphicBufferProducer>& surface);
+                                          const sp<SurfaceType>& surface);
 
     virtual ~CameraSource();
 
@@ -165,7 +167,7 @@ protected:
     sp<Camera>   mCamera;
     sp<ICameraRecordingProxy>   mCameraRecordingProxy;
     sp<DeathNotifier> mDeathNotifier;
-    sp<IGraphicBufferProducer>  mSurface;
+    sp<SurfaceType>  mSurface;
     sp<MetaData> mMeta;
 
     int64_t mStartTimeUs;
@@ -180,8 +182,7 @@ protected:
 
     CameraSource(const sp<hardware::ICamera>& camera, const sp<ICameraRecordingProxy>& proxy,
                  int32_t cameraId, const String16& clientName, uid_t clientUid, pid_t clientPid,
-                 Size videoSize, int32_t frameRate,
-                 const sp<IGraphicBufferProducer>& surface);
+                 Size videoSize, int32_t frameRate, const sp<SurfaceType> & surface);
 
     virtual status_t startCameraRecording();
     virtual void releaseRecordingFrame(const sp<IMemory>& frame);
@@ -221,7 +222,7 @@ private:
     static const nsecs_t kMemoryBaseAvailableTimeoutNs = 200000000; // 200ms
     // Consumer and producer of the buffer queue between this class and camera.
     sp<BufferItemConsumer> mVideoBufferConsumer;
-    sp<IGraphicBufferProducer> mVideoBufferProducer;
+    sp<SurfaceType> mVideoBufferProducer;
     // Memory used to send the buffers to encoder, where sp<IMemory> stores VideoNativeMetadata.
     sp<IMemoryHeap> mMemoryHeapBase;
     List<sp<IMemory>> mMemoryBases;

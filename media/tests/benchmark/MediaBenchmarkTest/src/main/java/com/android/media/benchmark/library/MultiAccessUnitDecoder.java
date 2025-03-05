@@ -18,6 +18,7 @@ package com.android.media.benchmark.library;
 
 import android.view.Surface;
 
+import android.media.AudioFormat;
 import android.media.MediaCodec;
 import android.media.MediaCodec.BufferInfo;
 import android.media.MediaFormat;
@@ -91,8 +92,18 @@ public class MultiAccessUnitDecoder extends Decoder {
                     @NonNull MediaCodec mediaCodec, @NonNull MediaFormat format) {
                 Log.i(TAG, "Output format changed. Format: " + format.toString());
                 final int maxOutputSize = format.getNumber(
-                        MediaFormat.KEY_BUFFER_BATCH_MAX_OUTPUT_SIZE, 0).intValue();
+                            MediaFormat.KEY_BUFFER_BATCH_MAX_OUTPUT_SIZE, 0).intValue();
                 isUsingLargeFrameMode = (maxOutputSize > 0);
+                if (mUseFrameReleaseQueue && mFrameReleaseQueue == null) {
+                    int bytesPerSample = AudioFormat.getBytesPerSample(
+                            format.getInteger(MediaFormat.KEY_PCM_ENCODING,
+                                    AudioFormat.ENCODING_PCM_16BIT));
+                    int sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+                    int channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+                    mFrameReleaseQueue = new FrameReleaseQueue(
+                            mRender, sampleRate, channelCount, bytesPerSample);
+                    mFrameReleaseQueue.setMediaCodec(mCodec);
+                }
             }
 
             @Override
@@ -177,30 +188,6 @@ public class MultiAccessUnitDecoder extends Decoder {
         if (mSawOutputEOS || outputBufferId < 0) {
             return;
         }
-        Iterator<BufferInfo> iter = infos.iterator();
-        while (iter.hasNext()) {
-            BufferInfo bufferInfo = iter.next();
-            mNumOutputFrame++;
-            if (DEBUG) {
-                Log.d(TAG,
-                        "In OutputBufferAvailable ,"
-                                + " output frame number = " + mNumOutputFrame
-                                + " timestamp = " + bufferInfo.presentationTimeUs
-                                + " size = " + bufferInfo.size);
-            }
-            if (mIBufferSend != null) {
-                IBufferXfer.BufferXferInfo info = new IBufferXfer.BufferXferInfo();
-                info.buf = mc.getOutputBuffer(outputBufferId);
-                info.idx = outputBufferId;
-                info.obj = mc;
-                info.bytesRead = bufferInfo.size;
-                info.presentationTimeUs = bufferInfo.presentationTimeUs;
-                info.flag = bufferInfo.flags;
-                info.isComplete = iter.hasNext() ? false : true;
-                mIBufferSend.sendBuffer(this, info);
-            }
-            mSawOutputEOS |= (bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0;
-        }
         if (mOutputStream != null) {
             try {
                 ByteBuffer outputBuffer = mc.getOutputBuffer(outputBufferId);
@@ -212,12 +199,27 @@ public class MultiAccessUnitDecoder extends Decoder {
                 Log.d(TAG, "Error Dumping File: Exception " + e.toString());
             }
         }
-        if (mIBufferSend == null) {
+        mNumOutputFrame += infos.size();
+        MediaCodec.BufferInfo last = infos.peekLast();
+        if (last != null) {
+            mSawOutputEOS |= ((last.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0);
+        }
+        if (mIBufferSend != null) {
+            IBufferXfer.BufferXferInfo info = new IBufferXfer.BufferXferInfo();
+            info.buf = mc.getOutputBuffer(outputBufferId);
+            info.idx = outputBufferId;
+            info.obj = mc;
+            info.infos = infos;
+            mIBufferSend.sendBuffer(this, info);
+        } else if (mFrameReleaseQueue != null) {
+            ByteBuffer outputBuffer = mc.getOutputBuffer(outputBufferId);
+            mFrameReleaseQueue.pushFrame(
+                    outputBufferId, outputBuffer.remaining());
+        } else {
             mc.releaseOutputBuffer(outputBufferId, mRender);
         }
         if (mSawOutputEOS) {
             Log.i(TAG, "Large frame - saw output EOS");
         }
-        // we don't support frame release queue for large audio frame
     }
 }

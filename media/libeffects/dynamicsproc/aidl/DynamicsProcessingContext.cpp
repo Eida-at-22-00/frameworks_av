@@ -52,6 +52,7 @@ RetCode DynamicsProcessingContext::reset() {
     if (mDpFreq != nullptr) {
         mDpFreq->reset();
     }
+    mEngineInited = false;
     return RetCode::SUCCESS;
 }
 

@@ -79,6 +79,15 @@ binder::Status AidlCameraDeviceCallbacks::onDeviceError(
     return binder::Status::ok();
 }
 
+binder::Status AidlCameraDeviceCallbacks::onClientSharedAccessPriorityChanged(bool primaryClient) {
+    if (!flags::camera_multi_client()) {
+        return binder::Status::ok();
+    }
+    auto ret = mBase->onClientSharedAccessPriorityChanged(primaryClient);
+    LOG_STATUS_ERROR_IF_NOT_OK(ret, "onClientSharedAccessPriorityChanged")
+    return binder::Status::ok();
+ }
+
 binder::Status AidlCameraDeviceCallbacks::onDeviceIdle() {
     auto ret = mBase->onDeviceIdle();
     LOG_STATUS_ERROR_IF_NOT_OK(ret, "onDeviceIdle")
@@ -165,11 +174,19 @@ void AidlCameraDeviceCallbacks::CallbackHandler::processResultMessage(
 }
 
 binder::Status AidlCameraDeviceCallbacks::onResultReceived(
-    const CameraMetadataNative& result,
+    const CameraMetadataInfo &resultInfo,
     const UCaptureResultExtras& resultExtras,
     const ::std::vector<UPhysicalCaptureResultInfo>& physicalCaptureResultInfos) {
     // Wrap CameraMetadata, resultExtras and physicalCaptureResultInfos in on
     // sp<RefBase>-able structure and post it.
+    // We modify metadata - since we want to filter out tags based on the vndk
+    // version, and also this communication is an in process function call.
+    // So we don't use FMQ for the shim layer. FMQ is still used for VNDK IPC.
+    if (resultInfo.getTag() != CameraMetadataInfo::metadata) {
+        ALOGE("Vendor callbacks got metadata in fmq ? ");
+        return binder::Status::ok();
+    }
+    const CameraMetadataNative &result = resultInfo.get<CameraMetadataInfo::metadata>();
     sp<ResultWrapper> resultWrapper = new ResultWrapper(const_cast<CameraMetadataNative &>(result),
                                                         resultExtras, physicalCaptureResultInfos);
     sp<AMessage> msg = new AMessage(kWhatResultReceived, mHandler);

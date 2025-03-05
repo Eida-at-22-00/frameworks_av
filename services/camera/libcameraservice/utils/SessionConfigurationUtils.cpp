@@ -17,21 +17,24 @@
 #include <cutils/properties.h>
 
 #include "SessionConfigurationUtils.h"
+#include <android/data_space.h>
+#include <camera/StringUtils.h>
+#include <gui/Flags.h>  // remove with WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+#include <ui/PublicFormat.h>
+#include "../CameraService.h"
 #include "../api2/DepthCompositeStream.h"
 #include "../api2/HeicCompositeStream.h"
+#include "SessionConfigurationUtils.h"
 #include "aidl/android/hardware/graphics/common/Dataspace.h"
 #include "api2/JpegRCompositeStream.h"
 #include "binder/Status.h"
 #include "common/CameraDeviceBase.h"
 #include "common/HalConversionsTemplated.h"
-#include "../CameraService.h"
-#include "device3/aidl/AidlCamera3Device.h"
-#include "device3/hidl/HidlCamera3Device.h"
 #include "device3/Camera3OutputStream.h"
 #include "device3/ZoomRatioMapper.h"
+#include "device3/aidl/AidlCamera3Device.h"
+#include "device3/hidl/HidlCamera3Device.h"
 #include "system/graphics-base-v1.1.h"
-#include <camera/StringUtils.h>
-#include <ui/PublicFormat.h>
 
 using android::camera3::OutputStreamInfo;
 using android::camera3::OutputStreamInfo;
@@ -40,6 +43,7 @@ using aidl::android::hardware::camera::device::RequestTemplate;
 
 namespace android {
 namespace camera3 {
+namespace flags = com::android::internal::camera::flags;
 
 void StreamConfiguration::getStreamConfigurations(
         const CameraMetadata &staticInfo, int configuration,
@@ -167,11 +171,16 @@ bool roundBufferDimensionNearest(int32_t width, int32_t height,
             getAppropriateModeTag(ANDROID_HEIC_AVAILABLE_HEIC_STREAM_CONFIGURATIONS, maxResolution);
     const int32_t jpegRSizesTag = getAppropriateModeTag(
             ANDROID_JPEGR_AVAILABLE_JPEG_R_STREAM_CONFIGURATIONS, maxResolution);
+    const int32_t heicUltraHDRSizesTag = getAppropriateModeTag(
+            ANDROID_HEIC_AVAILABLE_HEIC_ULTRA_HDR_STREAM_CONFIGURATIONS, maxResolution);
 
     bool isJpegRDataSpace = (dataSpace == static_cast<android_dataspace_t>(
                 ::aidl::android::hardware::graphics::common::Dataspace::JPEG_R));
+    bool isHeicUltraHDRDataSpace = (dataSpace == static_cast<android_dataspace_t>(
+                ::aidl::android::hardware::graphics::common::Dataspace::HEIF_ULTRAHDR));
     camera_metadata_ro_entry streamConfigs =
             (isJpegRDataSpace) ? info.find(jpegRSizesTag) :
+            (isHeicUltraHDRDataSpace) ? info.find(heicUltraHDRSizesTag) :
             (dataSpace == HAL_DATASPACE_DEPTH) ? info.find(depthSizesTag) :
             (dataSpace == static_cast<android_dataspace>(HAL_DATASPACE_HEIF)) ?
             info.find(heicSizesTag) :
@@ -263,6 +272,9 @@ bool is10bitCompatibleFormat(int32_t format, android_dataspace_t dataSpace) {
         case HAL_PIXEL_FORMAT_BLOB:
             if (dataSpace == static_cast<android_dataspace_t>(
                         ::aidl::android::hardware::graphics::common::Dataspace::JPEG_R)) {
+                return true;
+            } else if (dataSpace == static_cast<android_dataspace_t>(
+                        ::aidl::android::hardware::graphics::common::Dataspace::HEIF_ULTRAHDR)) {
                 return true;
             }
 
@@ -373,6 +385,10 @@ bool isColorSpaceSupported(int32_t colorSpace, int32_t format, android_dataspace
             static_cast<android_dataspace>(
                 ::aidl::android::hardware::graphics::common::Dataspace::JPEG_R)) {
         format64 = static_cast<int64_t>(PublicFormat::JPEG_R);
+    } else if (format == HAL_PIXEL_FORMAT_BLOB && dataSpace ==
+            static_cast<android_dataspace>(
+                ::aidl::android::hardware::graphics::common::Dataspace::HEIF_ULTRAHDR)) {
+        format64 = static_cast<int64_t>(PublicFormat::HEIC_ULTRAHDR);
     }
 
     camera_metadata_ro_entry_t entry =
@@ -634,7 +650,6 @@ binder::Status createSurfaceFromGbp(
         streamInfo.dynamicRangeProfile = dynamicRangeProfile;
         streamInfo.streamUseCase = streamUseCase;
         streamInfo.timestampBase = timestampBase;
-        streamInfo.mirrorMode = mirrorMode;
         streamInfo.colorSpace = colorSpace;
         return binder::Status::ok();
     }
@@ -848,8 +863,7 @@ convertToHALStreamCombination(
     }
 
     for (const auto &it : outputConfigs) {
-        const std::vector<sp<IGraphicBufferProducer>>& bufferProducers =
-            it.getGraphicBufferProducers();
+        const std::vector<ParcelableSurfaceType>& surfaces = it.getSurfaces();
         bool deferredConsumer = it.isDeferred();
         bool isConfigurationComplete = it.isComplete();
         const std::string &physicalCameraId = it.getPhysicalCameraId();
@@ -862,12 +876,12 @@ convertToHALStreamCombination(
         const CameraMetadata &metadataChosen =
                 physicalCameraId.size() > 0 ? physicalDeviceInfo : deviceInfo;
 
-        size_t numBufferProducers = bufferProducers.size();
+        size_t numSurfaces = surfaces.size();
         bool isStreamInfoValid = false;
         int32_t groupId = it.isMultiResolution() ? it.getSurfaceSetID() : -1;
         OutputStreamInfo streamInfo;
 
-        res = checkSurfaceType(numBufferProducers, deferredConsumer, it.getSurfaceType(),
+        res = checkSurfaceType(numSurfaces, deferredConsumer, it.getSurfaceType(),
                                isConfigurationComplete);
         if (!res.isOk()) {
             return res;
@@ -880,10 +894,9 @@ convertToHALStreamCombination(
 
         int64_t streamUseCase = it.getStreamUseCase();
         int timestampBase = it.getTimestampBase();
-        int mirrorMode = it.getMirrorMode();
         // If the configuration is a deferred consumer, or a not yet completed
         // configuration with no buffer producers attached.
-        if (deferredConsumer || (!isConfigurationComplete && numBufferProducers == 0)) {
+        if (deferredConsumer || (!isConfigurationComplete && numSurfaces == 0)) {
             streamInfo.width = it.getWidth();
             streamInfo.height = it.getHeight();
             auto surfaceType = it.getSurfaceType();
@@ -934,25 +947,31 @@ convertToHALStreamCombination(
 
             isStreamInfoValid = true;
 
-            if (numBufferProducers == 0) {
+            if (numSurfaces == 0) {
                 continue;
             }
         }
 
-        for (auto& bufferProducer : bufferProducers) {
+        for (auto& surface_type : surfaces) {
             sp<Surface> surface;
-            res = createSurfaceFromGbp(streamInfo, isStreamInfoValid, surface, bufferProducer,
-                    logicalCameraId, metadataChosen, sensorPixelModesUsed, dynamicRangeProfile,
-                    streamUseCase, timestampBase, mirrorMode, colorSpace,
-                    /*respectSurfaceSize*/true, isPriviledgedClient);
+            int mirrorMode = it.getMirrorMode(surface_type);
+            res = createSurfaceFromGbp(streamInfo, isStreamInfoValid, surface,
+                                       surface_type
+#if WB_LIBCAMERASERVICE_WITH_DEPENDENCIES
+                                       .graphicBufferProducer
+#endif
+                                       , logicalCameraId,
+                                       metadataChosen, sensorPixelModesUsed, dynamicRangeProfile,
+                                       streamUseCase, timestampBase, mirrorMode, colorSpace,
+                                       /*respectSurfaceSize*/ true, isPriviledgedClient);
 
-            if (!res.isOk())
-                return res;
+            if (!res.isOk()) return res;
 
             if (!isStreamInfoValid) {
-                auto status  = mapStream(streamInfo, isCompositeJpegRDisabled, deviceInfo,
-                        static_cast<camera_stream_rotation_t> (it.getRotation()), &streamIdx,
-                        physicalCameraId, groupId, logicalCameraId, streamConfiguration, earlyExit);
+                auto status = mapStream(streamInfo, isCompositeJpegRDisabled, deviceInfo,
+                                        static_cast<camera_stream_rotation_t>(it.getRotation()),
+                                        &streamIdx, physicalCameraId, groupId, logicalCameraId,
+                                        streamConfiguration, earlyExit);
                 if (*earlyExit || !status.isOk()) {
                     return status;
                 }

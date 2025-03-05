@@ -30,4 +30,5 @@
 std::vector<camera_metadata_tag> extension_metadata_keys{
             ANDROID_EXTENSION_STRENGTH,
             ANDROID_EXTENSION_CURRENT_TYPE,
+            ANDROID_EXTENSION_NIGHT_MODE_INDICATOR,
 };

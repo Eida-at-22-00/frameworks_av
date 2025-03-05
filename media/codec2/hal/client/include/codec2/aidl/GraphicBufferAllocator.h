@@ -85,6 +85,11 @@ public:
     void onBufferAttached(uint32_t generation);
 
     /**
+     * Retrieve frame event history from the crurrent surface if any.
+     */
+    void pollForRenderedFrames(::android::FrameEventHistoryDelta* delta);
+
+    /**
      * Allocates a buffer.
      *
      * @param   width             width of the requested buffer.
@@ -124,6 +129,11 @@ public:
             const C2ConstGraphicBlock& block,
             const ::android::IGraphicBufferProducer::QueueBufferInput& input,
             ::android::IGraphicBufferProducer::QueueBufferOutput *output);
+
+    /**
+     * Notify stop()/release() is in progress.
+     */
+    void onRequestStop();
 
     ~GraphicBufferAllocator();
 

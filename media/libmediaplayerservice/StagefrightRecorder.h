@@ -80,7 +80,7 @@ struct StagefrightRecorder : public MediaRecorderBase {
     // Querying a SurfaceMediaSourcer
     virtual sp<IGraphicBufferProducer> querySurfaceMediaSource() const;
     virtual status_t setInputDevice(audio_port_handle_t deviceId);
-    virtual status_t getRoutedDeviceId(audio_port_handle_t* deviceId);
+    virtual status_t getRoutedDeviceIds(DeviceIdVector& deviceIds);
     virtual void setAudioDeviceCallback(const sp<AudioSystem::AudioDeviceCallback>& callback);
     virtual status_t enableAudioDeviceCallback(bool enabled);
     virtual status_t getActiveMicrophones(std::vector<media::MicrophoneInfoFw>* activeMicrophones);

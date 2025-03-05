@@ -133,6 +133,7 @@ class Spatializer : public media::BnSpatializer,
     binder::Status setParameter(int key, const std::vector<unsigned char>& value) override;
     binder::Status getParameter(int key, std::vector<unsigned char> *value) override;
     binder::Status getOutput(int *output);
+    binder::Status getSpatializedChannelMasks(std::vector<int>* masks) override;
 
     /** IBinder::DeathRecipient. Listen to the death of the INativeSpatializerCallback. */
     virtual void binderDied(const wp<IBinder>& who);
@@ -536,6 +537,7 @@ private:
     std::vector<media::audio::common::HeadTracking::Mode> mHeadTrackingModes;
     std::vector<media::audio::common::Spatialization::Mode> mSpatializationModes;
     std::vector<audio_channel_mask_t> mChannelMasks;
+    std::vector<audio_channel_mask_t> mSpatializedChannelMasks;
     bool mSupportsHeadTracking;
 
     /** List of supported head tracking connection modes reported by the spatializer.
